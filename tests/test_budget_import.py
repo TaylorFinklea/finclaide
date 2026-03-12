@@ -29,6 +29,37 @@ def test_import_budget_success(tmp_path: Path):
     assert planned_rows[-1]["planned_milliunits"] == 75000
 
 
+def test_import_budget_supports_current_layout(tmp_path: Path):
+    workbook = build_budget_workbook(tmp_path / "Budget.xlsx", layout="current")
+    database = Database(tmp_path / "test.db")
+    database.initialize()
+
+    summary = BudgetImporter(database).import_budget(workbook, "2026 Budget")
+
+    assert summary["row_count"] == 13
+    with database.connect() as connection:
+        planned_rows = connection.execute(
+            """
+            SELECT group_name, category_name, block, due_month, planned_milliunits
+            FROM v_latest_planned_categories
+            ORDER BY id
+            """
+        ).fetchall()
+
+    assert any(
+        row["group_name"] == "Fun"
+        and row["category_name"] == "Soda"
+        and row["block"] == "stipends"
+        for row in planned_rows
+    )
+    assert any(
+        row["group_name"] == "Yearly"
+        and row["category_name"] == "Feb - YNAB"
+        and row["due_month"] == 2
+        for row in planned_rows
+    )
+
+
 def test_import_budget_rejects_duplicate_categories(tmp_path: Path):
     workbook = build_budget_workbook(tmp_path / "Budget.xlsx", duplicate_category=True)
     database = Database(tmp_path / "test.db")

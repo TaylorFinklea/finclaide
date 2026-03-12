@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import re
+
 MONTH_ALIASES = {
     "jan": 1,
     "january": 1,
@@ -31,4 +33,8 @@ MONTH_ALIASES = {
 def parse_due_month(value: str | None) -> int | None:
     if not value:
         return None
-    return MONTH_ALIASES.get(value.strip().lower())
+    normalized = re.sub(r"[^a-z]+", " ", value.strip().lower())
+    for token in normalized.split():
+        if token in MONTH_ALIASES:
+            return MONTH_ALIASES[token]
+    return None

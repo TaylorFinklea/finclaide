@@ -22,7 +22,14 @@ def build_budget_workbook(
     missing_cached_formula: bool = False,
     wrong_sheet_name: bool = False,
     invalid_layout: bool = False,
+    layout: str = "legacy",
 ) -> Path:
+    if layout == "current":
+        return build_current_budget_workbook(
+            destination,
+            wrong_sheet_name=wrong_sheet_name,
+        )
+
     workbook = Workbook()
     sheet = workbook.active
     sheet.title = "Wrong Sheet" if wrong_sheet_name else "2026 Budget"
@@ -99,6 +106,102 @@ def build_budget_workbook(
     }
     if missing_cached_formula:
         cached_values.pop("G53")
+    inject_cached_values(destination, sheet.title, cached_values)
+    return destination
+
+
+def build_current_budget_workbook(
+    destination: Path,
+    *,
+    wrong_sheet_name: bool = False,
+) -> Path:
+    workbook = Workbook()
+    sheet = workbook.active
+    sheet.title = "Wrong Sheet" if wrong_sheet_name else "2026 Budget"
+
+    sheet["A1"] = "Monthly Income"
+    sheet["A2"] = "Salary"
+    sheet["B2"] = "=3000"
+    sheet["A4"] = "Bills"
+    sheet["A5"] = "Rent"
+    sheet["B5"] = 1000
+    sheet["A6"] = "Utilities"
+    sheet["B6"] = 200
+    sheet["A8"] = "Expenses"
+    sheet["A9"] = "Groceries"
+    sheet["B9"] = 300
+    sheet["A10"] = "Fuel"
+    sheet["B10"] = 150
+    sheet["A11"] = "Payments"
+    sheet["A12"] = "Credit Card"
+    sheet["B12"] = 100
+    sheet["A20"] = "Total"
+    sheet["B20"] = "=SUM(B5:B12)"
+    sheet["A21"] = "Remaining"
+    sheet["B21"] = "=B2-B20"
+
+    sheet["D1"] = "Yearly Income"
+    sheet["D2"] = "Bonus"
+    sheet["E2"] = 1200
+    sheet["F2"] = "=E2/12"
+    sheet["D4"] = "Yearly"
+    sheet["D5"] = "Feb - YNAB"
+    sheet["E5"] = 120
+    sheet["F5"] = "=E5/12"
+    sheet["D6"] = "Dec - Insurance"
+    sheet["E6"] = 600
+    sheet["F6"] = "=E6/12"
+    sheet["D8"] = "One Time Purchase"
+    sheet["D9"] = "Laptop"
+    sheet["F9"] = 75
+    sheet["E20"] = "Total"
+    sheet["F20"] = "=SUM(F5:F9)"
+    sheet["E21"] = "Remaining"
+    sheet["F21"] = "=F2-F20"
+
+    sheet["H1"] = "Stipends"
+    sheet["H2"] = "S Stipend"
+    sheet["I2"] = 100
+    sheet["H3"] = "T Stipend"
+    sheet["I3"] = 50
+    sheet["H5"] = "Fun"
+    sheet["H6"] = "Soda"
+    sheet["I6"] = 25
+    sheet["H20"] = "Total"
+    sheet["I20"] = "=SUM(I2:I6)"
+    sheet["H21"] = "Remaining"
+    sheet["I21"] = "=250-I20"
+
+    sheet["K1"] = "Savings"
+    sheet["K2"] = "Emergency"
+    sheet["L2"] = 200
+    sheet["K3"] = "Investments"
+    sheet["L3"] = 75
+    sheet["K20"] = "Total"
+    sheet["L20"] = "=SUM(L2:L3)"
+    sheet["K21"] = "Remaining"
+    sheet["L21"] = "=300-L20"
+
+    sheet["N1"] = "Discussion Items"
+    sheet["O1"] = "Ignored"
+
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    workbook.save(destination)
+
+    cached_values = {
+        "B2": 3000,
+        "B20": 1750,
+        "B21": 1250,
+        "F2": 100,
+        "F5": 10,
+        "F6": 50,
+        "F20": 135,
+        "F21": -35,
+        "I20": 175,
+        "I21": 75,
+        "L20": 275,
+        "L21": 25,
+    }
     inject_cached_values(destination, sheet.title, cached_values)
     return destination
 

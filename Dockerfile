@@ -8,7 +8,7 @@ WORKDIR /app
 
 RUN useradd --create-home --shell /bin/bash appuser
 
-COPY pyproject.toml README.md /app/
+COPY pyproject.toml README.md LICENSE /app/
 COPY src /app/src
 COPY tests /app/tests
 
