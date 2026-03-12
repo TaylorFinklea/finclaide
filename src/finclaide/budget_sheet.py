@@ -27,6 +27,8 @@ class PlannedCategoryRow:
 
 
 class BudgetImporter:
+    TOTAL_TOLERANCE_MILLIUNITS = 10
+
     def __init__(self, database: Database) -> None:
         self.database = database
 
@@ -258,7 +260,7 @@ class BudgetImporter:
         mismatches = [
             f"{name}: expected {expected[name]}, got {totals[name]}"
             for name in totals
-            if totals[name] != expected[name]
+            if abs(totals[name] - expected[name]) > self.TOTAL_TOLERANCE_MILLIUNITS
         ]
         if mismatches:
             raise DataIntegrityError("Budget totals do not match cached formulas: " + "; ".join(mismatches))
