@@ -1,0 +1,77 @@
+{
+  "data": {
+    "transactions": [
+      {
+        "id": "txn-rent",
+        "account_id": "acct-checking",
+        "date": "2026-03-01",
+        "payee_name": "Landlord",
+        "memo": "March rent",
+        "cleared": "cleared",
+        "approved": true,
+        "category_id": "cat-rent",
+        "category_name": "Rent",
+        "category_group_name": "Bills",
+        "amount": -1000000,
+        "deleted": false
+      },
+      {
+        "id": "txn-utilities",
+        "account_id": "acct-checking",
+        "date": "2026-03-03",
+        "payee_name": "Utility Co",
+        "memo": null,
+        "cleared": "cleared",
+        "approved": true,
+        "category_id": "cat-utilities",
+        "category_name": "Utilities",
+        "category_group_name": "Bills",
+        "amount": -210000,
+        "deleted": false
+      },
+      {
+        "id": "txn-groceries",
+        "account_id": "acct-checking",
+        "date": "2026-03-05",
+        "payee_name": "Grocer",
+        "memo": null,
+        "cleared": "cleared",
+        "approved": true,
+        "category_id": "cat-groceries",
+        "category_name": "Groceries",
+        "category_group_name": "Expenses",
+        "amount": -280000,
+        "deleted": false
+      },
+      {
+        "id": "txn-fuel",
+        "account_id": "acct-checking",
+        "date": "2026-03-06",
+        "payee_name": "Gas Station",
+        "memo": null,
+        "cleared": "cleared",
+        "approved": true,
+        "category_id": "cat-fuel",
+        "category_name": "Fuel",
+        "category_group_name": "Expenses",
+        "amount": -160000,
+        "deleted": false
+      },
+      {
+        "id": "txn-emergency",
+        "account_id": "acct-checking",
+        "date": "2026-03-07",
+        "payee_name": "Transfer",
+        "memo": "Emergency fund",
+        "cleared": "cleared",
+        "approved": true,
+        "category_id": "cat-emergency",
+        "category_name": "Emergency",
+        "category_group_name": "Savings",
+        "amount": -200000,
+        "deleted": false
+      }
+    ],
+    "server_knowledge": 100
+  }
+}

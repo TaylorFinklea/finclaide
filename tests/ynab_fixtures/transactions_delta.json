@@ -1,0 +1,35 @@
+{
+  "data": {
+    "transactions": [
+      {
+        "id": "txn-fuel",
+        "account_id": "acct-checking",
+        "date": "2026-03-06",
+        "payee_name": "Gas Station",
+        "memo": null,
+        "cleared": "cleared",
+        "approved": true,
+        "category_id": "cat-fuel",
+        "category_name": "Fuel",
+        "category_group_name": "Expenses",
+        "amount": -160000,
+        "deleted": true
+      },
+      {
+        "id": "txn-vacation",
+        "account_id": "acct-checking",
+        "date": "2026-03-08",
+        "payee_name": "Vacation Fund",
+        "memo": null,
+        "cleared": "cleared",
+        "approved": true,
+        "category_id": "cat-vacation",
+        "category_name": "Vacation",
+        "category_group_name": "Yearly",
+        "amount": -100000,
+        "deleted": false
+      }
+    ],
+    "server_knowledge": 101
+  }
+}

@@ -1,0 +1,29 @@
+[build-system]
+requires = ["hatchling>=1.26.0"]
+build-backend = "hatchling.build"
+
+[project]
+name = "finclaide"
+version = "0.1.0"
+description = "Docker-first personal finance analytics for YNAB plus spreadsheet planning."
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+  "dash>=2.18,<3.0",
+  "gunicorn>=23.0,<24.0",
+  "httpx>=0.28,<0.29",
+  "openpyxl>=3.1,<4.0",
+  "plotly>=6.0,<7.0",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=8.3,<9.0",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/finclaide"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]

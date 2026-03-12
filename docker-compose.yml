@@ -1,0 +1,18 @@
+services:
+  app:
+    build: .
+    env_file:
+      - .env
+    environment:
+      FINCLAIDE_DB_PATH: ${FINCLAIDE_DB_PATH:-/data/finclaide.db}
+      FINCLAIDE_BUDGET_XLSX: ${FINCLAIDE_BUDGET_XLSX:-/input/Budget.xlsx}
+      FINCLAIDE_HOST: ${FINCLAIDE_HOST:-0.0.0.0}
+      FINCLAIDE_PORT: ${FINCLAIDE_PORT:-8050}
+    ports:
+      - "${FINCLAIDE_PORT:-8050}:8050"
+    volumes:
+      - finclaide_data:/data
+      - ${BUDGET_XLSX_HOST_PATH:-/Users/tfinklea/Downloads/Budget.xlsx}:/input/Budget.xlsx:ro
+
+volumes:
+  finclaide_data:

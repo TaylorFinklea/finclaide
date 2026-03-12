@@ -1,0 +1,153 @@
+{
+  "data": {
+    "category_groups": [
+      {
+        "id": "grp-bills",
+        "name": "Bills",
+        "hidden": false,
+        "deleted": false,
+        "categories": [
+          {
+            "id": "cat-rent",
+            "name": "Rent",
+            "hidden": false,
+            "deleted": false,
+            "balance": 1200000
+          },
+          {
+            "id": "cat-utilities",
+            "name": "Utilities",
+            "hidden": false,
+            "deleted": false,
+            "balance": 220000
+          }
+        ]
+      },
+      {
+        "id": "grp-expenses",
+        "name": "Expenses",
+        "hidden": false,
+        "deleted": false,
+        "categories": [
+          {
+            "id": "cat-groceries",
+            "name": "Groceries",
+            "hidden": false,
+            "deleted": false,
+            "balance": 310000
+          },
+          {
+            "id": "cat-fuel",
+            "name": "Fuel",
+            "hidden": false,
+            "deleted": false,
+            "balance": 125000
+          }
+        ]
+      },
+      {
+        "id": "grp-yearly",
+        "name": "Yearly",
+        "hidden": false,
+        "deleted": false,
+        "categories": [
+          {
+            "id": "cat-vacation",
+            "name": "Vacation",
+            "hidden": false,
+            "deleted": false,
+            "balance": 250000
+          },
+          {
+            "id": "cat-insurance",
+            "name": "Insurance",
+            "hidden": false,
+            "deleted": false,
+            "balance": 110000
+          }
+        ]
+      },
+      {
+        "id": "grp-one-time",
+        "name": "One Time Purchase",
+        "hidden": false,
+        "deleted": false,
+        "categories": [
+          {
+            "id": "cat-laptop",
+            "name": "Laptop",
+            "hidden": false,
+            "deleted": false,
+            "balance": 75000
+          }
+        ]
+      },
+      {
+        "id": "grp-stipends",
+        "name": "Stipends",
+        "hidden": false,
+        "deleted": false,
+        "categories": [
+          {
+            "id": "cat-s-stipend",
+            "name": "S Stipend",
+            "hidden": false,
+            "deleted": false,
+            "balance": 100000
+          },
+          {
+            "id": "cat-t-stipend",
+            "name": "T Stipend",
+            "hidden": false,
+            "deleted": false,
+            "balance": 50000
+          }
+        ]
+      },
+      {
+        "id": "grp-savings",
+        "name": "Savings",
+        "hidden": false,
+        "deleted": false,
+        "categories": [
+          {
+            "id": "cat-emergency",
+            "name": "Emergency",
+            "hidden": false,
+            "deleted": false,
+            "balance": 400000
+          },
+          {
+            "id": "cat-investments",
+            "name": "Investments",
+            "hidden": false,
+            "deleted": false,
+            "balance": 150000
+          }
+        ]
+      },
+      {
+        "id": "grp-hidden",
+        "name": "Legacy",
+        "hidden": true,
+        "deleted": false,
+        "categories": [
+          {
+            "id": "cat-hidden",
+            "name": "Archived",
+            "hidden": true,
+            "deleted": false,
+            "balance": 0
+          },
+          {
+            "id": "cat-deleted",
+            "name": "Deleted Category",
+            "hidden": false,
+            "deleted": true,
+            "balance": 0
+          }
+        ]
+      }
+    ]
+  }
+}

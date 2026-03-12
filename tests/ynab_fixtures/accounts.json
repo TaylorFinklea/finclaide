@@ -1,0 +1,22 @@
+{
+  "data": {
+    "accounts": [
+      {
+        "id": "acct-checking",
+        "name": "Checking",
+        "type": "checking",
+        "on_budget": true,
+        "closed": false,
+        "balance": 5300000
+      },
+      {
+        "id": "acct-tracking",
+        "name": "Brokerage",
+        "type": "investmentAccount",
+        "on_budget": false,
+        "closed": false,
+        "balance": 12500000
+      }
+    ]
+  }
+}
