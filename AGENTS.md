@@ -1,0 +1,123 @@
+# Finclaide Agent Guide
+
+This repository is a Docker-first personal finance application. Use the running application over HTTP when you need app data or app actions. Do not bypass the API unless you are changing internals or debugging a low-level issue.
+
+## Product Rules
+
+- YNAB is the source of truth for actuals.
+- The `2026 Budget` sheet in the mounted `Budget.xlsx` workbook is the source of truth for the baseline plan.
+- If YNAB and the sheet disagree, fix YNAB and re-sync. Do not “fix” discrepancies in SQLite.
+- Historical workbook tabs are out of scope for v1. Only `2026 Budget` is imported.
+- `Stipends` and `Savings` are treated as ordinary budget categories after income reaches the bank account.
+- Data integrity is strict by design. Exact group/category name matches matter.
+
+## Runtime
+
+- Main service: `docker compose up --build -d`
+- Dashboard: `http://127.0.0.1:8050/`
+- Health check: `GET /healthz`
+- API base: `http://127.0.0.1:8050/api`
+- API auth: `Authorization: Bearer $FINCLAIDE_API_TOKEN`
+- Persistent state: Docker volume mounted at `/data`
+- Workbook mount inside container: `/input/Budget.xlsx`
+
+Use `.env` for local runtime configuration. Required values:
+
+- `YNAB_ACCESS_TOKEN`
+- `YNAB_PLAN_ID`
+- `FINCLAIDE_API_TOKEN`
+- `BUDGET_XLSX_HOST_PATH`
+
+Useful commands:
+
+- `docker compose ps`
+- `docker compose logs -f app`
+- `docker compose down`
+- `make test`
+
+## Preferred App Workflow
+
+When using the running app for real work, do this in order:
+
+1. Check health: `GET /healthz`
+2. Check app status: `GET /api/status`
+3. Import the workbook baseline: `POST /api/budget/import`
+4. Sync YNAB: `POST /api/ynab/sync`
+5. Reconcile exact matches: `POST /api/reconcile`
+6. Read machine-facing outputs:
+   - `GET /api/reports/summary?month=YYYY-MM`
+   - `GET /api/transactions?since=YYYY-MM-DD&until=YYYY-MM-DD&group=...&category=...&limit=...`
+
+If `POST /api/reconcile` fails, treat that as a real data issue. Do not create silent aliases or fuzzy mappings.
+
+## API Contract
+
+Current endpoints:
+
+- `GET /healthz`
+- `GET /api/status`
+- `POST /api/budget/import`
+- `POST /api/ynab/sync`
+- `POST /api/reconcile`
+- `GET /api/reports/summary?month=YYYY-MM`
+- `GET /api/transactions?...`
+
+Important behaviors:
+
+- All `/api/*` routes require the bearer token.
+- Import, sync, and reconcile are synchronous and serialized by an app lock.
+- Money values are integer milliunits.
+- `GET /api/reports/summary` is the main machine-facing report. Prefer it over scraping the dashboard.
+
+Example:
+
+```bash
+export TOKEN="$(grep '^FINCLAIDE_API_TOKEN=' .env | cut -d= -f2-)"
+
+curl -sS http://127.0.0.1:8050/api/status \
+  -H "Authorization: Bearer $TOKEN"
+
+curl -sS -X POST http://127.0.0.1:8050/api/budget/import \
+  -H "Authorization: Bearer $TOKEN"
+
+curl -sS -X POST http://127.0.0.1:8050/api/ynab/sync \
+  -H "Authorization: Bearer $TOKEN"
+
+curl -sS -X POST http://127.0.0.1:8050/api/reconcile \
+  -H "Authorization: Bearer $TOKEN"
+
+curl -sS "http://127.0.0.1:8050/api/reports/summary?month=2026-03" \
+  -H "Authorization: Bearer $TOKEN"
+```
+
+## Development Notes
+
+- Core app entrypoint: `src/finclaide/app.py`
+- API routes: `src/finclaide/api.py`
+- Workbook importer: `src/finclaide/budget_sheet.py`
+- YNAB wrapper: `src/finclaide/ynab.py`
+- Reconciliation and reports: `src/finclaide/services.py`
+- Dashboard UI: `src/finclaide/dashboard.py`
+
+When changing importer behavior:
+
+- Preserve deterministic parsing.
+- Keep tests for workbook parsing exhaustive and explicit.
+- Do not add fuzzy matching, heuristics, or silent coercions for categories/groups.
+
+When changing API behavior:
+
+- Keep the API machine-friendly and stable.
+- Prefer explicit JSON outputs over CLI-oriented text.
+- Update tests first or alongside the behavior change.
+
+## Testing
+
+- Primary verification: `make test`
+- Local fallback if Docker is unavailable:
+  - `python3 -m venv .venv`
+  - `. .venv/bin/activate`
+  - `python -m pip install '.[dev]'`
+  - `pytest`
+
+Do not merge parser, reconciliation, or money-handling changes without deterministic tests.
