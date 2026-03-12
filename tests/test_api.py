@@ -34,11 +34,14 @@ def test_budget_import_sync_reconcile_and_summary(app_factory, auth_header, tmp_
     assert summary_response.status_code == 200
     payload = summary_response.get_json()
     groups = {item["group_name"]: item for item in payload["groups"]}
+    recent_dates = [item["date"] for item in payload["recent_transactions"]]
 
     assert payload["plan_year"] == 2026
     assert groups["Bills"]["planned_milliunits"] == 1200000
     assert groups["Bills"]["actual_milliunits"] == 1210000
     assert any(category["status"] == "under" for category in groups["Savings"]["categories"])
+    assert recent_dates == sorted(recent_dates, reverse=True)
+    assert recent_dates[0] == "2026-03-07"
 
     tx_response = client.get(
         "/api/transactions?group=Expenses&limit=2",

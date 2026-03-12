@@ -210,6 +210,7 @@ class ReportService:
                     COALESCE(c.name, t.category_name) AS category_name
                 FROM v_recent_transactions t
                 LEFT JOIN categories c ON c.id = t.category_id
+                ORDER BY t.date DESC, t.id DESC
                 LIMIT 20
                 """
             ).fetchall()
