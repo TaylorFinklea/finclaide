@@ -8,6 +8,7 @@ version = "0.1.0"
 description = "Docker-first personal finance analytics for YNAB plus spreadsheet planning."
 readme = "README.md"
 requires-python = ">=3.12"
+license = {file = "LICENSE"}
 dependencies = [
   "dash>=2.18,<3.0",
   "gunicorn>=23.0,<24.0",
