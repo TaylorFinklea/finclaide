@@ -1,6 +1,6 @@
 # Finclaide Agent Guide
 
-This repository is a Docker-first personal finance application. Use the running application over HTTP when you need app data or app actions. Do not bypass the API unless you are changing internals or debugging a low-level issue.
+This repository is a Docker-first personal finance application. Prefer the host MCP server when available for external AI access, and otherwise use the running application over HTTP. Do not bypass the API unless you are changing internals or debugging a low-level issue.
 
 ## Product Rules
 
@@ -17,6 +17,7 @@ This repository is a Docker-first personal finance application. Use the running 
 - Dashboard: `http://127.0.0.1:8050/`
 - Health check: `GET /healthz`
 - API base: `http://127.0.0.1:8050/api`
+- Host MCP command: `finclaide-mcp`
 - API auth: `Authorization: Bearer $FINCLAIDE_API_TOKEN`
 - Persistent state: Docker volume mounted at `/data`
 - Workbook mount inside container: `/input/Budget.xlsx`
@@ -26,6 +27,8 @@ Use `.env` for local runtime configuration. Required values:
 - `YNAB_ACCESS_TOKEN`
 - `YNAB_PLAN_ID`
 - `FINCLAIDE_API_TOKEN`
+- `FINCLAIDE_API_BASE_URL`
+- `FINCLAIDE_HEALTH_URL`
 - `BUDGET_XLSX_HOST_PATH`
 
 Useful commands:
@@ -34,6 +37,9 @@ Useful commands:
 - `docker compose logs -f app`
 - `docker compose down`
 - `make test`
+- `.venv/bin/finclaide-mcp`
+
+See [docs/mcp.md](docs/mcp.md) for Codex and Claude setup examples.
 
 ## Preferred App Workflow
 

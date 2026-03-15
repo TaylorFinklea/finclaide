@@ -1,6 +1,6 @@
 # CLAUDE.md
 
-Use this repository as an HTTP-served finance application, not as a loose collection of scripts.
+Use this repository as an MCP- and HTTP-served finance application, not as a loose collection of scripts.
 
 ## What Finclaide Does
 
@@ -29,17 +29,20 @@ Then use:
 - Dashboard: `http://127.0.0.1:8050/`
 - Health: `http://127.0.0.1:8050/healthz`
 - API base: `http://127.0.0.1:8050/api`
+- Host MCP command: `finclaide-mcp`
 
 Config lives in `.env`. Important keys:
 
 - `YNAB_ACCESS_TOKEN`
 - `YNAB_PLAN_ID`
 - `FINCLAIDE_API_TOKEN`
+- `FINCLAIDE_API_BASE_URL`
+- `FINCLAIDE_HEALTH_URL`
 - `BUDGET_XLSX_HOST_PATH`
 
 ## How External AI Tools Should Use It
 
-Prefer the API over direct file or database access.
+Prefer the MCP server when available for external AI use, and otherwise prefer the API over direct file or database access.
 
 Normal flow:
 
@@ -64,6 +67,15 @@ Important:
 - Only one such operation runs at a time.
 - Report values are integer milliunits.
 - `GET /api/reports/summary` is the preferred structured output for downstream skills.
+
+## MCP
+
+Finclaide now exposes a host-launched stdio MCP server:
+
+- Command: `finclaide-mcp`
+- Module fallback: `python -m finclaide.mcp_server`
+
+See [docs/mcp.md](docs/mcp.md) for setup and tool details.
 
 ## Data Rules
 

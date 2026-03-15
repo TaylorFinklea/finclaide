@@ -13,9 +13,14 @@ dependencies = [
   "dash>=2.18,<3.0",
   "gunicorn>=23.0,<24.0",
   "httpx>=0.28,<0.29",
+  "mcp>=1.26,<2.0",
   "openpyxl>=3.1,<4.0",
   "plotly>=6.0,<7.0",
+  "python-dotenv>=1.0,<2.0",
 ]
+
+[project.scripts]
+finclaide-mcp = "finclaide.mcp_server:main"
 
 [project.optional-dependencies]
 dev = [
