@@ -1,6 +1,6 @@
 COMPOSE ?= docker compose
 
-.PHONY: build up down logs test
+.PHONY: build up down logs test frontend-test frontend-build
 
 build:
 	$(COMPOSE) build
@@ -16,3 +16,9 @@ logs:
 
 test:
 	$(COMPOSE) run --rm app pytest
+
+frontend-test:
+	cd frontend && npm test
+
+frontend-build:
+	cd frontend && npm run build

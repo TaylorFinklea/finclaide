@@ -17,6 +17,7 @@ This repository is a Docker-first personal finance application. Prefer the host 
 - Dashboard: `http://127.0.0.1:8050/`
 - Health check: `GET /healthz`
 - API base: `http://127.0.0.1:8050/api`
+- UI API base: `http://127.0.0.1:8050/ui-api`
 - Host MCP command: `finclaide-mcp`
 - API auth: `Authorization: Bearer $FINCLAIDE_API_TOKEN`
 - Persistent state: Docker volume mounted at `/data`
@@ -100,10 +101,11 @@ curl -sS "http://127.0.0.1:8050/api/reports/summary?month=2026-03" \
 
 - Core app entrypoint: `src/finclaide/app.py`
 - API routes: `src/finclaide/api.py`
+- Browser UI routes: `src/finclaide/ui_api.py`
 - Workbook importer: `src/finclaide/budget_sheet.py`
 - YNAB wrapper: `src/finclaide/ynab.py`
 - Reconciliation and reports: `src/finclaide/services.py`
-- Dashboard UI: `src/finclaide/dashboard.py`
+- React dashboard: `frontend/`
 
 When changing importer behavior:
 
@@ -116,6 +118,8 @@ When changing API behavior:
 - Keep the API machine-friendly and stable.
 - Prefer explicit JSON outputs over CLI-oriented text.
 - Update tests first or alongside the behavior change.
+- Keep `/api/*` token-protected for external clients.
+- Keep `/ui-api/*` same-origin for the browser dashboard.
 
 ## Testing
 

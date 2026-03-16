@@ -13,7 +13,7 @@ def test_api_requires_bearer_token(client):
     assert response.status_code == 401
 
 
-def test_budget_import_sync_reconcile_and_summary(app_factory, auth_header, tmp_path: Path):
+def test_budget_import_sync_reconcile_and_summary(app_factory, auth_header, ui_headers, tmp_path: Path):
     workbook = build_budget_workbook(tmp_path / "Budget.xlsx")
     app = app_factory(workbook_path=workbook)
     client = app.test_client()
@@ -51,6 +51,29 @@ def test_budget_import_sync_reconcile_and_summary(app_factory, auth_header, tmp_
     assert len(tx_payload["transactions"]) == 2
     assert all(item["group_name"] == "Expenses" for item in tx_payload["transactions"])
 
+    ui_status_response = client.get("/ui-api/status")
+    assert ui_status_response.status_code == 200
+    assert "latest_runs" in ui_status_response.get_json()
+
+    ui_summary = client.get("/ui-api/summary?month=2026-03")
+    assert ui_summary.status_code == 200
+    assert ui_summary.get_json()["month"] == "2026-03"
+
+    ui_transactions = client.get(
+        "/ui-api/transactions?group=Expenses&q=gas&limit=1&offset=0",
+    )
+    ui_transactions_payload = ui_transactions.get_json()
+    assert ui_transactions.status_code == 200
+    assert ui_transactions_payload["total_count"] == 1
+    assert ui_transactions_payload["transactions"][0]["payee_name"] == "Gas Station"
+
+    refresh_response = client.post("/ui-api/operations/refresh-all", json={"month": "2026-03"}, headers=ui_headers)
+    refresh_payload = refresh_response.get_json()
+    assert refresh_response.status_code == 200
+    assert "budget_import" in refresh_payload
+    assert "ynab_sync" in refresh_payload
+    assert refresh_payload["summary"]["month"] == "2026-03"
+
 
 def test_reconcile_fails_on_missing_category(app_factory, auth_header, tmp_path: Path):
     workbook = build_budget_workbook(tmp_path / "Budget.xlsx")
@@ -78,6 +101,32 @@ def test_operations_are_serialized(app_factory, auth_header):
     assert response.status_code == 409
 
 
+def test_ui_api_rejects_cross_origin_and_missing_header(app_factory):
+    app = app_factory()
+    client = app.test_client()
+
+    forbidden = client.get("/ui-api/status", headers={"Origin": "https://example.com"})
+    assert forbidden.status_code == 403
+
+    missing_header = client.post("/ui-api/operations/import-budget", json={})
+    assert missing_header.status_code == 403
+
+
+def test_refresh_all_returns_partial_payload_on_reconcile_failure(app_factory, ui_headers, tmp_path: Path):
+    workbook = build_budget_workbook(tmp_path / "Budget.xlsx")
+    app = app_factory(workbook_path=workbook, categories_fixture="categories_missing_investments.json")
+    client = app.test_client()
+
+    response = client.post("/ui-api/operations/refresh-all", json={"month": "2026-03"}, headers=ui_headers)
+    payload = response.get_json()
+
+    assert response.status_code == 400
+    assert "budget_import" in payload
+    assert "ynab_sync" in payload
+    assert "reconcile_error" in payload
+    assert payload["summary"]["mismatches"]
+
+
 def test_healthcheck_and_dashboard_render(app_factory):
     app = app_factory()
     client = app.test_client()
@@ -85,4 +134,4 @@ def test_healthcheck_and_dashboard_render(app_factory):
     assert client.get("/healthz").status_code == 200
     root_response = client.get("/")
     assert root_response.status_code == 200
-    assert b"Finclaide" in root_response.data
+    assert b"<div id=\"root\"></div>" in root_response.data

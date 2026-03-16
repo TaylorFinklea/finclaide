@@ -105,7 +105,7 @@ class ReportService:
     database: Database
     operation_lock: OperationLock
 
-    def status(self) -> dict[str, Any]:
+    def status(self, *, include_recent_runs: bool = False) -> dict[str, Any]:
         with self.database.connect() as connection:
             latest_import = connection.execute(
                 "SELECT * FROM v_latest_budget_import"
@@ -119,7 +119,30 @@ class ReportService:
             latest_reconciliation = connection.execute(
                 "SELECT * FROM v_latest_reconciliation"
             ).fetchone()
-        return {
+            latest_runs = {}
+            if include_recent_runs:
+                run_rows = connection.execute(
+                    """
+                    SELECT source, status, started_at, finished_at, details_json
+                    FROM sync_runs
+                    WHERE id IN (
+                        SELECT MAX(id)
+                        FROM sync_runs
+                        GROUP BY source
+                    )
+                    ORDER BY id DESC
+                    """
+                ).fetchall()
+                latest_runs = {
+                    row["source"]: {
+                        "status": row["status"],
+                        "started_at": row["started_at"],
+                        "finished_at": row["finished_at"],
+                        "details": json.loads(row["details_json"] or "{}"),
+                    }
+                    for row in run_rows
+                }
+        payload = {
             "plan_id": self.config.ynab_plan_id,
             "budget_sheet": self.config.budget_sheet_name,
             "busy": self.operation_lock.current_operation is not None,
@@ -131,6 +154,9 @@ class ReportService:
             "last_reconcile_at": latest_reconciliation["run_at"] if latest_reconciliation else None,
             "last_reconcile_status": latest_reconciliation["status"] if latest_reconciliation else None,
         }
+        if include_recent_runs:
+            payload["latest_runs"] = latest_runs
+        return payload
 
     def summary(self, month: str | None = None) -> dict[str, Any]:
         month_start, month_end, month_number, month_label = _month_bounds(month)
@@ -273,6 +299,28 @@ class ReportService:
         category_name: str | None,
         limit: int,
     ) -> dict[str, Any]:
+        result = self.transactions_page(
+            since=since,
+            until=until,
+            group_name=group_name,
+            category_name=category_name,
+            query=None,
+            limit=limit,
+            offset=0,
+        )
+        return {"transactions": result["transactions"]}
+
+    def transactions_page(
+        self,
+        *,
+        since: str | None,
+        until: str | None,
+        group_name: str | None,
+        category_name: str | None,
+        query: str | None,
+        limit: int,
+        offset: int,
+    ) -> dict[str, Any]:
         conditions = ["t.deleted = 0"]
         params: list[Any] = []
         if since:
@@ -287,9 +335,15 @@ class ReportService:
         if category_name:
             conditions.append("COALESCE(c.name, t.category_name) = ?")
             params.append(category_name)
-        params.append(limit)
+        if query:
+            search = f"%{query.lower()}%"
+            conditions.append(
+                "(LOWER(COALESCE(t.payee_name, '')) LIKE ? OR LOWER(COALESCE(t.memo, '')) LIKE ?)"
+            )
+            params.extend([search, search])
 
-        query = f"""
+        where_clause = " AND ".join(conditions)
+        rows_query = f"""
             SELECT
                 t.id,
                 t.date,
@@ -300,13 +354,26 @@ class ReportService:
                 COALESCE(c.name, t.category_name) AS category_name
             FROM transactions t
             LEFT JOIN categories c ON c.id = t.category_id
-            WHERE {' AND '.join(conditions)}
+            WHERE {where_clause}
             ORDER BY t.date DESC, t.id DESC
             LIMIT ?
+            OFFSET ?
+        """
+        count_query = f"""
+            SELECT COUNT(*) AS total_count
+            FROM transactions t
+            LEFT JOIN categories c ON c.id = t.category_id
+            WHERE {where_clause}
         """
         with self.database.connect() as connection:
-            rows = connection.execute(query, tuple(params)).fetchall()
-        return {"transactions": [dict(row) for row in rows]}
+            total_count = int(connection.execute(count_query, tuple(params)).fetchone()["total_count"])
+            rows = connection.execute(rows_query, tuple(params + [limit, offset])).fetchall()
+        return {
+            "transactions": [dict(row) for row in rows],
+            "total_count": total_count,
+            "limit": limit,
+            "offset": offset,
+        }
 
     def _category_status(
         self,

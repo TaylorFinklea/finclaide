@@ -6,6 +6,7 @@ from typing import Any, Callable
 from flask import Blueprint, Response, current_app, jsonify, request
 
 from finclaide.errors import ConfigError, DataIntegrityError, FinclaideError, OperationInProgressError
+from finclaide.operations import run_budget_import, run_reconcile, run_ynab_sync
 
 api = Blueprint("api", __name__, url_prefix="/api")
 
@@ -40,10 +41,7 @@ def status():
 def import_budget():
     container = _container()
     with container.operation_lock.guard("budget_import"):
-        result = container.budget_importer.import_budget(
-            container.config.budget_xlsx, container.config.budget_sheet_name
-        )
-    container.database.record_run("budget_import", "success", result)
+        result = run_budget_import(container)
     return jsonify(result)
 
 
@@ -52,7 +50,7 @@ def import_budget():
 def sync_ynab():
     container = _container()
     with container.operation_lock.guard("ynab_sync"):
-        result = container.ynab_sync.sync()
+        result = run_ynab_sync(container)
     return jsonify(result)
 
 
@@ -61,7 +59,7 @@ def sync_ynab():
 def reconcile():
     container = _container()
     with container.operation_lock.guard("reconcile"):
-        result = container.reconcile.reconcile()
+        result = run_reconcile(container)
     return jsonify(result)
 
 

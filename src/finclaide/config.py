@@ -15,6 +15,7 @@ class AppConfig:
     budget_xlsx: Path
     host: str
     port: int
+    frontend_dist: Path | None = None
     budget_sheet_name: str = "2026 Budget"
 
     @classmethod
@@ -25,6 +26,11 @@ class AppConfig:
             api_token=os.getenv("FINCLAIDE_API_TOKEN"),
             db_path=Path(os.getenv("FINCLAIDE_DB_PATH", "/data/finclaide.db")),
             budget_xlsx=Path(os.getenv("FINCLAIDE_BUDGET_XLSX", "/input/Budget.xlsx")),
+            frontend_dist=(
+                Path(frontend_dist)
+                if (frontend_dist := os.getenv("FINCLAIDE_FRONTEND_DIST"))
+                else None
+            ),
             host=os.getenv("FINCLAIDE_HOST", "0.0.0.0"),
             port=int(os.getenv("FINCLAIDE_PORT", "8050")),
         )

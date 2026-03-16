@@ -1,0 +1,111 @@
+@import '@fontsource/ibm-plex-sans/latin-400.css';
+@import '@fontsource/ibm-plex-sans/latin-500.css';
+@import '@fontsource/ibm-plex-sans/latin-600.css';
+@import '@fontsource/ibm-plex-mono/latin-400.css';
+@import '@fontsource/ibm-plex-mono/latin-500.css';
+@import 'tailwindcss';
+@import 'tw-animate-css';
+
+@custom-variant dark (&:is(.dark *));
+
+@theme inline {
+  --font-sans: 'IBM Plex Sans', sans-serif;
+  --font-mono: 'IBM Plex Mono', monospace;
+
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+}
+
+:root {
+  --background: oklch(0.14 0.015 250);
+  --foreground: oklch(0.94 0.01 95);
+  --card: oklch(0.18 0.02 250);
+  --card-foreground: oklch(0.94 0.01 95);
+  --popover: oklch(0.17 0.018 250);
+  --popover-foreground: oklch(0.94 0.01 95);
+  --primary: oklch(0.74 0.14 145);
+  --primary-foreground: oklch(0.15 0.02 250);
+  --secondary: oklch(0.26 0.02 250);
+  --secondary-foreground: oklch(0.94 0.01 95);
+  --muted: oklch(0.22 0.018 250);
+  --muted-foreground: oklch(0.72 0.02 250);
+  --accent: oklch(0.23 0.024 245);
+  --accent-foreground: oklch(0.94 0.01 95);
+  --destructive: oklch(0.64 0.18 28);
+  --border: oklch(0.29 0.02 250);
+  --input: oklch(0.23 0.02 250);
+  --ring: oklch(0.74 0.14 145);
+  --chart-1: oklch(0.72 0.14 145);
+  --chart-2: oklch(0.77 0.14 85);
+  --chart-3: oklch(0.66 0.18 28);
+  --chart-4: oklch(0.69 0.1 205);
+  --chart-5: oklch(0.77 0.09 320);
+  --radius: 1rem;
+}
+
+* {
+  border-color: var(--border);
+}
+
+html {
+  color-scheme: dark;
+}
+
+body {
+  min-height: 100vh;
+  background:
+    radial-gradient(circle at top left, rgba(0, 255, 160, 0.08), transparent 22%),
+    linear-gradient(180deg, rgba(15, 23, 42, 0.92), rgba(9, 14, 22, 1));
+  color: var(--foreground);
+  font-family: var(--font-sans);
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+body::before {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  background-image:
+    linear-gradient(rgba(255, 255, 255, 0.02) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.02) 1px, transparent 1px);
+  background-size: 24px 24px;
+  content: '';
+  opacity: 0.28;
+}
+
+#root {
+  min-height: 100vh;
+}
+
+button,
+input,
+select {
+  font: inherit;
+}

@@ -9,7 +9,19 @@ Docker-first financial planning and reporting for a single YNAB plan plus a Goog
 3. Run `make build`.
 4. Run `make up`.
 
-The Dash UI is available at `http://localhost:8050/` and the private JSON API is available under `http://localhost:8050/api/*`.
+The React dashboard is available at `http://localhost:8050/`, the browser-safe UI API is available under `http://localhost:8050/ui-api/*`, and the private external API remains available under `http://localhost:8050/api/*`.
+
+## Frontend Development
+
+The production container serves a built Vite SPA from Flask. For local UI development, run the backend normally and start the frontend on the host:
+
+```bash
+cd frontend
+npm install
+npm run dev
+```
+
+The Vite dev server proxies `/ui-api/*`, `/api/*`, and `/healthz` to `http://127.0.0.1:8050`.
 
 ## MCP Server
 
@@ -40,8 +52,14 @@ See [docs/mcp.md](docs/mcp.md) for Codex and Claude Desktop configuration exampl
 
 ## Tests
 
-Run the full test suite in Docker:
+Run backend tests in Docker:
 
 ```bash
 make test
+```
+
+Run frontend tests on the host:
+
+```bash
+make frontend-test
 ```

@@ -6,10 +6,11 @@ from flask import Flask, jsonify
 from finclaide.api import api, register_error_handlers
 from finclaide.budget_sheet import BudgetImporter
 from finclaide.config import AppConfig
-from finclaide.dashboard import create_dashboard
 from finclaide.database import Database
+from finclaide.frontend import register_frontend
 from finclaide.locking import OperationLock
 from finclaide.services import ReconciliationService, ReportService, ServiceContainer
+from finclaide.ui_api import ui_api
 from finclaide.ynab import YNABClient, YNABSyncService
 
 
@@ -43,6 +44,7 @@ def create_app(
         return jsonify({"status": "ok"})
 
     app.register_blueprint(api)
+    app.register_blueprint(ui_api)
     register_error_handlers(app)
-    create_dashboard(app, services)
+    register_frontend(app)
     return app

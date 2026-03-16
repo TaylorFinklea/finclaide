@@ -7,7 +7,7 @@ Use this repository as an MCP- and HTTP-served finance application, not as a loo
 - Imports a baseline plan from the `2026 Budget` sheet in `Budget.xlsx`
 - Syncs actual accounts, categories, and transactions from one YNAB plan
 - Reconciles planned groups/categories against exact YNAB names
-- Serves a Dash dashboard and a private JSON API from one Dockerized app
+- Serves a React dashboard, a same-origin UI API, and a private JSON API from one Dockerized app
 
 ## Source of Truth
 
@@ -29,6 +29,7 @@ Then use:
 - Dashboard: `http://127.0.0.1:8050/`
 - Health: `http://127.0.0.1:8050/healthz`
 - API base: `http://127.0.0.1:8050/api`
+- UI API base: `http://127.0.0.1:8050/ui-api`
 - Host MCP command: `finclaide-mcp`
 
 Config lives in `.env`. Important keys:
@@ -97,10 +98,11 @@ See [docs/mcp.md](docs/mcp.md) for setup and tool details.
 
 - App factory: `src/finclaide/app.py`
 - API: `src/finclaide/api.py`
+- UI API: `src/finclaide/ui_api.py`
 - Importer: `src/finclaide/budget_sheet.py`
 - YNAB client: `src/finclaide/ynab.py`
 - Reports/reconcile: `src/finclaide/services.py`
-- Dashboard: `src/finclaide/dashboard.py`
+- React dashboard: `frontend/`
 - Tests: `tests/`
 
 ## Verification

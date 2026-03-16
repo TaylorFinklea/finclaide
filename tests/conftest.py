@@ -57,6 +57,11 @@ def auth_header() -> dict[str, str]:
 
 
 @pytest.fixture
+def ui_headers() -> dict[str, str]:
+    return {"X-Finclaide-UI": "1"}
+
+
+@pytest.fixture
 def database_path(app_factory) -> Path:
     app = app_factory()
     return Path(app.config["FINCLAIDE_CONFIG"].db_path)

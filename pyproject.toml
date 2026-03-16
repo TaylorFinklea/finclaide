@@ -10,12 +10,11 @@ readme = "README.md"
 requires-python = ">=3.12"
 license = {file = "LICENSE"}
 dependencies = [
-  "dash>=2.18,<3.0",
+  "Flask>=3.0,<4.0",
   "gunicorn>=23.0,<24.0",
   "httpx>=0.28,<0.29",
   "mcp>=1.26,<2.0",
   "openpyxl>=3.1,<4.0",
-  "plotly>=6.0,<7.0",
   "python-dotenv>=1.0,<2.0",
 ]
 
