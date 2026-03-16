@@ -41,6 +41,32 @@ export const SummaryGroupSchema = z.object({
   variance_milliunits: z.number(),
 })
 
+export const OverageWatchCategorySchema = z.object({
+  group_name: z.string(),
+  category_name: z.string(),
+  block: z.string(),
+  watch_level: z.string(),
+  watch_kind: z.string(),
+  planned_milliunits: z.number(),
+  suggested_monthly_milliunits: z.number(),
+  average_spend_milliunits: z.number(),
+  active_average_spend_milliunits: z.number(),
+  max_spend_milliunits: z.number(),
+  peak_month: z.string(),
+  active_months: z.number(),
+  analysis_month_count: z.number(),
+  over_months: z.number(),
+  shortfall_milliunits: z.number(),
+  current_balance_milliunits: z.number(),
+})
+
+export const OverageWatchSchema = z.object({
+  analysis_start_month: NullableString,
+  analysis_end_month: NullableString,
+  analysis_month_count: z.number(),
+  categories: z.array(OverageWatchCategorySchema),
+})
+
 export const TransactionSchema = z.object({
   id: z.string(),
   date: z.string(),
@@ -56,6 +82,7 @@ export const SummarySchema = z.object({
   plan_year: z.number().nullable(),
   month: z.string(),
   groups: z.array(SummaryGroupSchema),
+  overage_watch: OverageWatchSchema,
   recent_transactions: z.array(TransactionSchema),
   mismatches: z.array(
     z.object({
@@ -78,6 +105,8 @@ export type StatusResponse = z.infer<typeof StatusSchema>
 export type SummaryResponse = z.infer<typeof SummarySchema>
 export type SummaryGroup = z.infer<typeof SummaryGroupSchema>
 export type SummaryCategory = z.infer<typeof SummaryCategorySchema>
+export type OverageWatch = z.infer<typeof OverageWatchSchema>
+export type OverageWatchCategory = z.infer<typeof OverageWatchCategorySchema>
 export type TransactionRow = z.infer<typeof TransactionSchema>
 export type TransactionsPageResponse = z.infer<typeof TransactionsPageSchema>
 

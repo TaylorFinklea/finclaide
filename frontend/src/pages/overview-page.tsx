@@ -91,27 +91,112 @@ export function OverviewPage() {
           </CardContent>
         </Card>
 
-        <Card className="border-border/70 bg-card/90 backdrop-blur-sm">
-          <CardHeader>
-            <CardTitle>Mismatch Status</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            {summary.mismatches.length ? (
-              summary.mismatches.map((mismatch) => (
-                <div key={`${mismatch.group_name}-${mismatch.category_name}`} className="rounded-xl border border-amber-500/20 bg-amber-500/10 p-3">
-                  <div className="font-medium text-foreground">
-                    {mismatch.group_name} / {mismatch.category_name}
-                  </div>
-                  <div className="mt-1 text-sm text-muted-foreground">{mismatch.reason}</div>
+        <div className="space-y-6">
+          <Card className="border-border/70 bg-card/90 backdrop-blur-sm">
+            <CardHeader className="space-y-3">
+              <div className="flex items-center justify-between gap-3">
+                <CardTitle>Overage Watch</CardTitle>
+                <div className="font-mono text-xs uppercase tracking-[0.18em] text-muted-foreground">
+                  {summary.overage_watch.categories.length} watched
                 </div>
-              ))
-            ) : (
-              <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/10 p-4 text-sm text-emerald-100">
-                Reconciliation is clean. All imported sheet categories have an exact YNAB match.
               </div>
-            )}
-          </CardContent>
-        </Card>
+              <p className="text-sm text-muted-foreground">
+                {formatOverageWatchWindow(
+                  summary.overage_watch.analysis_start_month,
+                  summary.overage_watch.analysis_end_month,
+                )}
+              </p>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              {summary.overage_watch.categories.length ? (
+                summary.overage_watch.categories.map((category) => (
+                  <div
+                    key={`${category.group_name}-${category.category_name}`}
+                    className="grid gap-3 rounded-xl border border-border/60 bg-background/30 p-3"
+                  >
+                    <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                      <div>
+                        <div className="font-medium text-foreground">
+                          {category.group_name} / {category.category_name}
+                        </div>
+                        <div className="mt-1 text-sm text-muted-foreground">
+                          {category.watch_kind === 'unplanned' ? 'Needs a sinking fund' : 'Current target is lagging actual run rate'}
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <StatusChip status={category.watch_level} />
+                        <div className="font-mono text-xs uppercase tracking-[0.18em] text-muted-foreground">
+                          {category.over_months}/{category.analysis_month_count} months over
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="grid gap-3 text-sm text-muted-foreground md:grid-cols-3">
+                      <div className="rounded-xl border border-border/50 bg-background/30 p-3">
+                        <div className="text-[11px] uppercase tracking-[0.18em]">Target</div>
+                        <div className="mt-2 font-mono text-base text-foreground">
+                          {formatMoney(category.planned_milliunits)}
+                        </div>
+                        <div className="mt-1 font-mono text-xs">
+                          Suggested floor {formatMoney(category.suggested_monthly_milliunits)}
+                        </div>
+                      </div>
+                      <div className="rounded-xl border border-border/50 bg-background/30 p-3">
+                        <div className="text-[11px] uppercase tracking-[0.18em]">Historical Run Rate</div>
+                        <div className="mt-2 font-mono text-base text-foreground">
+                          {formatMoney(category.average_spend_milliunits)}
+                        </div>
+                        <div className="mt-1 font-mono text-xs">
+                          Active avg {formatMoney(category.active_average_spend_milliunits)}
+                        </div>
+                      </div>
+                      <div className="rounded-xl border border-border/50 bg-background/30 p-3">
+                        <div className="text-[11px] uppercase tracking-[0.18em]">Exposure</div>
+                        <div className="mt-2 font-mono text-base text-foreground">
+                          {formatMoney(category.shortfall_milliunits)}
+                        </div>
+                        <div className="mt-1 font-mono text-xs">
+                          Peak {formatMoney(category.max_spend_milliunits)} in {formatMonthLabel(category.peak_month)}
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="flex flex-col gap-2 text-xs text-muted-foreground md:flex-row md:items-center md:justify-between">
+                      <div>Current balance {formatMoney(category.current_balance_milliunits)}</div>
+                      <div>{category.active_months} active months in the watch window</div>
+                    </div>
+                  </div>
+                ))
+              ) : (
+                <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/10 p-4 text-sm text-emerald-100">
+                  No repeat overages are breaching the watch thresholds in the completed-month history.
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          <Card className="border-border/70 bg-card/90 backdrop-blur-sm">
+            <CardHeader>
+              <CardTitle>Mismatch Status</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              {summary.mismatches.length ? (
+                summary.mismatches.map((mismatch) => (
+                  <div key={`${mismatch.group_name}-${mismatch.category_name}`} className="rounded-xl border border-amber-500/20 bg-amber-500/10 p-3">
+                    <div className="font-medium text-foreground">
+                      {mismatch.group_name} / {mismatch.category_name}
+                    </div>
+                    <div className="mt-1 text-sm text-muted-foreground">{mismatch.reason}</div>
+                  </div>
+                ))
+              ) : (
+                <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/10 p-4 text-sm text-emerald-100">
+                  Reconciliation is clean. All imported sheet categories have an exact YNAB match.
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </div>
       </div>
 
       <div className="grid gap-6 xl:grid-cols-[1.15fr_1fr]">
@@ -182,6 +267,16 @@ export function OverviewPage() {
       </div>
     </div>
   )
+}
+
+function formatOverageWatchWindow(startMonth: string | null, endMonth: string | null) {
+  if (!startMonth || !endMonth) {
+    return 'Waiting for enough completed-month history to score repeat overages.'
+  }
+  if (startMonth === endMonth) {
+    return `Completed history through ${formatMonthLabel(endMonth)}`
+  }
+  return `Completed months from ${formatMonthLabel(startMonth)} through ${formatMonthLabel(endMonth)}`
 }
 
 function OverviewSkeleton() {

@@ -37,6 +37,7 @@ def test_budget_import_sync_reconcile_and_summary(app_factory, auth_header, ui_h
     recent_dates = [item["date"] for item in payload["recent_transactions"]]
 
     assert payload["plan_year"] == 2026
+    assert payload["overage_watch"]["categories"] == []
     assert groups["Bills"]["planned_milliunits"] == 1200000
     assert groups["Bills"]["actual_milliunits"] == 1210000
     assert any(category["status"] == "under" for category in groups["Savings"]["categories"])
@@ -73,6 +74,129 @@ def test_budget_import_sync_reconcile_and_summary(app_factory, auth_header, ui_h
     assert "budget_import" in refresh_payload
     assert "ynab_sync" in refresh_payload
     assert refresh_payload["summary"]["month"] == "2026-03"
+
+
+def test_summary_includes_overage_watch_for_repeat_overages(app_factory, auth_header, tmp_path: Path):
+    workbook = build_budget_workbook(tmp_path / "Budget.xlsx")
+    app = app_factory(workbook_path=workbook)
+    client = app.test_client()
+    services = app.extensions["finclaide"]
+
+    client.post("/api/budget/import", headers=auth_header)
+    client.post("/api/ynab/sync", headers=auth_header)
+    client.post("/api/reconcile", headers=auth_header)
+
+    with services.database.connect() as connection:
+        categories = {
+            (row["group_name"], row["name"]): row["id"]
+            for row in connection.execute("SELECT id, group_name, name FROM categories WHERE deleted = 0").fetchall()
+        }
+        connection.executemany(
+            """
+            INSERT INTO transactions(
+                id,
+                plan_id,
+                account_id,
+                date,
+                payee_name,
+                memo,
+                cleared,
+                approved,
+                category_id,
+                category_name,
+                group_name,
+                amount_milliunits,
+                deleted,
+                raw_json,
+                updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            [
+                (
+                    "txn-groceries-jan",
+                    "plan-123",
+                    "acct-checking",
+                    "2026-01-05",
+                    "Grocer",
+                    None,
+                    "cleared",
+                    1,
+                    categories[("Expenses", "Groceries")],
+                    "Groceries",
+                    "Expenses",
+                    -450000,
+                    0,
+                    "{}",
+                    "2026-03-15T12:00:00+00:00",
+                ),
+                (
+                    "txn-groceries-feb",
+                    "plan-123",
+                    "acct-checking",
+                    "2026-02-05",
+                    "Grocer",
+                    None,
+                    "cleared",
+                    1,
+                    categories[("Expenses", "Groceries")],
+                    "Groceries",
+                    "Expenses",
+                    -500000,
+                    0,
+                    "{}",
+                    "2026-03-15T12:00:00+00:00",
+                ),
+                (
+                    "txn-utilities-jan",
+                    "plan-123",
+                    "acct-checking",
+                    "2026-01-03",
+                    "Utility Co",
+                    None,
+                    "cleared",
+                    1,
+                    categories[("Bills", "Utilities")],
+                    "Utilities",
+                    "Bills",
+                    -180000,
+                    0,
+                    "{}",
+                    "2026-03-15T12:00:00+00:00",
+                ),
+                (
+                    "txn-utilities-feb",
+                    "plan-123",
+                    "acct-checking",
+                    "2026-02-03",
+                    "Utility Co",
+                    None,
+                    "cleared",
+                    1,
+                    categories[("Bills", "Utilities")],
+                    "Utilities",
+                    "Bills",
+                    -190000,
+                    0,
+                    "{}",
+                    "2026-03-15T12:00:00+00:00",
+                ),
+            ],
+        )
+
+    response = client.get("/ui-api/summary?month=2026-03")
+    payload = response.get_json()
+    watch_categories = {
+        (item["group_name"], item["category_name"]): item
+        for item in payload["overage_watch"]["categories"]
+    }
+
+    assert response.status_code == 200
+    assert payload["overage_watch"]["analysis_start_month"] == "2026-01"
+    assert payload["overage_watch"]["analysis_end_month"] == "2026-02"
+    assert ("Expenses", "Groceries") in watch_categories
+    assert ("Bills", "Utilities") not in watch_categories
+    assert watch_categories[("Expenses", "Groceries")]["suggested_monthly_milliunits"] == 475000
+    assert watch_categories[("Expenses", "Groceries")]["shortfall_milliunits"] == 350000
 
 
 def test_reconcile_fails_on_missing_category(app_factory, auth_header, tmp_path: Path):

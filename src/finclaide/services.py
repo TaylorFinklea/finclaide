@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 import json
 from dataclasses import dataclass
 from datetime import UTC, date, datetime
@@ -22,6 +23,24 @@ def _month_bounds(month: str | None) -> tuple[str, str, int, str]:
     else:
         next_month = date(selected.year, selected.month + 1, 1)
     return selected.isoformat(), next_month.isoformat(), selected.month, selected.strftime("%Y-%m")
+
+
+def _iter_month_labels(start_month: str, end_month: str) -> list[str]:
+    start = datetime.strptime(start_month, "%Y-%m").date()
+    end = datetime.strptime(end_month, "%Y-%m").date()
+    labels: list[str] = []
+    cursor = date(start.year, start.month, 1)
+    while cursor <= end:
+        labels.append(cursor.strftime("%Y-%m"))
+        if cursor.month == 12:
+            cursor = date(cursor.year + 1, 1, 1)
+        else:
+            cursor = date(cursor.year, cursor.month + 1, 1)
+    return labels
+
+
+def _ceil_div(numerator: int, denominator: int) -> int:
+    return math.ceil(numerator / denominator)
 
 
 @dataclass
@@ -168,6 +187,7 @@ class ReportService:
                     "plan_year": None,
                     "month": month_label,
                     "groups": [],
+                    "overage_watch": self._empty_overage_watch(),
                     "recent_transactions": [],
                     "mismatches": [],
                     "sync_status": self.status(),
@@ -240,6 +260,11 @@ class ReportService:
                 LIMIT 20
                 """
             ).fetchall()
+            overage_watch = self._overage_watch(
+                connection,
+                planned_rows=planned_rows,
+                analysis_end=month_start,
+            )
 
         group_map: dict[str, dict[str, Any]] = {}
         for row in planned_rows:
@@ -286,6 +311,7 @@ class ReportService:
             "plan_year": latest_import["plan_year"],
             "month": month_label,
             "groups": list(group_map.values()),
+            "overage_watch": overage_watch,
             "recent_transactions": [dict(row) for row in transactions],
             "mismatches": [dict(row) for row in mismatch_rows],
             "sync_status": self.status(),
@@ -404,6 +430,155 @@ class ReportService:
         if actual_milliunits < planned_milliunits:
             return "under"
         return "on_target"
+
+    def _empty_overage_watch(self) -> dict[str, Any]:
+        return {
+            "analysis_start_month": None,
+            "analysis_end_month": None,
+            "analysis_month_count": 0,
+            "categories": [],
+        }
+
+    def _overage_watch(
+        self,
+        connection: Any,
+        *,
+        planned_rows: list[Any],
+        analysis_end: str,
+    ) -> dict[str, Any]:
+        watch_rows = [
+            row
+            for row in planned_rows
+            if row["block"] in {"monthly", "stipends"} and row["group_name"] != "Payments"
+        ]
+        if not watch_rows:
+            return self._empty_overage_watch()
+
+        bounds = connection.execute(
+            """
+            SELECT MIN(date) AS min_date, MAX(date) AS max_date
+            FROM transactions
+            WHERE deleted = 0
+              AND date < ?
+            """,
+            (analysis_end,),
+        ).fetchone()
+        if bounds["min_date"] is None or bounds["max_date"] is None:
+            return self._empty_overage_watch()
+
+        analysis_start_month = bounds["min_date"][:7]
+        analysis_end_month = bounds["max_date"][:7]
+        month_labels = _iter_month_labels(analysis_start_month, analysis_end_month)
+
+        spend_rows = connection.execute(
+            """
+            SELECT
+                substr(t.date, 1, 7) AS month,
+                COALESCE(c.group_name, t.group_name) AS group_name,
+                COALESCE(c.name, t.category_name) AS category_name,
+                SUM(CASE WHEN t.amount_milliunits < 0 THEN -1 * t.amount_milliunits ELSE 0 END) AS spend_milliunits
+            FROM transactions t
+            LEFT JOIN categories c ON c.id = t.category_id
+            WHERE t.deleted = 0
+              AND t.date < ?
+              AND COALESCE(c.group_name, t.group_name) IS NOT NULL
+              AND COALESCE(c.name, t.category_name) IS NOT NULL
+            GROUP BY 1, 2, 3
+            """,
+            (analysis_end,),
+        ).fetchall()
+        spend_lookup = {
+            (row["month"], row["group_name"], row["category_name"]): int(row["spend_milliunits"] or 0)
+            for row in spend_rows
+        }
+
+        categories: list[dict[str, Any]] = []
+        for row in watch_rows:
+            series = [
+                (
+                    label,
+                    spend_lookup.get((label, row["group_name"], row["category_name"]), 0),
+                )
+                for label in month_labels
+            ]
+            first_active_index = next((index for index, (_, spend) in enumerate(series) if spend > 0), None)
+            if first_active_index is None:
+                continue
+
+            analysis_series = series[first_active_index:]
+            active_months = sum(1 for _, spend in analysis_series if spend > 0)
+            if active_months < 2:
+                continue
+
+            planned_milliunits = int(row["planned_milliunits"])
+            current_balance = int(row["current_balance_milliunits"])
+            cumulative_balance = 0
+            cumulative_spend = 0
+            min_cumulative_balance = 0
+            over_months = 0
+            peak_month = analysis_series[0][0]
+            peak_spend = 0
+            required_monthly = 0
+
+            for index, (label, spend) in enumerate(analysis_series, start=1):
+                cumulative_spend += spend
+                cumulative_balance += planned_milliunits - spend
+                min_cumulative_balance = min(min_cumulative_balance, cumulative_balance)
+                required_monthly = max(required_monthly, _ceil_div(cumulative_spend, index))
+                if spend > planned_milliunits:
+                    over_months += 1
+                if spend > peak_spend:
+                    peak_month = label
+                    peak_spend = spend
+
+            shortfall_milliunits = max(0, -1 * min_cumulative_balance)
+            suggested_monthly = max(planned_milliunits, required_monthly)
+            if shortfall_milliunits < 200_000 and suggested_monthly - planned_milliunits < 50_000:
+                continue
+
+            total_spend = sum(spend for _, spend in analysis_series)
+            categories.append(
+                {
+                    "group_name": row["group_name"],
+                    "category_name": row["category_name"],
+                    "block": row["block"],
+                    "watch_level": (
+                        "critical"
+                        if planned_milliunits == 0
+                        or shortfall_milliunits >= 500_000
+                        or suggested_monthly - planned_milliunits >= 250_000
+                        else "warning"
+                    ),
+                    "watch_kind": "unplanned" if planned_milliunits == 0 else "underplanned",
+                    "planned_milliunits": planned_milliunits,
+                    "suggested_monthly_milliunits": suggested_monthly,
+                    "average_spend_milliunits": _ceil_div(total_spend, len(analysis_series)),
+                    "active_average_spend_milliunits": _ceil_div(total_spend, active_months),
+                    "max_spend_milliunits": peak_spend,
+                    "peak_month": peak_month,
+                    "active_months": active_months,
+                    "analysis_month_count": len(analysis_series),
+                    "over_months": over_months,
+                    "shortfall_milliunits": shortfall_milliunits,
+                    "current_balance_milliunits": current_balance,
+                }
+            )
+
+        categories.sort(
+            key=lambda item: (
+                item["watch_level"] != "critical",
+                -item["shortfall_milliunits"],
+                -item["suggested_monthly_milliunits"],
+                item["group_name"],
+                item["category_name"],
+            )
+        )
+        return {
+            "analysis_start_month": analysis_start_month,
+            "analysis_end_month": analysis_end_month,
+            "analysis_month_count": len(month_labels),
+            "categories": categories,
+        }
 
 
 @dataclass

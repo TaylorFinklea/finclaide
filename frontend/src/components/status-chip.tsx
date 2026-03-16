@@ -8,6 +8,10 @@ const STATUS_STYLES: Record<string, string> = {
   over: 'border-rose-400/30 bg-rose-400/15 text-rose-100',
   under: 'border-emerald-400/30 bg-emerald-400/10 text-emerald-100',
   on_target: 'border-slate-300/20 bg-slate-300/10 text-slate-100',
+  warning: 'border-amber-400/30 bg-amber-400/15 text-amber-100',
+  critical: 'border-rose-400/30 bg-rose-400/15 text-rose-100',
+  underplanned: 'border-amber-400/30 bg-amber-400/15 text-amber-100',
+  unplanned: 'border-rose-400/30 bg-rose-400/15 text-rose-100',
 }
 
 export function StatusChip({ status }: { status: string }) {
