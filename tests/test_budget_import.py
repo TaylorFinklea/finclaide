@@ -60,6 +60,32 @@ def test_import_budget_supports_current_layout(tmp_path: Path):
     )
 
 
+def test_import_budget_ignores_labeled_income_rows_outside_monthly_total_range(tmp_path: Path):
+    workbook = build_budget_workbook(
+        tmp_path / "Budget.xlsx",
+        labeled_monthly_income=True,
+    )
+    database = Database(tmp_path / "test.db")
+    database.initialize()
+
+    summary = BudgetImporter(database).import_budget(workbook, "2026 Budget")
+
+    assert summary["row_count"] == 11
+    with database.connect() as connection:
+        planned_rows = connection.execute(
+            """
+            SELECT group_name, category_name, block
+            FROM v_latest_planned_categories
+            ORDER BY id
+            """
+        ).fetchall()
+
+    assert not any(
+        row["block"] == "monthly" and row["category_name"] == "TherapyNotes"
+        for row in planned_rows
+    )
+
+
 def test_import_budget_rejects_duplicate_categories(tmp_path: Path):
     workbook = build_budget_workbook(tmp_path / "Budget.xlsx", duplicate_category=True)
     database = Database(tmp_path / "test.db")

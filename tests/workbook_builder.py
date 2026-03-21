@@ -19,6 +19,7 @@ def build_budget_workbook(
     destination: Path,
     *,
     duplicate_category: bool = False,
+    labeled_monthly_income: bool = False,
     missing_cached_formula: bool = False,
     wrong_sheet_name: bool = False,
     invalid_layout: bool = False,
@@ -36,6 +37,8 @@ def build_budget_workbook(
 
     sheet["A1"] = "Monthly Budget"
     sheet["A2"] = "Bills"
+    if labeled_monthly_income:
+        sheet["A3"] = "TherapyNotes"
     sheet["B3"] = "=3000"
     sheet["A5"] = "Rent"
     sheet["B5"] = 1000

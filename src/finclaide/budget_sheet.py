@@ -135,6 +135,7 @@ class BudgetImporter:
     def _parse_monthly_block(self, sheet_formula, sheet_cached) -> list[PlannedCategoryRow]:
         rows: list[PlannedCategoryRow] = []
         current_group: str | None = None
+        first_data_row = self._formula_range_start_row(sheet_formula, "A", "B", "B53") or 2
         for row_number in range(2, sheet_formula.max_row + 1):
             name_cell = f"A{row_number}"
             amount_cell = f"B{row_number}"
@@ -146,6 +147,8 @@ class BudgetImporter:
                 break
             if amount_value in (None, ""):
                 current_group = name_value
+                continue
+            if row_number < first_data_row:
                 continue
             if current_group is None:
                 continue
@@ -348,6 +351,30 @@ class BudgetImporter:
         if isinstance(cell_value, str) and cell_value.startswith("="):
             return cell_value
         return None
+
+    def _formula_range_start_row(
+        self,
+        sheet_formula,
+        label_column: str,
+        amount_column: str,
+        legacy_cell: str,
+    ) -> int | None:
+        for row_number in range(1, sheet_formula.max_row + 1):
+            if self._text_value(sheet_formula[f"{label_column}{row_number}"].value) != "Total":
+                continue
+            formula_value = sheet_formula[f"{amount_column}{row_number}"].value
+            start_row = self._extract_formula_range_start_row(formula_value, amount_column)
+            if start_row is not None:
+                return start_row
+        return self._extract_formula_range_start_row(sheet_formula[legacy_cell].value, amount_column)
+
+    def _extract_formula_range_start_row(self, formula_value: Any, amount_column: str) -> int | None:
+        if not isinstance(formula_value, str) or not formula_value.startswith("="):
+            return None
+        match = re.search(rf"{amount_column}(\d+):{amount_column}\d+", formula_value)
+        if match is None:
+            return None
+        return int(match.group(1))
 
     def _find_header_column(self, sheet_formula, expected_group: str, candidates: list[str]) -> str:
         for column in candidates:
