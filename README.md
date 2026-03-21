@@ -50,6 +50,10 @@ or:
 
 See [docs/mcp.md](docs/mcp.md) for Codex and Claude Desktop configuration examples plus the full MCP surface.
 
+## Product Roadmap
+
+See [docs/roadmap.md](docs/roadmap.md) for the current multi-phase product roadmap and product direction.
+
 ## Tests
 
 Run backend tests in Docker:
