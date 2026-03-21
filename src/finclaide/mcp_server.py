@@ -32,17 +32,25 @@ def create_mcp_server(
     server = FastMCP(
         name="Finclaide",
         instructions=(
-            "Use finance-oriented tools first. Treat the Finclaide API as the source for plan, "
-            "transactions, and reconciliation state. Do not infer or mutate financial data outside the exposed tools."
+            "Finclaide is a personal finance assistant. All monetary values are integer milliunits "
+            "(divide by 1000 for dollars). Start with health_check() for general questions. "
+            "Use get_summary(month) for plan-vs-actual. Use compare_months, spending_trends, "
+            "and detect_anomalies for analysis. Use budget_recommendations and year_end_projection "
+            "for planning. Data comes from YNAB (actuals) and an Excel workbook (plan). "
+            "Call refresh_all() if data seems stale. Never infer financial data — always query."
         ),
     )
 
     def require_health() -> None:
         api_client.check_health()
 
+    # ------------------------------------------------------------------
+    # Core tools (7)
+    # ------------------------------------------------------------------
+
     @server.tool(
         name="get_status",
-        description="Get Finclaide runtime and sync status.",
+        description="Get Finclaide runtime and sync status including last import, sync, and reconcile timestamps.",
         annotations=READ_ONLY,
         structured_output=True,
     )
@@ -52,7 +60,11 @@ def create_mcp_server(
 
     @server.tool(
         name="get_summary",
-        description="Get the machine-facing finance summary for a month in YYYY-MM format.",
+        description=(
+            "Get plan-vs-actual finance summary for a month (YYYY-MM format). Returns groups with "
+            "categories showing planned, actual, variance, balance, and status. Also includes "
+            "overage watch, mismatches, and recent transactions."
+        ),
         annotations=READ_ONLY,
         structured_output=True,
     )
@@ -62,7 +74,10 @@ def create_mcp_server(
 
     @server.tool(
         name="list_transactions",
-        description="List transactions with optional date, group, category, and limit filters.",
+        description=(
+            "List transactions with optional date, group, category, and limit filters. "
+            "Use this to drill into specific spending after identifying issues with other tools."
+        ),
         annotations=READ_ONLY,
         structured_output=True,
     )
@@ -84,7 +99,7 @@ def create_mcp_server(
 
     @server.tool(
         name="import_budget",
-        description="Import the mounted workbook into Finclaide.",
+        description="Import the mounted workbook into Finclaide. Replaces the current baseline plan.",
         annotations=OPERATIONAL,
         structured_output=True,
     )
@@ -137,77 +152,111 @@ def create_mcp_server(
             "summary": api_client.get_summary(month=month),
         }
 
+    # ------------------------------------------------------------------
+    # Analytical tools (6)
+    # ------------------------------------------------------------------
+
     @server.tool(
-        name="api_get_status",
-        description="Mirror tool for GET /api/status.",
+        name="compare_months",
+        description=(
+            "Compare spending between two months. Returns per-category spending for both months "
+            "with absolute and percentage deltas. Use this to answer questions like 'why did "
+            "spending change between January and February' or 'what's different this month vs "
+            "last month'. Parameters: month_a and month_b in YYYY-MM format."
+        ),
         annotations=READ_ONLY,
         structured_output=True,
     )
-    def api_get_status() -> dict[str, Any]:
+    def compare_months(month_a: str, month_b: str) -> dict[str, Any]:
         require_health()
-        return api_client.get_status()
+        return api_client.get_compare_months(month_a, month_b)
 
     @server.tool(
-        name="api_post_budget_import",
-        description="Mirror tool for POST /api/budget/import.",
-        annotations=OPERATIONAL,
-        structured_output=True,
-    )
-    def api_post_budget_import() -> dict[str, Any]:
-        require_health()
-        return api_client.import_budget()
-
-    @server.tool(
-        name="api_post_ynab_sync",
-        description="Mirror tool for POST /api/ynab/sync.",
-        annotations=OPERATIONAL,
-        structured_output=True,
-    )
-    def api_post_ynab_sync() -> dict[str, Any]:
-        require_health()
-        return api_client.sync_ynab()
-
-    @server.tool(
-        name="api_post_reconcile",
-        description="Mirror tool for POST /api/reconcile.",
-        annotations=OPERATIONAL,
-        structured_output=True,
-    )
-    def api_post_reconcile() -> dict[str, Any]:
-        require_health()
-        return api_client.reconcile()
-
-    @server.tool(
-        name="api_get_reports_summary",
-        description="Mirror tool for GET /api/reports/summary.",
+        name="spending_trends",
+        description=(
+            "Get monthly spending trends over N months, optionally filtered by group or category. "
+            "Returns time series with average, min, max, trend direction, and volatility per "
+            "category. Use this for questions like 'show me grocery spending trends' or "
+            "'what categories are increasing'. Defaults to 6 months lookback."
+        ),
         annotations=READ_ONLY,
         structured_output=True,
     )
-    def api_get_reports_summary(month: str | None = None) -> dict[str, Any]:
-        require_health()
-        return api_client.get_summary(month=month)
-
-    @server.tool(
-        name="api_get_transactions",
-        description="Mirror tool for GET /api/transactions.",
-        annotations=READ_ONLY,
-        structured_output=True,
-    )
-    def api_get_transactions(
-        since: str | None = None,
-        until: str | None = None,
+    def spending_trends(
+        months: int = 6,
         group: str | None = None,
         category: str | None = None,
-        limit: int = 50,
     ) -> dict[str, Any]:
         require_health()
-        return api_client.get_transactions(
-            since=since,
-            until=until,
-            group=group,
-            category=category,
-            limit=limit,
+        return api_client.get_spending_trends(
+            months=months,
+            group_name=group,
+            category_name=category,
         )
+
+    @server.tool(
+        name="year_end_projection",
+        description=(
+            "Project year-end spending based on actual run rate for completed months and plan "
+            "for remaining months. Returns per-category projected totals vs annual plan with "
+            "variances. Use this for 'am I on track for the year' or 'what will my total "
+            "spending be'."
+        ),
+        annotations=READ_ONLY,
+        structured_output=True,
+    )
+    def year_end_projection(as_of_month: str | None = None) -> dict[str, Any]:
+        require_health()
+        return api_client.get_year_end_projection(as_of_month=as_of_month)
+
+    @server.tool(
+        name="detect_anomalies",
+        description=(
+            "Find unusual transactions and spending spikes using statistical deviation. "
+            "Returns individual transactions and category-months that exceed the threshold "
+            "(default 2 standard deviations from mean). Use for 'any unusual spending' or "
+            "'what looks weird in my transactions'."
+        ),
+        annotations=READ_ONLY,
+        structured_output=True,
+    )
+    def detect_anomalies(months: int = 3, threshold: float = 2.0) -> dict[str, Any]:
+        require_health()
+        return api_client.get_anomalies(months=months, threshold=threshold)
+
+    @server.tool(
+        name="budget_recommendations",
+        description=(
+            "Get concrete budget optimization recommendations based on spending patterns, "
+            "overage history, and year-end projections. Each recommendation includes a suggested "
+            "action, reason, and projected annual impact. Use for 'what should I adjust in my "
+            "budget' or 'where am I wasting money'."
+        ),
+        annotations=READ_ONLY,
+        structured_output=True,
+    )
+    def budget_recommendations() -> dict[str, Any]:
+        require_health()
+        return api_client.get_recommendations()
+
+    @server.tool(
+        name="health_check",
+        description=(
+            "Comprehensive financial health check. Returns prioritized alerts about overspending, "
+            "stale data, reconciliation issues, anomalies, and year-end projection risks. "
+            "This is the FIRST tool to call for a general 'how are my finances' question or "
+            "periodic check-in. Severity levels: critical, warning, info."
+        ),
+        annotations=READ_ONLY,
+        structured_output=True,
+    )
+    def health_check() -> dict[str, Any]:
+        require_health()
+        return api_client.get_health_check()
+
+    # ------------------------------------------------------------------
+    # Resources
+    # ------------------------------------------------------------------
 
     @server.resource(
         "finclaide://status",
@@ -290,9 +339,23 @@ def create_mcp_server(
         )
         return _json_text(payload)
 
+    @server.resource(
+        "finclaide://health",
+        name="finclaide_health",
+        description="Current financial health check with alerts.",
+        mime_type="application/json",
+    )
+    def health_resource() -> str:
+        require_health()
+        return _json_text(api_client.get_health_check())
+
+    # ------------------------------------------------------------------
+    # Prompts
+    # ------------------------------------------------------------------
+
     @server.prompt(
         name="monthly_review",
-        description="Guide an AI through a monthly review using Finclaide data.",
+        description="Guide an AI through a comprehensive monthly review.",
     )
     def monthly_review(month: str) -> list[PromptMessage]:
         return [
@@ -301,9 +364,14 @@ def create_mcp_server(
                 content=TextContent(
                     type="text",
                     text=(
-                        f"Review the Finclaide data for {month}. Start with get_summary(month={month!r}), "
-                        "then inspect list_transactions for categories that are over target, underfunded yearly items, "
-                        "or uncategorized spending. Produce concrete findings grounded in the returned JSON."
+                        f"Review my finances for {month}. Follow these steps:\n"
+                        "1. Call health_check() for current alerts.\n"
+                        f"2. Call get_summary(month={month!r}) for plan-vs-actual by category.\n"
+                        f"3. Call compare_months with {month} and the prior month to spot changes.\n"
+                        "4. For any categories that are over target or flagged in overage watch, "
+                        "use list_transactions to drill into the specifics.\n"
+                        "5. Produce concrete findings: what's on track, what needs attention, "
+                        "and any recommended budget adjustments."
                     ),
                 ),
             )
@@ -330,7 +398,7 @@ def create_mcp_server(
 
     @server.prompt(
         name="spending_check",
-        description="Guide an AI through transaction review for a budget month.",
+        description="Deep-dive into spending patterns for a specific month.",
     )
     def spending_check(month: str) -> list[PromptMessage]:
         return [
@@ -339,9 +407,56 @@ def create_mcp_server(
                 content=TextContent(
                     type="text",
                     text=(
-                        f"Check spending for {month}. Use get_summary(month={month!r}) for plan-vs-actual context, "
-                        "then use list_transactions with targeted filters to explain major overages, unusual spending, "
-                        "and categories that need attention."
+                        f"Analyze spending for {month}. Follow these steps:\n"
+                        f"1. Call spending_trends(months=6) to see how {month} compares to recent history.\n"
+                        f"2. Call detect_anomalies() to find unusual transactions.\n"
+                        f"3. Call get_summary(month={month!r}) for plan-vs-actual context.\n"
+                        "4. For flagged categories, use list_transactions with targeted filters.\n"
+                        "5. Report: major overages, anomalous transactions, and categories trending up."
+                    ),
+                ),
+            )
+        ]
+
+    @server.prompt(
+        name="budget_tune_up",
+        description="Guide an AI through budget optimization using actual spending data.",
+    )
+    def budget_tune_up() -> list[PromptMessage]:
+        return [
+            PromptMessage(
+                role="user",
+                content=TextContent(
+                    type="text",
+                    text=(
+                        "Perform a budget tune-up. Follow these steps:\n"
+                        "1. Call budget_recommendations() to see suggested adjustments.\n"
+                        "2. Call year_end_projection() to understand the full-year impact.\n"
+                        "3. For each recommendation, call spending_trends(category=...) to validate the pattern.\n"
+                        "4. Produce a concrete list of budget line items to change, with dollar amounts "
+                        "and justification for each change."
+                    ),
+                ),
+            )
+        ]
+
+    @server.prompt(
+        name="periodic_check",
+        description="Quick proactive check for issues — ideal for daily/weekly automated runs.",
+    )
+    def periodic_check() -> list[PromptMessage]:
+        return [
+            PromptMessage(
+                role="user",
+                content=TextContent(
+                    type="text",
+                    text=(
+                        "Run a periodic finance check. Follow these steps:\n"
+                        "1. Call health_check() first.\n"
+                        "2. If data is stale (sync > 24h), call refresh_all().\n"
+                        "3. Report any critical or warning alerts with context.\n"
+                        "4. If anomalies are flagged, drill into the specific transactions.\n"
+                        "5. Keep the report concise — only surface items that need attention."
                     ),
                 ),
             )

@@ -17,28 +17,57 @@ from finclaide.mcp_server import create_mcp_server
 from tests.workbook_builder import build_budget_workbook
 
 
-@pytest.mark.anyio
-async def test_mcp_server_lists_tools_resources_and_prompts():
+def _mock_handler(request: httpx.Request) -> httpx.Response:
+    """Shared mock handler for MCP tests — covers core + analytics routes."""
+    path = request.url.path
+    if path == "/healthz":
+        return httpx.Response(200, json={"status": "ok"})
+    if path == "/api/status":
+        return httpx.Response(200, json={
+            "plan_id": "plan-123",
+            "last_reconcile_at": "2026-03-15T12:00:24.000000+00:00",
+            "last_reconcile_status": "success",
+        })
+    if path == "/api/reports/summary":
+        month = request.url.params.get("month", "2026-03")
+        return httpx.Response(200, json={"month": month, "mismatches": [], "groups": []})
+    if path == "/api/transactions":
+        return httpx.Response(200, json={"transactions": [{"date": "2026-03-15"}]})
+    if path == "/api/budget/import":
+        return httpx.Response(200, json={"row_count": 75})
+    if path == "/api/ynab/sync":
+        return httpx.Response(200, json={"transaction_count": 11})
+    if path == "/api/reconcile":
+        return httpx.Response(200, json={"mismatch_count": 0})
+    # Analytics routes
+    if path == "/api/analytics/compare":
+        return httpx.Response(200, json={"month_a": "2026-02", "month_b": "2026-03", "categories": [], "totals": {}})
+    if path == "/api/analytics/trends":
+        return httpx.Response(200, json={"lookback_months": 6, "since": "2025-09", "categories": []})
+    if path == "/api/analytics/projection":
+        return httpx.Response(200, json={"plan_year": 2026, "months_elapsed": 3, "categories": [], "totals": {}})
+    if path == "/api/analytics/anomalies":
+        return httpx.Response(200, json={"transaction_anomalies": [], "category_anomalies": []})
+    if path == "/api/analytics/recommendations":
+        return httpx.Response(200, json={"recommendations": [], "summary": {}})
+    if path == "/api/analytics/health":
+        return httpx.Response(200, json={"overall_status": "healthy", "alerts": [], "stats": {}})
+    raise AssertionError(f"Unexpected path {path}")
+
+
+def _make_test_server(handler=None):
     config = MCPConfig(
         api_base_url="http://finclaide.test/api",
         api_token="token",
         health_url="http://finclaide.test/healthz",
     )
+    api_client = FinclaideApiClient(config, transport=httpx.MockTransport(handler or _mock_handler))
+    return create_mcp_server(config, api_client=api_client)
 
-    def handler(request: httpx.Request) -> httpx.Response:
-        if request.url.path == "/healthz":
-            return httpx.Response(200, json={"status": "ok"})
-        if request.url.path == "/api/status":
-            return httpx.Response(200, json={"plan_id": "plan-123"})
-        if request.url.path == "/api/reports/summary":
-            month = request.url.params.get("month", "2026-03")
-            return httpx.Response(200, json={"month": month, "mismatches": [], "groups": []})
-        if request.url.path == "/api/transactions":
-            return httpx.Response(200, json={"transactions": []})
-        raise AssertionError(f"Unexpected path {request.url.path}")
 
-    api_client = FinclaideApiClient(config, transport=httpx.MockTransport(handler))
-    server = create_mcp_server(config, api_client=api_client)
+@pytest.mark.anyio
+async def test_mcp_server_lists_tools_resources_and_prompts():
+    server = _make_test_server()
 
     tools = await server.list_tools()
     tool_names = {tool.name for tool in tools}
@@ -50,12 +79,12 @@ async def test_mcp_server_lists_tools_resources_and_prompts():
         "sync_ynab",
         "reconcile",
         "refresh_all",
-        "api_get_status",
-        "api_post_budget_import",
-        "api_post_ynab_sync",
-        "api_post_reconcile",
-        "api_get_reports_summary",
-        "api_get_transactions",
+        "compare_months",
+        "spending_trends",
+        "year_end_projection",
+        "detect_anomalies",
+        "budget_recommendations",
+        "health_check",
     }.issubset(tool_names)
 
     resources = await server.list_resources()
@@ -64,6 +93,7 @@ async def test_mcp_server_lists_tools_resources_and_prompts():
     assert "finclaide://summary/current" in resource_uris
     assert "finclaide://reconciliation/latest" in resource_uris
     assert "finclaide://transactions/recent" in resource_uris
+    assert "finclaide://health" in resource_uris
 
     templates = await server.list_resource_templates()
     template_uris = {template.uriTemplate for template in templates}
@@ -72,40 +102,12 @@ async def test_mcp_server_lists_tools_resources_and_prompts():
 
     prompts = await server.list_prompts()
     prompt_names = {prompt.name for prompt in prompts}
-    assert {"monthly_review", "investigate_mismatches", "spending_check"} == prompt_names
+    assert {"monthly_review", "investigate_mismatches", "spending_check", "budget_tune_up", "periodic_check"} == prompt_names
 
 
 @pytest.mark.anyio
 async def test_mcp_server_reads_resources_and_prompts():
-    config = MCPConfig(
-        api_base_url="http://finclaide.test/api",
-        api_token="token",
-        health_url="http://finclaide.test/healthz",
-    )
-
-    def handler(request: httpx.Request) -> httpx.Response:
-        if request.url.path == "/healthz":
-            return httpx.Response(200, json={"status": "ok"})
-        if request.url.path == "/api/status":
-            return httpx.Response(
-                200,
-                json={
-                    "plan_id": "plan-123",
-                    "last_reconcile_at": "2026-03-15T12:00:24.000000+00:00",
-                    "last_reconcile_status": "success",
-                },
-            )
-        if request.url.path == "/api/reports/summary":
-            return httpx.Response(
-                200,
-                json={"month": request.url.params.get("month", "2026-03"), "mismatches": [], "groups": []},
-            )
-        if request.url.path == "/api/transactions":
-            return httpx.Response(200, json={"transactions": [{"date": "2026-03-15"}]})
-        raise AssertionError(f"Unexpected path {request.url.path}")
-
-    api_client = FinclaideApiClient(config, transport=httpx.MockTransport(handler))
-    server = create_mcp_server(config, api_client=api_client)
+    server = _make_test_server()
 
     status_contents = await server.read_resource("finclaide://status")
     assert '"plan_id": "plan-123"' in status_contents[0].content
@@ -116,6 +118,9 @@ async def test_mcp_server_reads_resources_and_prompts():
     recent_contents = await server.read_resource("finclaide://transactions/recent")
     assert '"date": "2026-03-15"' in recent_contents[0].content
 
+    health_contents = await server.read_resource("finclaide://health")
+    assert '"overall_status": "healthy"' in health_contents[0].content
+
     prompt = await server.get_prompt("monthly_review", {"month": "2026-03"})
     assert "2026-03" in prompt.messages[0].content.text
 
@@ -123,34 +128,29 @@ async def test_mcp_server_reads_resources_and_prompts():
 @pytest.mark.anyio
 async def test_mcp_server_tool_outputs_and_refresh_order():
     call_order: list[str] = []
-    config = MCPConfig(
-        api_base_url="http://finclaide.test/api",
-        api_token="token",
-        health_url="http://finclaide.test/healthz",
-    )
 
     def handler(request: httpx.Request) -> httpx.Response:
-        if request.url.path == "/healthz":
+        path = request.url.path
+        if path == "/healthz":
             return httpx.Response(200, json={"status": "ok"})
-        if request.url.path == "/api/budget/import":
+        if path == "/api/budget/import":
             call_order.append("import")
             return httpx.Response(200, json={"row_count": 75})
-        if request.url.path == "/api/ynab/sync":
+        if path == "/api/ynab/sync":
             call_order.append("sync")
             return httpx.Response(200, json={"transaction_count": 11})
-        if request.url.path == "/api/reconcile":
+        if path == "/api/reconcile":
             call_order.append("reconcile")
             return httpx.Response(200, json={"mismatch_count": 0})
-        if request.url.path == "/api/status":
+        if path == "/api/status":
             return httpx.Response(200, json={"last_reconcile_status": "success"})
-        if request.url.path == "/api/reports/summary":
+        if path == "/api/reports/summary":
             return httpx.Response(200, json={"month": request.url.params.get("month", "2026-03"), "groups": []})
-        if request.url.path == "/api/transactions":
+        if path == "/api/transactions":
             return httpx.Response(200, json={"transactions": []})
-        raise AssertionError(f"Unexpected path {request.url.path}")
+        raise AssertionError(f"Unexpected path {path}")
 
-    api_client = FinclaideApiClient(config, transport=httpx.MockTransport(handler))
-    server = create_mcp_server(config, api_client=api_client)
+    server = _make_test_server(handler)
 
     _, summary = await server.call_tool("get_summary", {"month": "2026-03"})
     assert summary["month"] == "2026-03"
@@ -164,30 +164,47 @@ async def test_mcp_server_tool_outputs_and_refresh_order():
 
 
 @pytest.mark.anyio
+async def test_mcp_server_analytical_tools():
+    server = _make_test_server()
+
+    _, compare = await server.call_tool("compare_months", {"month_a": "2026-02", "month_b": "2026-03"})
+    assert compare["month_a"] == "2026-02"
+
+    _, trends = await server.call_tool("spending_trends", {"months": 3})
+    assert trends["lookback_months"] == 6  # server returns default from mock
+
+    _, projection = await server.call_tool("year_end_projection", {})
+    assert projection["plan_year"] == 2026
+
+    _, anomalies = await server.call_tool("detect_anomalies", {})
+    assert "transaction_anomalies" in anomalies
+
+    _, recs = await server.call_tool("budget_recommendations", {})
+    assert "recommendations" in recs
+
+    _, health = await server.call_tool("health_check", {})
+    assert health["overall_status"] == "healthy"
+
+
+@pytest.mark.anyio
 async def test_mcp_server_refresh_surfaces_reconcile_errors():
-    config = MCPConfig(
-        api_base_url="http://finclaide.test/api",
-        api_token="token",
-        health_url="http://finclaide.test/healthz",
-    )
-
     def handler(request: httpx.Request) -> httpx.Response:
-        if request.url.path == "/healthz":
+        path = request.url.path
+        if path == "/healthz":
             return httpx.Response(200, json={"status": "ok"})
-        if request.url.path == "/api/budget/import":
+        if path == "/api/budget/import":
             return httpx.Response(200, json={"row_count": 75})
-        if request.url.path == "/api/ynab/sync":
+        if path == "/api/ynab/sync":
             return httpx.Response(200, json={"transaction_count": 11})
-        if request.url.path == "/api/reconcile":
+        if path == "/api/reconcile":
             return httpx.Response(400, json={"error": "Reconciliation failed with 2 mismatches."})
-        if request.url.path == "/api/status":
+        if path == "/api/status":
             return httpx.Response(200, json={"last_reconcile_status": "failed"})
-        if request.url.path == "/api/reports/summary":
+        if path == "/api/reports/summary":
             return httpx.Response(200, json={"month": "2026-03", "mismatches": [{"category_name": "Missing"}]})
-        raise AssertionError(f"Unexpected path {request.url.path}")
+        raise AssertionError(f"Unexpected path {path}")
 
-    api_client = FinclaideApiClient(config, transport=httpx.MockTransport(handler))
-    server = create_mcp_server(config, api_client=api_client)
+    server = _make_test_server(handler)
 
     _, payload = await server.call_tool("refresh_all", {"month": "2026-03"})
     assert payload["reconcile_result"] is None
@@ -246,6 +263,7 @@ async def test_finclaide_mcp_stdio_launch(app_factory, tmp_path):
                 await session.initialize()
                 tools = await session.list_tools()
                 assert any(tool.name == "get_summary" for tool in tools.tools)
+                assert any(tool.name == "health_check" for tool in tools.tools)
                 result = await session.call_tool("get_summary", {"month": "2026-03"})
                 assert result.structuredContent["month"] == "2026-03"
     finally:

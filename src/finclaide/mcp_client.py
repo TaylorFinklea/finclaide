@@ -90,6 +90,52 @@ class FinclaideApiClient:
         }
         return self._request_json("GET", "/transactions", params=params or None)
 
+    # ------------------------------------------------------------------
+    # Analytics endpoints
+    # ------------------------------------------------------------------
+
+    def get_compare_months(self, month_a: str, month_b: str) -> dict[str, Any]:
+        return self._request_json("GET", "/analytics/compare", params={"month_a": month_a, "month_b": month_b})
+
+    def get_spending_trends(
+        self,
+        months: int = 6,
+        group_name: str | None = None,
+        category_name: str | None = None,
+    ) -> dict[str, Any]:
+        params = {"months": months}
+        if group_name:
+            params["group"] = group_name
+        if category_name:
+            params["category"] = category_name
+        return self._request_json("GET", "/analytics/trends", params=params)
+
+    def get_year_end_projection(self, as_of_month: str | None = None) -> dict[str, Any]:
+        params = {"as_of_month": as_of_month} if as_of_month else None
+        return self._request_json("GET", "/analytics/projection", params=params)
+
+    def get_anomalies(self, months: int = 3, threshold: float = 2.0) -> dict[str, Any]:
+        return self._request_json("GET", "/analytics/anomalies", params={"months": months, "threshold": threshold})
+
+    def get_recommendations(self) -> dict[str, Any]:
+        return self._request_json("GET", "/analytics/recommendations")
+
+    def get_aggregate_spending(
+        self,
+        period: str = "quarter",
+        group_name: str | None = None,
+        category_name: str | None = None,
+    ) -> dict[str, Any]:
+        params: dict[str, Any] = {"period": period}
+        if group_name:
+            params["group"] = group_name
+        if category_name:
+            params["category"] = category_name
+        return self._request_json("GET", "/analytics/aggregate", params=params)
+
+    def get_health_check(self) -> dict[str, Any]:
+        return self._request_json("GET", "/analytics/health")
+
     def _request_json(self, method: str, path: str, **kwargs: Any) -> dict[str, Any]:
         try:
             response = self._client.request(method, path, **kwargs)
