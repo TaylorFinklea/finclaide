@@ -25,6 +25,7 @@ import {
 import { Skeleton } from '@/components/ui/skeleton'
 import { getSummary, getTransactions, type TransactionRow } from '@/lib/api'
 import { formatDay, formatMoney } from '@/lib/format'
+import { cn } from '@/lib/utils'
 
 const PAGE_SIZE = 25
 
@@ -104,7 +105,7 @@ export function TransactionsPage() {
   ]
 
   if (summaryQuery.isLoading || transactionsQuery.isLoading) {
-    return <Skeleton className="h-[640px] rounded-2xl" />
+    return <Skeleton className="h-[640px] rounded-xl" />
   }
 
   const page = transactionsQuery.data
@@ -114,7 +115,7 @@ export function TransactionsPage() {
 
   return (
     <div className="space-y-6">
-      <Card className="border-border/70 bg-card/90 backdrop-blur-sm">
+      <Card className="border-border/40 bg-card">
         <CardHeader className="space-y-4">
           <div>
             <CardTitle>Transactions</CardTitle>
@@ -201,7 +202,7 @@ export function TransactionsPage() {
       </Card>
 
       <Sheet open={selectedTransaction !== null} onOpenChange={(open) => !open && setSelectedTransaction(null)}>
-        <SheetContent className="border-border/70 bg-card text-card-foreground sm:max-w-lg">
+        <SheetContent className="border-border/40 bg-card text-card-foreground sm:max-w-lg">
           {selectedTransaction ? (
             <>
               <SheetHeader>
@@ -234,9 +235,9 @@ function DetailRow({
   mono?: boolean
 }) {
   return (
-    <div className="rounded-xl border border-border/60 bg-background/20 p-4">
-      <div className="text-xs uppercase tracking-[0.16em] text-muted-foreground">{label}</div>
-      <div className={mono ? 'mt-2 break-all font-mono text-sm text-foreground' : 'mt-2 text-sm text-foreground'}>
+    <div className="rounded-lg bg-muted/30 p-4">
+      <div className="text-label">{label}</div>
+      <div className={cn('mt-1.5 text-sm text-foreground', mono && 'break-all font-mono')}>
         {value}
       </div>
     </div>

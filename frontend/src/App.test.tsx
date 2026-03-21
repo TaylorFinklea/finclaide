@@ -31,7 +31,7 @@ describe('App', () => {
   it('renders the overview workspace with navigation', async () => {
     render(<App />)
 
-    expect(await screen.findByText('Financial Command')).toBeInTheDocument()
+    expect(await screen.findByText('Finclaide')).toBeInTheDocument()
     expect(await screen.findByText('Plan vs Actual by Group')).toBeInTheDocument()
     expect(screen.getByRole('link', { name: /Transactions/i })).toBeInTheDocument()
   })

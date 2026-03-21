@@ -1,4 +1,4 @@
-import { Bar, BarChart, CartesianGrid, Cell, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
+import { Bar, BarChart, CartesianGrid, Legend, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 import type { NameType, ValueType } from 'recharts/types/component/DefaultTooltipContent'
 
 import type { SummaryGroup } from '@/lib/api'
@@ -9,8 +9,8 @@ type GroupChartProps = {
 }
 
 const BAR_COLORS = {
-  planned: 'oklch(0.72 0.14 145)',
-  actual: 'oklch(0.67 0.18 28)',
+  planned: 'oklch(0.68 0.12 245)',
+  actual: 'oklch(0.72 0.14 160)',
 }
 
 export function GroupChart({ groups }: GroupChartProps) {
@@ -21,50 +21,55 @@ export function GroupChart({ groups }: GroupChartProps) {
   }))
 
   return (
-    <div className="h-[320px] min-w-0">
+    <div className="h-[420px] min-w-0">
       <ResponsiveContainer
         width="100%"
         height="100%"
-        minHeight={320}
-        initialDimension={{ width: 720, height: 320 }}
+        minHeight={420}
+        initialDimension={{ width: 720, height: 420 }}
       >
-        <BarChart data={chartData} barGap={8}>
-          <CartesianGrid vertical={false} stroke="rgba(255,255,255,0.08)" />
+        <BarChart data={chartData} barGap={4} barCategoryGap="20%">
+          <CartesianGrid vertical={false} stroke="oklch(0.25 0.015 250 / 0.5)" strokeDasharray="3 3" />
           <XAxis
             dataKey="group_name"
-            tick={{ fill: 'rgba(255,255,255,0.72)', fontSize: 12 }}
+            tick={{ fill: 'oklch(0.65 0.02 250)', fontSize: 12 }}
             axisLine={false}
             tickLine={false}
+            dy={8}
           />
           <YAxis
             tickFormatter={(value) => formatCompactMoney(value)}
-            tick={{ fill: 'rgba(255,255,255,0.72)', fontSize: 12 }}
+            tick={{ fill: 'oklch(0.65 0.02 250)', fontSize: 12 }}
             axisLine={false}
             tickLine={false}
-            width={88}
+            width={80}
           />
           <Tooltip
-            cursor={{ fill: 'rgba(255,255,255,0.04)' }}
+            cursor={{ fill: 'oklch(0.20 0.015 250 / 0.6)' }}
             contentStyle={{
-              backgroundColor: 'rgba(16, 22, 36, 0.95)',
-              borderColor: 'rgba(255,255,255,0.08)',
-              borderRadius: '12px',
+              backgroundColor: 'oklch(0.16 0.015 250)',
+              borderColor: 'oklch(0.28 0.015 250)',
+              borderRadius: '8px',
+              padding: '12px 16px',
+              boxShadow: '0 8px 24px oklch(0 0 0 / 0.4)',
             }}
+            itemStyle={{ color: 'oklch(0.88 0.01 250)', fontSize: '13px' }}
+            labelStyle={{ color: 'oklch(0.65 0.02 250)', fontSize: '11px', marginBottom: '4px' }}
             formatter={(value: ValueType | undefined, name: NameType | undefined) => [
               formatMoney(Number(value ?? 0)),
               name === 'planned' ? 'Planned' : 'Actual',
             ]}
           />
-          <Bar dataKey="planned" radius={[6, 6, 0, 0]}>
-            {chartData.map((entry) => (
-              <Cell key={`${entry.group_name}-planned`} fill={BAR_COLORS.planned} />
-            ))}
-          </Bar>
-          <Bar dataKey="actual" radius={[6, 6, 0, 0]}>
-            {chartData.map((entry) => (
-              <Cell key={`${entry.group_name}-actual`} fill={BAR_COLORS.actual} />
-            ))}
-          </Bar>
+          <Legend
+            wrapperStyle={{ paddingTop: '16px' }}
+            formatter={(value) => (
+              <span style={{ color: 'oklch(0.75 0.02 250)', fontSize: '12px' }}>
+                {value === 'planned' ? 'Planned' : 'Actual'}
+              </span>
+            )}
+          />
+          <Bar dataKey="planned" radius={[4, 4, 0, 0]} fill={BAR_COLORS.planned} />
+          <Bar dataKey="actual" radius={[4, 4, 0, 0]} fill={BAR_COLORS.actual} />
         </BarChart>
       </ResponsiveContainer>
     </div>

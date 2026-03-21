@@ -35,6 +35,7 @@
   --color-chart-3: var(--chart-3);
   --color-chart-4: var(--chart-4);
   --color-chart-5: var(--chart-5);
+  --color-card-elevated: var(--card-elevated);
   --radius-sm: calc(var(--radius) - 4px);
   --radius-md: calc(var(--radius) - 2px);
   --radius-lg: var(--radius);
@@ -44,7 +45,7 @@
 :root {
   --background: oklch(0.14 0.015 250);
   --foreground: oklch(0.94 0.01 95);
-  --card: oklch(0.18 0.02 250);
+  --card: oklch(0.16 0.015 250);
   --card-foreground: oklch(0.94 0.01 95);
   --popover: oklch(0.17 0.018 250);
   --popover-foreground: oklch(0.94 0.01 95);
@@ -52,20 +53,22 @@
   --primary-foreground: oklch(0.15 0.02 250);
   --secondary: oklch(0.26 0.02 250);
   --secondary-foreground: oklch(0.94 0.01 95);
-  --muted: oklch(0.22 0.018 250);
+  --muted: oklch(0.20 0.015 250);
   --muted-foreground: oklch(0.72 0.02 250);
   --accent: oklch(0.23 0.024 245);
   --accent-foreground: oklch(0.94 0.01 95);
   --destructive: oklch(0.64 0.18 28);
-  --border: oklch(0.29 0.02 250);
+  --border: oklch(0.25 0.015 250);
   --input: oklch(0.23 0.02 250);
   --ring: oklch(0.74 0.14 145);
-  --chart-1: oklch(0.72 0.14 145);
-  --chart-2: oklch(0.77 0.14 85);
-  --chart-3: oklch(0.66 0.18 28);
-  --chart-4: oklch(0.69 0.1 205);
-  --chart-5: oklch(0.77 0.09 320);
-  --radius: 1rem;
+  --chart-1: oklch(0.68 0.12 245);
+  --chart-2: oklch(0.72 0.14 160);
+  --chart-3: oklch(0.72 0.10 85);
+  --chart-4: oklch(0.66 0.14 28);
+  --chart-5: oklch(0.74 0.14 145);
+  --card-elevated: oklch(0.19 0.018 250);
+  --surface-inset: oklch(0.13 0.012 250);
+  --radius: 0.75rem;
 }
 
 * {
@@ -79,25 +82,13 @@ html {
 body {
   min-height: 100vh;
   background:
-    radial-gradient(circle at top left, rgba(0, 255, 160, 0.08), transparent 22%),
-    linear-gradient(180deg, rgba(15, 23, 42, 0.92), rgba(9, 14, 22, 1));
+    radial-gradient(ellipse at top left, oklch(0.20 0.04 160 / 0.5), transparent 40%),
+    linear-gradient(180deg, oklch(0.13 0.015 250), oklch(0.11 0.01 250));
   color: var(--foreground);
   font-family: var(--font-sans);
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-}
-
-body::before {
-  position: fixed;
-  inset: 0;
-  pointer-events: none;
-  background-image:
-    linear-gradient(rgba(255, 255, 255, 0.02) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(255, 255, 255, 0.02) 1px, transparent 1px);
-  background-size: 24px 24px;
-  content: '';
-  opacity: 0.28;
 }
 
 #root {
@@ -108,4 +99,21 @@ button,
 input,
 select {
   font: inherit;
+}
+
+@layer utilities {
+  .text-label {
+    font-size: 0.6875rem;
+    font-weight: 500;
+    letter-spacing: 0.05em;
+    color: var(--muted-foreground);
+  }
+
+  .text-label-upper {
+    font-size: 0.6875rem;
+    font-weight: 500;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--muted-foreground);
+  }
 }

@@ -81,7 +81,7 @@ export function OperationsPage() {
 
   return (
     <div className="space-y-6">
-      <Card className="border-border/70 bg-card/90 backdrop-blur-sm">
+      <Card className="border-border/40 bg-card">
         <CardHeader>
           <CardTitle>Operations</CardTitle>
           <p className="text-sm text-muted-foreground">
@@ -121,15 +121,15 @@ export function OperationsPage() {
       </Card>
 
       <div className="grid gap-6 xl:grid-cols-[1.1fr_1fr]">
-        <Card className="border-border/70 bg-card/90 backdrop-blur-sm">
+        <Card className="border-border/40 bg-card">
           <CardHeader>
             <CardTitle>Latest Runs</CardTitle>
           </CardHeader>
           <CardContent className="space-y-3">
             {Object.entries(latestRuns).length ? (
               Object.entries(latestRuns).map(([source, details]) => (
-                <div key={source} className="rounded-xl border border-border/60 bg-background/20 p-4">
-                  <div className="text-xs uppercase tracking-[0.18em] text-muted-foreground">{source}</div>
+                <div key={source} className="rounded-lg bg-muted/30 p-4">
+                  <div className="text-label-upper">{source}</div>
                   <div className="mt-2 flex items-center justify-between gap-4">
                     <div className="font-medium text-foreground">{details.status}</div>
                     <div className="text-sm text-muted-foreground">{formatRunAt(details.finished_at)}</div>
@@ -142,25 +142,25 @@ export function OperationsPage() {
           </CardContent>
         </Card>
 
-        <Card className="border-border/70 bg-card/90 backdrop-blur-sm">
+        <Card className="border-border/40 bg-card">
           <CardHeader>
             <CardTitle>Current Status</CardTitle>
           </CardHeader>
           <CardContent className="space-y-4 text-sm text-muted-foreground">
-            <div className="rounded-xl border border-border/60 bg-background/20 p-4">
-              <div className="text-xs uppercase tracking-[0.18em] text-muted-foreground">Busy State</div>
+            <div className="rounded-lg bg-muted/30 p-4">
+              <div className="text-label-upper">Busy State</div>
               <div className="mt-2 text-foreground">
                 {statusQuery.data?.busy
                   ? `Running ${statusQuery.data.current_operation ?? 'operation'}`
                   : 'Idle'}
               </div>
             </div>
-            <div className="rounded-xl border border-border/60 bg-background/20 p-4">
-              <div className="text-xs uppercase tracking-[0.18em] text-muted-foreground">Mismatch Count</div>
+            <div className="rounded-lg bg-muted/30 p-4">
+              <div className="text-label-upper">Mismatch Count</div>
               <div className="mt-2 text-foreground">{summaryQuery.data?.mismatches.length ?? 0}</div>
             </div>
-            <div className="rounded-xl border border-border/60 bg-background/20 p-4">
-              <div className="text-xs uppercase tracking-[0.18em] text-muted-foreground">Budget Import ID</div>
+            <div className="rounded-lg bg-muted/30 p-4">
+              <div className="text-label-upper">Budget Import ID</div>
               <div className="mt-2 font-mono text-foreground">
                 {statusQuery.data?.last_budget_import_id ?? '—'}
               </div>
@@ -169,12 +169,12 @@ export function OperationsPage() {
         </Card>
       </div>
 
-      <Card className="border-border/70 bg-card/90 backdrop-blur-sm">
+      <Card className="border-border/40 bg-card">
         <CardHeader>
           <CardTitle>Latest Operation Payload</CardTitle>
         </CardHeader>
         <CardContent>
-          <pre className="overflow-x-auto rounded-xl border border-border/60 bg-background/40 p-4 font-mono text-xs text-slate-100">
+          <pre className="overflow-x-auto rounded-lg bg-muted/25 p-4 font-mono text-xs text-slate-100 ring-1 ring-inset ring-border/30">
             {JSON.stringify(latestPayload ?? { message: 'No operation triggered in this session.' }, null, 2)}
           </pre>
         </CardContent>
@@ -197,7 +197,7 @@ function OperationButton({
   onClick: () => void
 }) {
   return (
-    <div className="rounded-2xl border border-border/60 bg-background/20 p-4">
+    <div className="rounded-xl bg-muted/30 p-5 transition-colors duration-150 hover:bg-muted/50">
       <div className="text-base font-medium text-foreground">{label}</div>
       <p className="mt-2 min-h-12 text-sm text-muted-foreground">{description}</p>
       <Button className="mt-4 w-full" disabled={disabled} onClick={onClick}>

@@ -1,6 +1,5 @@
 import type { ReactNode } from 'react'
 
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { cn } from '@/lib/utils'
 
 type MetricCardProps = {
@@ -12,24 +11,29 @@ type MetricCardProps = {
 }
 
 const TONE_STYLES = {
-  neutral: 'border-border/70 bg-card/90',
-  good: 'border-emerald-500/20 bg-emerald-500/10',
-  warn: 'border-amber-500/20 bg-amber-500/10',
+  neutral: 'bg-card',
+  good: 'bg-emerald-500/[0.06] ring-1 ring-inset ring-emerald-500/15',
+  warn: 'bg-amber-500/[0.06] ring-1 ring-inset ring-amber-500/15',
 }
 
 export function MetricCard({ label, value, detail, tone = 'neutral', icon }: MetricCardProps) {
   return (
-    <Card className={cn('backdrop-blur-sm', TONE_STYLES[tone])}>
-      <CardHeader className="flex flex-row items-start justify-between space-y-0 pb-3">
-        <CardTitle className="text-xs uppercase tracking-[0.24em] text-muted-foreground">
-          {label}
-        </CardTitle>
+    <div
+      className={cn(
+        'rounded-xl p-5 transition-colors duration-150 hover:bg-card-elevated',
+        TONE_STYLES[tone],
+      )}
+    >
+      <div className="flex items-center justify-between">
+        <span className="text-label">{label}</span>
         {icon}
-      </CardHeader>
-      <CardContent className="space-y-1">
-        <div className="font-mono text-2xl text-foreground">{value}</div>
-        {detail ? <p className="text-sm text-muted-foreground">{detail}</p> : null}
-      </CardContent>
-    </Card>
+      </div>
+      <div className="mt-3 font-mono text-2xl font-semibold tracking-tight text-foreground">
+        {value}
+      </div>
+      {detail ? (
+        <p className="mt-1.5 text-sm text-muted-foreground">{detail}</p>
+      ) : null}
+    </div>
   )
 }

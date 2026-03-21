@@ -43,13 +43,13 @@ export function DataTable<TData>({
   })
 
   return (
-    <div className="overflow-hidden rounded-xl border border-border/60">
+    <div className="overflow-hidden rounded-lg border border-border/40">
       <Table>
-        <TableHeader className="bg-muted/35">
+        <TableHeader className="bg-muted/25">
           {table.getHeaderGroups().map((headerGroup) => (
-            <TableRow key={headerGroup.id} className="hover:bg-transparent">
+            <TableRow key={headerGroup.id} className="border-border/40 hover:bg-transparent">
               {headerGroup.headers.map((header) => (
-                <TableHead key={header.id} className="h-10 text-[11px] uppercase tracking-[0.16em] text-muted-foreground">
+                <TableHead key={header.id} className="text-[11px] font-medium tracking-wide text-muted-foreground">
                   {header.isPlaceholder
                     ? null
                     : flexRender(header.column.columnDef.header, header.getContext())}
@@ -60,14 +60,18 @@ export function DataTable<TData>({
         </TableHeader>
         <TableBody>
           {table.getRowModel().rows.length ? (
-            table.getRowModel().rows.map((row) => (
+            table.getRowModel().rows.map((row, index) => (
               <TableRow
                 key={row.id}
-                className={cn(onRowClick ? 'cursor-pointer' : undefined)}
+                className={cn(
+                  'border-border/30 transition-colors duration-100',
+                  onRowClick && 'cursor-pointer',
+                  index % 2 === 1 && 'bg-muted/[0.08]',
+                )}
                 onClick={onRowClick ? () => onRowClick(row.original) : undefined}
               >
                 {row.getVisibleCells().map((cell) => (
-                  <TableCell key={cell.id} className="align-top">
+                  <TableCell key={cell.id} className="align-middle">
                     {flexRender(cell.column.columnDef.cell, cell.getContext())}
                   </TableCell>
                 ))}
@@ -75,7 +79,7 @@ export function DataTable<TData>({
             ))
           ) : (
             <TableRow>
-              <TableCell colSpan={columns.length} className="py-10 text-center text-sm text-muted-foreground">
+              <TableCell colSpan={columns.length} className="py-12 text-center text-sm text-muted-foreground">
                 {emptyMessage}
               </TableCell>
             </TableRow>

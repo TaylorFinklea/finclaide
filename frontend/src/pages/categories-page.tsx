@@ -112,7 +112,7 @@ export function CategoriesPage() {
   }, [annualOnly, groupFilter, rows, search, statusFilter])
 
   if (summaryQuery.isLoading) {
-    return <Skeleton className="h-[640px] rounded-2xl" />
+    return <Skeleton className="h-[640px] rounded-xl" />
   }
 
   const groups = [...new Set(rows.map((row) => row.group_name))].sort()
@@ -120,7 +120,7 @@ export function CategoriesPage() {
 
   return (
     <div className="space-y-6">
-      <Card className="border-border/70 bg-card/90 backdrop-blur-sm">
+      <Card className="border-border/40 bg-card">
         <CardHeader className="space-y-4">
           <div>
             <CardTitle>Category Analysis</CardTitle>
@@ -170,19 +170,19 @@ export function CategoriesPage() {
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="grid gap-3 md:grid-cols-3">
-            <div className="rounded-xl border border-border/60 bg-background/30 p-4">
-              <div className="text-xs uppercase tracking-[0.18em] text-muted-foreground">Visible Categories</div>
-              <div className="mt-2 font-mono text-2xl">{filteredRows.length}</div>
+            <div className="rounded-lg bg-muted/30 p-4">
+              <div className="text-label-upper">Visible Categories</div>
+              <div className="mt-2 font-mono text-2xl font-semibold">{filteredRows.length}</div>
             </div>
-            <div className="rounded-xl border border-border/60 bg-background/30 p-4">
-              <div className="text-xs uppercase tracking-[0.18em] text-muted-foreground">Visible Planned</div>
-              <div className="mt-2 font-mono text-2xl">
+            <div className="rounded-lg bg-muted/30 p-4">
+              <div className="text-label-upper">Visible Planned</div>
+              <div className="mt-2 font-mono text-2xl font-semibold">
                 {formatMoney(filteredRows.reduce((sum, row) => sum + row.planned_milliunits, 0))}
               </div>
             </div>
-            <div className="rounded-xl border border-border/60 bg-background/30 p-4">
-              <div className="text-xs uppercase tracking-[0.18em] text-muted-foreground">Visible Actual</div>
-              <div className="mt-2 font-mono text-2xl">
+            <div className="rounded-lg bg-muted/30 p-4">
+              <div className="text-label-upper">Visible Actual</div>
+              <div className="mt-2 font-mono text-2xl font-semibold">
                 {formatMoney(filteredRows.reduce((sum, row) => sum + row.actual_milliunits, 0))}
               </div>
             </div>

@@ -52,17 +52,16 @@ function AppShell() {
 
   return (
     <div className="min-h-screen">
-      <div className="mx-auto flex min-h-screen max-w-[1680px] flex-col gap-6 px-4 py-4 lg:flex-row lg:px-6">
-        <aside className="w-full shrink-0 rounded-[28px] border border-border/70 bg-card/80 p-4 shadow-2xl shadow-black/20 backdrop-blur-xl lg:w-[280px]">
-          <div className="rounded-2xl border border-emerald-500/20 bg-emerald-500/10 p-4">
-            <div className="font-mono text-xs uppercase tracking-[0.24em] text-emerald-100">Finclaide</div>
-            <h1 className="mt-3 text-2xl font-semibold tracking-tight text-foreground">Financial Command</h1>
-            <p className="mt-2 text-sm text-muted-foreground">
-              Replace passive dashboards with actionable budget visibility.
-            </p>
+      <div className="mx-auto flex min-h-screen max-w-[1680px] flex-col lg:flex-row">
+        <aside className="flex w-full shrink-0 flex-col border-b border-border/50 bg-card p-5 lg:w-[260px] lg:border-b-0 lg:border-r">
+          <div className="flex items-center gap-2.5 px-1">
+            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary/15">
+              <span className="text-sm font-semibold text-primary">F</span>
+            </div>
+            <span className="text-sm font-semibold tracking-tight text-foreground">Finclaide</span>
           </div>
 
-          <nav className="mt-6 space-y-2">
+          <nav className="mt-8 space-y-1">
             {navItems.map((item) => {
               const Icon = item.icon
               return (
@@ -72,10 +71,10 @@ function AppShell() {
                   end={item.to === '/'}
                   className={({ isActive }) =>
                     cn(
-                      'flex items-center gap-3 rounded-2xl px-3 py-3 text-sm transition',
+                      'flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors duration-150',
                       isActive
-                        ? 'bg-primary text-primary-foreground shadow-lg shadow-emerald-500/10'
-                        : 'text-muted-foreground hover:bg-accent hover:text-accent-foreground',
+                        ? 'border-l-2 border-primary bg-primary/8 font-medium text-foreground'
+                        : 'border-l-2 border-transparent text-muted-foreground hover:bg-accent/50 hover:text-foreground',
                     )
                   }
                 >
@@ -86,38 +85,40 @@ function AppShell() {
             })}
           </nav>
 
-          <div className="mt-6 rounded-2xl border border-border/60 bg-background/20 p-4">
-            <div className="text-xs uppercase tracking-[0.18em] text-muted-foreground">Active Plan</div>
-            <div className="mt-2 break-all font-mono text-sm text-foreground">{planLabel}</div>
+          <div className="mt-auto pt-8">
+            <div className="rounded-lg bg-muted/50 px-3 py-3">
+              <div className="text-label">Active Plan</div>
+              <div className="mt-1.5 truncate font-mono text-xs text-foreground">{planLabel}</div>
+            </div>
           </div>
         </aside>
 
-        <main className="flex-1 rounded-[28px] border border-border/70 bg-card/75 p-4 shadow-2xl shadow-black/20 backdrop-blur-xl sm:p-6">
-          <header className="mb-6 flex flex-col gap-4 border-b border-border/60 pb-6 xl:flex-row xl:items-end xl:justify-between">
+        <main className="flex-1 p-6 lg:p-8">
+          <header className="mb-8 flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
             <div>
-              <div className="text-xs uppercase tracking-[0.24em] text-muted-foreground">Workspace Month</div>
-              <div className="mt-2 text-3xl font-semibold tracking-tight text-foreground">
+              <div className="text-label">Workspace</div>
+              <div className="mt-1 text-2xl font-semibold tracking-tight text-foreground">
                 {formatMonthLabel(month)}
               </div>
-              <div className="mt-2 flex items-center gap-2 text-sm text-muted-foreground">
+              <div className="mt-1.5 flex items-center gap-2 text-sm text-muted-foreground">
                 {statusQuery.data?.busy ? (
                   <>
-                    <TriangleAlert className="h-4 w-4 text-amber-300" />
-                    {statusQuery.data.current_operation ?? 'Operation in progress'}
+                    <TriangleAlert className="h-3.5 w-3.5 text-amber-400" />
+                    <span>{statusQuery.data.current_operation ?? 'Operation in progress'}</span>
                   </>
                 ) : (
-                  'Ready for import, sync, and analysis'
+                  <span>Ready</span>
                 )}
               </div>
             </div>
 
-            <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
-              <label className="text-xs uppercase tracking-[0.18em] text-muted-foreground" htmlFor="workspace-month">
+            <div className="flex items-center gap-3">
+              <label className="text-label" htmlFor="workspace-month">
                 Month
               </label>
               <input
                 id="workspace-month"
-                className="rounded-xl border border-border/70 bg-background/30 px-3 py-2 font-mono text-sm text-foreground outline-none ring-0 transition focus:border-primary"
+                className="rounded-lg border border-border/60 bg-muted/40 px-3 py-1.5 font-mono text-sm text-foreground outline-none transition-colors duration-150 focus:border-primary/60 focus:ring-1 focus:ring-primary/30"
                 type="month"
                 value={month}
                 onChange={(event) => setMonth(event.target.value)}

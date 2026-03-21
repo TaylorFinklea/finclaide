@@ -38,7 +38,7 @@ export function OverviewPage() {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-8">
       <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
         <MetricCard
           label="Budget Import"
@@ -73,7 +73,7 @@ export function OverviewPage() {
       </section>
 
       <div className="grid gap-6 xl:grid-cols-[1.6fr_1fr]">
-        <Card className="border-border/70 bg-card/90 backdrop-blur-sm">
+        <Card className="border-border/40 bg-card">
           <CardHeader className="flex flex-row items-center justify-between">
             <div>
               <CardTitle>Plan vs Actual by Group</CardTitle>
@@ -92,11 +92,11 @@ export function OverviewPage() {
         </Card>
 
         <div className="space-y-6">
-          <Card className="border-border/70 bg-card/90 backdrop-blur-sm">
+          <Card className="border-border/40 bg-card">
             <CardHeader className="space-y-3">
               <div className="flex items-center justify-between gap-3">
                 <CardTitle>Overage Watch</CardTitle>
-                <div className="font-mono text-xs uppercase tracking-[0.18em] text-muted-foreground">
+                <div className="text-label">
                   {summary.overage_watch.categories.length} watched
                 </div>
               </div>
@@ -112,7 +112,7 @@ export function OverviewPage() {
                 summary.overage_watch.categories.map((category) => (
                   <div
                     key={`${category.group_name}-${category.category_name}`}
-                    className="grid gap-3 rounded-xl border border-border/60 bg-background/30 p-3"
+                    className="grid gap-3 rounded-lg bg-muted/30 p-3"
                   >
                     <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
                       <div>
@@ -125,15 +125,15 @@ export function OverviewPage() {
                       </div>
                       <div className="flex items-center gap-2">
                         <StatusChip status={category.watch_level} />
-                        <div className="font-mono text-xs uppercase tracking-[0.18em] text-muted-foreground">
+                        <div className="text-label">
                           {category.over_months}/{category.analysis_month_count} months over
                         </div>
                       </div>
                     </div>
 
                     <div className="grid gap-3 text-sm text-muted-foreground md:grid-cols-3">
-                      <div className="rounded-xl border border-border/50 bg-background/30 p-3">
-                        <div className="text-[11px] uppercase tracking-[0.18em]">Target</div>
+                      <div className="rounded-lg bg-muted/30 p-3">
+                        <div className="text-label-upper">Target</div>
                         <div className="mt-2 font-mono text-base text-foreground">
                           {formatMoney(category.planned_milliunits)}
                         </div>
@@ -141,8 +141,8 @@ export function OverviewPage() {
                           Suggested floor {formatMoney(category.suggested_monthly_milliunits)}
                         </div>
                       </div>
-                      <div className="rounded-xl border border-border/50 bg-background/30 p-3">
-                        <div className="text-[11px] uppercase tracking-[0.18em]">Historical Run Rate</div>
+                      <div className="rounded-lg bg-muted/30 p-3">
+                        <div className="text-label-upper">Historical Run Rate</div>
                         <div className="mt-2 font-mono text-base text-foreground">
                           {formatMoney(category.average_spend_milliunits)}
                         </div>
@@ -150,8 +150,8 @@ export function OverviewPage() {
                           Active avg {formatMoney(category.active_average_spend_milliunits)}
                         </div>
                       </div>
-                      <div className="rounded-xl border border-border/50 bg-background/30 p-3">
-                        <div className="text-[11px] uppercase tracking-[0.18em]">Exposure</div>
+                      <div className="rounded-lg bg-muted/30 p-3">
+                        <div className="text-label-upper">Exposure</div>
                         <div className="mt-2 font-mono text-base text-foreground">
                           {formatMoney(category.shortfall_milliunits)}
                         </div>
@@ -168,21 +168,21 @@ export function OverviewPage() {
                   </div>
                 ))
               ) : (
-                <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/10 p-4 text-sm text-emerald-100">
+                <div className="rounded-lg bg-emerald-500/[0.06] p-4 text-sm text-emerald-100 ring-1 ring-inset ring-emerald-500/15">
                   No repeat overages are breaching the watch thresholds in the completed-month history.
                 </div>
               )}
             </CardContent>
           </Card>
 
-          <Card className="border-border/70 bg-card/90 backdrop-blur-sm">
+          <Card className="border-border/40 bg-card">
             <CardHeader>
               <CardTitle>Mismatch Status</CardTitle>
             </CardHeader>
             <CardContent className="space-y-3">
               {summary.mismatches.length ? (
                 summary.mismatches.map((mismatch) => (
-                  <div key={`${mismatch.group_name}-${mismatch.category_name}`} className="rounded-xl border border-amber-500/20 bg-amber-500/10 p-3">
+                  <div key={`${mismatch.group_name}-${mismatch.category_name}`} className="rounded-lg bg-amber-500/[0.06] p-3 ring-1 ring-inset ring-amber-500/15">
                     <div className="font-medium text-foreground">
                       {mismatch.group_name} / {mismatch.category_name}
                     </div>
@@ -190,7 +190,7 @@ export function OverviewPage() {
                   </div>
                 ))
               ) : (
-                <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/10 p-4 text-sm text-emerald-100">
+                <div className="rounded-lg bg-emerald-500/[0.06] p-4 text-sm text-emerald-100 ring-1 ring-inset ring-emerald-500/15">
                   Reconciliation is clean. All imported sheet categories have an exact YNAB match.
                 </div>
               )}
@@ -200,7 +200,7 @@ export function OverviewPage() {
       </div>
 
       <div className="grid gap-6 xl:grid-cols-[1.15fr_1fr]">
-        <Card className="border-border/70 bg-card/90 backdrop-blur-sm">
+        <Card className="border-border/40 bg-card">
           <CardHeader>
             <CardTitle>Annual Funding Status</CardTitle>
           </CardHeader>
@@ -209,14 +209,14 @@ export function OverviewPage() {
               annualCategories.map((category) => (
                 <div
                   key={`${category.group_name}-${category.category_name}`}
-                  className="grid gap-2 rounded-xl border border-border/60 bg-background/30 p-3 md:grid-cols-[1.3fr_1fr_auto]"
+                  className="grid gap-2 rounded-lg p-3 transition-colors duration-100 hover:bg-muted/30 md:grid-cols-[1.3fr_1fr_auto]"
                 >
                   <div>
                     <div className="font-medium text-foreground">
                       {category.group_name} / {category.category_name}
                     </div>
                     <div className="mt-1 text-sm text-muted-foreground">
-                      Due month {category.due_month ?? '-'} • Balance {formatMoney(category.current_balance_milliunits)}
+                      Due month {category.due_month ?? '-'} &middot; Balance {formatMoney(category.current_balance_milliunits)}
                     </div>
                   </div>
                   <div className="font-mono text-sm text-muted-foreground">
@@ -231,7 +231,7 @@ export function OverviewPage() {
           </CardContent>
         </Card>
 
-        <Card className="border-border/70 bg-card/90 backdrop-blur-sm">
+        <Card className="border-border/40 bg-card">
           <CardHeader>
             <CardTitle>Recent Transactions</CardTitle>
           </CardHeader>
@@ -240,7 +240,7 @@ export function OverviewPage() {
               summary.recent_transactions.map((transaction) => (
                 <div
                   key={transaction.id}
-                  className="grid gap-2 rounded-xl border border-border/60 bg-background/30 p-3 md:grid-cols-[96px_1fr_auto]"
+                  className="grid gap-2 rounded-lg p-3 transition-colors duration-100 hover:bg-muted/30 md:grid-cols-[96px_1fr_auto]"
                 >
                   <div className="font-mono text-xs text-muted-foreground">{formatDay(transaction.date)}</div>
                   <div>
@@ -281,19 +281,19 @@ function formatOverageWatchWindow(startMonth: string | null, endMonth: string | 
 
 function OverviewSkeleton() {
   return (
-    <div className="space-y-6">
+    <div className="space-y-8">
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
         {Array.from({ length: 4 }, (_, index) => (
-          <Skeleton key={index} className="h-32 rounded-2xl" />
+          <Skeleton key={index} className="h-32 rounded-xl" />
         ))}
       </div>
       <div className="grid gap-6 xl:grid-cols-[1.6fr_1fr]">
-        <Skeleton className="h-[420px] rounded-2xl" />
-        <Skeleton className="h-[420px] rounded-2xl" />
+        <Skeleton className="h-[480px] rounded-xl" />
+        <Skeleton className="h-[480px] rounded-xl" />
       </div>
       <div className="grid gap-6 xl:grid-cols-[1.15fr_1fr]">
-        <Skeleton className="h-[420px] rounded-2xl" />
-        <Skeleton className="h-[420px] rounded-2xl" />
+        <Skeleton className="h-[420px] rounded-xl" />
+        <Skeleton className="h-[420px] rounded-xl" />
       </div>
     </div>
   )

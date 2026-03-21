@@ -19,7 +19,7 @@ export function StatusChip({ status }: { status: string }) {
     <Badge
       variant="outline"
       className={cn(
-        'rounded-full px-2.5 py-1 font-mono text-[11px] uppercase tracking-[0.18em]',
+        'rounded-full px-2 py-0.5 text-[11px] font-medium capitalize tracking-wide',
         STATUS_STYLES[status] ?? 'border-border bg-muted text-muted-foreground',
       )}
     >
