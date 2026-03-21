@@ -589,4 +589,5 @@ class ServiceContainer:
     ynab_sync: Any
     reconcile: ReconciliationService
     reports: ReportService
+    analytics: Any
     operation_lock: OperationLock

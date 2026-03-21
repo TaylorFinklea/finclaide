@@ -59,7 +59,7 @@ If `POST /api/reconcile` fails, treat that as a real data issue. Do not create s
 
 ## API Contract
 
-Current endpoints:
+Core endpoints:
 
 - `GET /healthz`
 - `GET /api/status`
@@ -69,12 +69,24 @@ Current endpoints:
 - `GET /api/reports/summary?month=YYYY-MM`
 - `GET /api/transactions?...`
 
+Analytics endpoints:
+
+- `GET /api/analytics/compare?month_a=YYYY-MM&month_b=YYYY-MM`
+- `GET /api/analytics/trends?months=6&group=...&category=...`
+- `GET /api/analytics/projection?as_of_month=YYYY-MM`
+- `GET /api/analytics/anomalies?months=3&threshold=2.0`
+- `GET /api/analytics/recommendations`
+- `GET /api/analytics/aggregate?period=quarter&group=...&category=...`
+- `GET /api/analytics/health`
+
 Important behaviors:
 
 - All `/api/*` routes require the bearer token.
 - Import, sync, and reconcile are synchronous and serialized by an app lock.
+- Analytics endpoints are read-only GET requests.
 - Money values are integer milliunits.
-- `GET /api/reports/summary` is the main machine-facing report. Prefer it over scraping the dashboard.
+- `GET /api/analytics/health` is the best starting point for general AI queries.
+- `GET /api/reports/summary` is the main plan-vs-actual report.
 
 Example:
 
@@ -95,12 +107,21 @@ curl -sS -X POST http://127.0.0.1:8050/api/reconcile \
 
 curl -sS "http://127.0.0.1:8050/api/reports/summary?month=2026-03" \
   -H "Authorization: Bearer $TOKEN"
+
+curl -sS "http://127.0.0.1:8050/api/analytics/health" \
+  -H "Authorization: Bearer $TOKEN"
+
+curl -sS "http://127.0.0.1:8050/api/analytics/compare?month_a=2026-02&month_b=2026-03" \
+  -H "Authorization: Bearer $TOKEN"
 ```
 
 ## Development Notes
 
 - Core app entrypoint: `src/finclaide/app.py`
 - API routes: `src/finclaide/api.py`
+- Analytics API: `src/finclaide/analytics_api.py`
+- Analytics service: `src/finclaide/analytics.py`
+- Auth: `src/finclaide/auth.py`
 - Browser UI routes: `src/finclaide/ui_api.py`
 - Workbook importer: `src/finclaide/budget_sheet.py`
 - YNAB wrapper: `src/finclaide/ynab.py`

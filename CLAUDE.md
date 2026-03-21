@@ -98,6 +98,9 @@ See [docs/mcp.md](docs/mcp.md) for setup and tool details.
 
 - App factory: `src/finclaide/app.py`
 - API: `src/finclaide/api.py`
+- Analytics API: `src/finclaide/analytics_api.py`
+- Analytics service: `src/finclaide/analytics.py`
+- Auth: `src/finclaide/auth.py`
 - UI API: `src/finclaide/ui_api.py`
 - Importer: `src/finclaide/budget_sheet.py`
 - YNAB client: `src/finclaide/ynab.py`

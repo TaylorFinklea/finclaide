@@ -3,6 +3,8 @@ from __future__ import annotations
 import httpx
 from flask import Flask, jsonify
 
+from finclaide.analytics import AnalyticsService
+from finclaide.analytics_api import analytics_api
 from finclaide.api import api, register_error_handlers
 from finclaide.budget_sheet import BudgetImporter
 from finclaide.config import AppConfig
@@ -32,6 +34,7 @@ def create_app(
         ynab_sync=YNABSyncService(config=config, database=database, client=ynab_client),
         reconcile=ReconciliationService(database=database),
         reports=ReportService(config=config, database=database, operation_lock=operation_lock),
+        analytics=AnalyticsService(config=config, database=database, operation_lock=operation_lock),
         operation_lock=operation_lock,
     )
 
@@ -44,6 +47,7 @@ def create_app(
         return jsonify({"status": "ok"})
 
     app.register_blueprint(api)
+    app.register_blueprint(analytics_api)
     app.register_blueprint(ui_api)
     register_error_handlers(app)
     register_frontend(app)

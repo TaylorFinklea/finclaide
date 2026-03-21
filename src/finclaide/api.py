@@ -1,10 +1,8 @@
 from __future__ import annotations
 
-from functools import wraps
-from typing import Any, Callable
+from flask import Blueprint, current_app, jsonify, request
 
-from flask import Blueprint, Response, current_app, jsonify, request
-
+from finclaide.auth import require_bearer_token
 from finclaide.errors import ConfigError, DataIntegrityError, FinclaideError, OperationInProgressError
 from finclaide.operations import run_budget_import, run_reconcile, run_ynab_sync
 
@@ -13,21 +11,6 @@ api = Blueprint("api", __name__, url_prefix="/api")
 
 def _container():
     return current_app.extensions["finclaide"]
-
-
-def require_bearer_token(handler: Callable[..., Response]):
-    @wraps(handler)
-    def wrapped(*args: Any, **kwargs: Any):
-        config = current_app.config["FINCLAIDE_CONFIG"]
-        if not config.api_token:
-            raise ConfigError("FINCLAIDE_API_TOKEN must be configured before using the API.")
-        header_value = request.headers.get("Authorization", "")
-        expected = f"Bearer {config.api_token}"
-        if header_value != expected:
-            return jsonify({"error": "unauthorized"}), 401
-        return handler(*args, **kwargs)
-
-    return wrapped
 
 
 @api.get("/status")
