@@ -38,6 +38,9 @@ describe('OperationsPage', () => {
     renderWithProviders(<OperationsPage />)
 
     await screen.findByText('Operations')
+    expect(await screen.findByText('Plan Data')).toBeInTheDocument()
+    expect(await screen.findByText('YNAB Data')).toBeInTheDocument()
+    expect(await screen.findByText('Temporary YNAB timeout')).toBeInTheDocument()
     await userEvent.click(screen.getByRole('button', { name: 'Import Budget' }))
 
     await waitFor(() => {

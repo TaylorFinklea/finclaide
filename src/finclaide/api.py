@@ -16,7 +16,7 @@ def _container():
 @api.get("/status")
 @require_bearer_token
 def status():
-    return jsonify(_container().reports.status())
+    return jsonify(_container().reports.status(include_recent_runs=True))
 
 
 @api.post("/budget/import")
@@ -70,15 +70,15 @@ def transactions():
 def register_error_handlers(app) -> None:
     @app.errorhandler(OperationInProgressError)
     def handle_busy(error: OperationInProgressError):
-        return jsonify({"error": str(error)}), 409
+        return jsonify({"error": str(error), "error_detail": {"kind": "operation_in_progress", "message": str(error)}}), 409
 
     @app.errorhandler(ConfigError)
     @app.errorhandler(DataIntegrityError)
     @app.errorhandler(FinclaideError)
     def handle_application_error(error: FinclaideError):
-        return jsonify({"error": str(error)}), 400
+        return jsonify({"error": str(error), "error_detail": {"kind": "application_error", "message": str(error)}}), 400
 
     @app.errorhandler(Exception)
     def handle_unexpected(error: Exception):
         current_app.logger.exception("Unhandled error", exc_info=error)
-        return jsonify({"error": "internal_server_error"}), 500
+        return jsonify({"error": "internal_server_error", "error_detail": {"kind": "internal_error", "message": "internal_server_error"}}), 500

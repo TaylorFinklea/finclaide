@@ -1,12 +1,36 @@
 import { z } from 'zod'
 
 const NullableString = z.string().nullable()
+const NullableNumber = z.number().nullable()
 
 const LatestRunSchema = z.object({
   status: z.string(),
   started_at: NullableString.optional(),
   finished_at: NullableString.optional(),
   details: z.record(z.string(), z.any()),
+})
+
+const FreshnessSchema = z.object({
+  status: z.string(),
+  last_updated_at: NullableString,
+  hours_stale: NullableNumber,
+})
+
+const PlanProvenanceSchema = z.object({
+  source_type: z.string(),
+  workbook_path: z.string(),
+  sheet_name: z.string(),
+  import_id: z.number().nullable(),
+  imported_at: NullableString,
+  last_result: NullableString,
+})
+
+const ActualsProvenanceSchema = z.object({
+  source_type: z.string(),
+  plan_id: NullableString,
+  last_synced_at: NullableString,
+  server_knowledge: NullableNumber,
+  last_result: NullableString,
 })
 
 export const StatusSchema = z.object({
@@ -20,6 +44,10 @@ export const StatusSchema = z.object({
   last_server_knowledge: z.number().nullable(),
   last_reconcile_at: NullableString,
   last_reconcile_status: NullableString,
+  plan_freshness: FreshnessSchema,
+  actuals_freshness: FreshnessSchema,
+  plan_provenance: PlanProvenanceSchema,
+  actuals_provenance: ActualsProvenanceSchema,
   latest_runs: z.record(z.string(), LatestRunSchema).optional(),
 })
 
@@ -211,6 +239,17 @@ export function refreshAll(month: string) {
 
 export function getErrorMessage(error: unknown): string {
   if (error instanceof ApiError) {
+    if (
+      error.body &&
+      typeof error.body === 'object' &&
+      'error_detail' in error.body &&
+      typeof error.body.error_detail === 'object' &&
+      error.body.error_detail !== null &&
+      'message' in error.body.error_detail &&
+      typeof error.body.error_detail.message === 'string'
+    ) {
+      return error.body.error_detail.message
+    }
     return error.message
   }
   if (error instanceof Error) {

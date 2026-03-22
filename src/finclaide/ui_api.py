@@ -121,7 +121,7 @@ def refresh_all():
             payload = {"reconcile": reconcile_result}
         except DataIntegrityError as error:
             status_code = 400
-            payload = {"reconcile_error": str(error)}
+            payload = {"reconcile_error": {"kind": "application_error", "message": str(error)}}
         payload.update(
             {
                 "budget_import": budget_import,

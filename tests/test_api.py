@@ -54,7 +54,14 @@ def test_budget_import_sync_reconcile_and_summary(app_factory, auth_header, ui_h
 
     ui_status_response = client.get("/ui-api/status")
     assert ui_status_response.status_code == 200
-    assert "latest_runs" in ui_status_response.get_json()
+    ui_status_payload = ui_status_response.get_json()
+    assert "latest_runs" in ui_status_payload
+    assert ui_status_payload["plan_freshness"]["status"] == "fresh"
+    assert ui_status_payload["actuals_provenance"]["plan_id"] == "plan-123"
+
+    api_status_response = client.get("/api/status", headers=auth_header)
+    assert api_status_response.status_code == 200
+    assert "latest_runs" in api_status_response.get_json()
 
     ui_summary = client.get("/ui-api/summary?month=2026-03")
     assert ui_summary.status_code == 200
@@ -248,7 +255,35 @@ def test_refresh_all_returns_partial_payload_on_reconcile_failure(app_factory, u
     assert "budget_import" in payload
     assert "ynab_sync" in payload
     assert "reconcile_error" in payload
+    assert payload["reconcile_error"]["message"]
     assert payload["summary"]["mismatches"]
+
+
+def test_failed_import_is_reflected_in_latest_runs(app_factory, auth_header, tmp_path: Path):
+    workbook = build_budget_workbook(tmp_path / "Budget.xlsx", invalid_layout=True)
+    app = app_factory(workbook_path=workbook)
+    client = app.test_client()
+
+    response = client.post("/api/budget/import", headers=auth_header)
+    assert response.status_code == 400
+
+    status_payload = client.get("/api/status", headers=auth_header).get_json()
+    latest_import = status_payload["latest_runs"]["budget_import"]
+    assert latest_import["status"] == "failed"
+    assert "Expected 'Stipends' header" in latest_import["details"]["error"]
+
+
+def test_failed_reconcile_is_reflected_in_latest_runs(app_factory, auth_header):
+    app = app_factory()
+    client = app.test_client()
+
+    response = client.post("/api/reconcile", headers=auth_header)
+    assert response.status_code == 400
+
+    status_payload = client.get("/api/status", headers=auth_header).get_json()
+    latest_reconcile = status_payload["latest_runs"]["reconcile"]
+    assert latest_reconcile["status"] == "failed"
+    assert "Cannot reconcile before importing a budget." == latest_reconcile["details"]["error"]
 
 
 def test_healthcheck_and_dashboard_render(app_factory):

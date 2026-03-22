@@ -11,12 +11,49 @@ export const statusFixture: StatusResponse = {
   last_server_knowledge: 2334,
   last_reconcile_at: '2026-03-15T12:02:00+00:00',
   last_reconcile_status: 'success',
+  plan_freshness: {
+    status: 'fresh',
+    last_updated_at: '2026-03-15T12:00:00+00:00',
+    hours_stale: 1.5,
+  },
+  actuals_freshness: {
+    status: 'warning',
+    last_updated_at: '2026-03-15T12:01:00+00:00',
+    hours_stale: 28.4,
+  },
+  plan_provenance: {
+    source_type: 'workbook',
+    workbook_path: '/input/Budget.xlsx',
+    sheet_name: '2026 Budget',
+    import_id: 5,
+    imported_at: '2026-03-15T12:00:00+00:00',
+    last_result: 'success',
+  },
+  actuals_provenance: {
+    source_type: 'ynab',
+    plan_id: 'plan-123',
+    last_synced_at: '2026-03-15T12:01:00+00:00',
+    server_knowledge: 2334,
+    last_result: 'success',
+  },
   latest_runs: {
     budget_import: {
       status: 'success',
       started_at: '2026-03-15T12:00:00+00:00',
       finished_at: '2026-03-15T12:00:02+00:00',
       details: { row_count: 75 },
+    },
+    ynab_sync: {
+      status: 'failed',
+      started_at: '2026-03-15T12:01:00+00:00',
+      finished_at: '2026-03-15T12:01:05+00:00',
+      details: { error: 'Temporary YNAB timeout' },
+    },
+    reconcile: {
+      status: 'success',
+      started_at: '2026-03-15T12:02:00+00:00',
+      finished_at: '2026-03-15T12:02:01+00:00',
+      details: { mismatch_count: 0 },
     },
   },
 }

@@ -43,79 +43,112 @@ def _ceil_div(numerator: int, denominator: int) -> int:
     return math.ceil(numerator / denominator)
 
 
+def _hours_stale(value: str | None) -> float | None:
+    if not value:
+        return None
+    return round((datetime.now(UTC) - datetime.fromisoformat(value)).total_seconds() / 3600, 1)
+
+
 @dataclass
 class ReconciliationService:
     database: Database
 
     def reconcile(self) -> dict[str, Any]:
         run_at = utc_now()
-        with self.database.connect() as connection:
-            planned_rows = connection.execute(
-                """
-                SELECT group_name, category_name
-                FROM v_latest_planned_categories
-                ORDER BY group_name, category_name
-                """
-            ).fetchall()
-            if not planned_rows:
-                raise DataIntegrityError("Cannot reconcile before importing a budget.")
-
-            mismatches = []
-            for row in planned_rows:
-                category = connection.execute(
+        mismatches: list[dict[str, Any]] = []
+        finished_at: str | None = None
+        try:
+            with self.database.connect() as connection:
+                planned_rows = connection.execute(
                     """
-                    SELECT id
-                    FROM categories
-                    WHERE deleted = 0
-                      AND group_name = ?
-                      AND name = ?
-                    LIMIT 1
-                    """,
-                    (row["group_name"], row["category_name"]),
-                ).fetchone()
-                if category is None:
-                    mismatches.append(
-                        {
-                            "group_name": row["group_name"],
-                            "category_name": row["category_name"],
-                            "reason": "Missing exact YNAB category match.",
-                        }
-                    )
-
-            status = "success" if not mismatches else "failed"
-            summary = {"run_at": run_at, "mismatches": mismatches}
-            result = connection.execute(
-                """
-                INSERT INTO reconciliation_results(run_at, status, mismatch_count, summary_json)
-                VALUES (?, ?, ?, ?)
-                """,
-                (run_at, status, len(mismatches), json.dumps(summary, sort_keys=True)),
-            )
-            reconciliation_id = int(result.lastrowid)
-            for mismatch in mismatches:
-                connection.execute(
+                    SELECT group_name, category_name
+                    FROM v_latest_planned_categories
+                    ORDER BY group_name, category_name
                     """
-                    INSERT INTO reconciliation_mismatches(reconciliation_id, group_name, category_name, reason)
+                ).fetchall()
+                if not planned_rows:
+                    raise DataIntegrityError("Cannot reconcile before importing a budget.")
+
+                for row in planned_rows:
+                    category = connection.execute(
+                        """
+                        SELECT id
+                        FROM categories
+                        WHERE deleted = 0
+                          AND group_name = ?
+                          AND name = ?
+                        LIMIT 1
+                        """,
+                        (row["group_name"], row["category_name"]),
+                    ).fetchone()
+                    if category is None:
+                        mismatches.append(
+                            {
+                                "group_name": row["group_name"],
+                                "category_name": row["category_name"],
+                                "reason": "Missing exact YNAB category match.",
+                            }
+                        )
+
+                status = "success" if not mismatches else "failed"
+                summary = {"run_at": run_at, "mismatches": mismatches}
+                result = connection.execute(
+                    """
+                    INSERT INTO reconciliation_results(run_at, status, mismatch_count, summary_json)
                     VALUES (?, ?, ?, ?)
                     """,
-                    (
-                        reconciliation_id,
-                        mismatch["group_name"],
-                        mismatch["category_name"],
-                        mismatch["reason"],
-                    ),
+                    (run_at, status, len(mismatches), json.dumps(summary, sort_keys=True)),
                 )
+                reconciliation_id = int(result.lastrowid)
+                for mismatch in mismatches:
+                    connection.execute(
+                        """
+                        INSERT INTO reconciliation_mismatches(reconciliation_id, group_name, category_name, reason)
+                        VALUES (?, ?, ?, ?)
+                        """,
+                        (
+                            reconciliation_id,
+                            mismatch["group_name"],
+                            mismatch["category_name"],
+                            mismatch["reason"],
+                        ),
+                    )
 
-        self.database.record_run(
-            source="reconcile",
-            status=status,
-            details={"mismatch_count": len(mismatches)},
-            started_at=run_at,
-            finished_at=utc_now(),
-        )
-        if mismatches:
-            raise DataIntegrityError(f"Reconciliation failed with {len(mismatches)} mismatches.")
-        return {"run_at": run_at, "mismatch_count": 0, "mismatches": []}
+            finished_at = utc_now()
+            if mismatches:
+                self.database.record_run(
+                    source="reconcile",
+                    status="failed",
+                    details={
+                        "mismatch_count": len(mismatches),
+                        "mismatch_preview": mismatches[:5],
+                        "error": f"Reconciliation failed with {len(mismatches)} mismatches.",
+                    },
+                    started_at=run_at,
+                    finished_at=finished_at,
+                )
+                raise DataIntegrityError(f"Reconciliation failed with {len(mismatches)} mismatches.")
+
+            result = {"run_at": run_at, "mismatch_count": 0, "mismatches": []}
+            self.database.record_run(
+                source="reconcile",
+                status="success",
+                details=result,
+                started_at=run_at,
+                finished_at=finished_at,
+            )
+            return result
+        except Exception as error:
+            if mismatches:
+                raise
+            self.database.record_run(
+                source="reconcile",
+                status="failed",
+                details={"mismatch_count": 0, "error": str(error)},
+                started_at=run_at,
+                finished_at=finished_at or utc_now(),
+            )
+            raise
 
 
 @dataclass
@@ -161,6 +194,9 @@ class ReportService:
                     }
                     for row in run_rows
                 }
+        plan_last_updated_at = latest_import["imported_at"] if latest_import else None
+        actuals_last_updated_at = sync_state["last_synced_at"] if sync_state else None
+        actuals_hours_stale = _hours_stale(actuals_last_updated_at)
         payload = {
             "plan_id": self.config.ynab_plan_id,
             "budget_sheet": self.config.budget_sheet_name,
@@ -172,6 +208,39 @@ class ReportService:
             "last_server_knowledge": sync_state["server_knowledge"] if sync_state else None,
             "last_reconcile_at": latest_reconciliation["run_at"] if latest_reconciliation else None,
             "last_reconcile_status": latest_reconciliation["status"] if latest_reconciliation else None,
+            "plan_freshness": {
+                "status": "fresh" if latest_import else "missing",
+                "last_updated_at": plan_last_updated_at,
+                "hours_stale": _hours_stale(plan_last_updated_at),
+            },
+            "actuals_freshness": {
+                "status": (
+                    "missing"
+                    if actuals_hours_stale is None
+                    else "critical"
+                    if actuals_hours_stale > 72
+                    else "warning"
+                    if actuals_hours_stale > 24
+                    else "fresh"
+                ),
+                "last_updated_at": actuals_last_updated_at,
+                "hours_stale": actuals_hours_stale,
+            },
+            "plan_provenance": {
+                "source_type": "workbook",
+                "workbook_path": str(self.config.budget_xlsx),
+                "sheet_name": self.config.budget_sheet_name,
+                "import_id": latest_import["id"] if latest_import else None,
+                "imported_at": plan_last_updated_at,
+                "last_result": latest_runs.get("budget_import", {}).get("status") if include_recent_runs else None,
+            },
+            "actuals_provenance": {
+                "source_type": "ynab",
+                "plan_id": self.config.ynab_plan_id,
+                "last_synced_at": actuals_last_updated_at,
+                "server_knowledge": sync_state["server_knowledge"] if sync_state else None,
+                "last_result": latest_runs.get("ynab_sync", {}).get("status") if include_recent_runs else None,
+            },
         }
         if include_recent_runs:
             payload["latest_runs"] = latest_runs

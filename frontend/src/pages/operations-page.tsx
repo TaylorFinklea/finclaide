@@ -7,10 +7,12 @@ import { toast } from 'sonner'
 import { useAppMonth } from '@/app/month-context'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import type { StatusResponse } from '@/lib/api'
 import { getErrorMessage, getStatus, getSummary, importBudget, reconcile, refreshAll, syncYnab } from '@/lib/api'
 import { formatMonthLabel, formatRunAt } from '@/lib/format'
 
 type OperationKind = 'budget-import' | 'ynab-sync' | 'reconcile' | 'refresh-all'
+type LatestRun = NonNullable<StatusResponse['latest_runs']>[string]
 
 export function OperationsPage() {
   const { month } = useAppMonth()
@@ -134,6 +136,9 @@ export function OperationsPage() {
                     <div className="font-medium text-foreground">{details.status}</div>
                     <div className="text-sm text-muted-foreground">{formatRunAt(details.finished_at)}</div>
                   </div>
+                  <div className="mt-2 text-sm text-muted-foreground">
+                    {describeRun(source, details)}
+                  </div>
                 </div>
               ))
             ) : (
@@ -155,6 +160,16 @@ export function OperationsPage() {
                   : 'Idle'}
               </div>
             </div>
+            <StatusDetailCard
+              label="Plan Data"
+              value={describeFreshness(statusQuery.data?.plan_freshness.status)}
+              detail={`Last import ${formatRunAt(statusQuery.data?.plan_freshness.last_updated_at)}`}
+            />
+            <StatusDetailCard
+              label="YNAB Data"
+              value={describeFreshness(statusQuery.data?.actuals_freshness.status)}
+              detail={describeActualsFreshness(statusQuery.data)}
+            />
             <div className="rounded-lg bg-muted/30 p-4">
               <div className="text-label-upper">Mismatch Count</div>
               <div className="mt-2 text-foreground">{summaryQuery.data?.mismatches.length ?? 0}</div>
@@ -165,6 +180,11 @@ export function OperationsPage() {
                 {statusQuery.data?.last_budget_import_id ?? '—'}
               </div>
             </div>
+            <StatusDetailCard
+              label="Plan Source"
+              value={basename(statusQuery.data?.plan_provenance.workbook_path ?? statusQuery.data?.budget_sheet)}
+              detail={`Sheet ${statusQuery.data?.plan_provenance.sheet_name ?? '—'}`}
+            />
           </CardContent>
         </Card>
       </div>
@@ -219,4 +239,69 @@ function labelFor(kind: OperationKind) {
     case 'refresh-all':
       return 'Refresh all'
   }
+}
+
+function describeRun(source: string, run: LatestRun) {
+  if ('error' in run.details && typeof run.details.error === 'string') {
+    return run.details.error
+  }
+  if (source === 'budget_import' && typeof run.details.row_count === 'number') {
+    return `Imported ${run.details.row_count} planned rows`
+  }
+  if (source === 'ynab_sync' && typeof run.details.transaction_count === 'number') {
+    return `Synced ${run.details.transaction_count} transactions`
+  }
+  if (source === 'reconcile' && typeof run.details.mismatch_count === 'number') {
+    return run.details.mismatch_count === 0
+      ? 'No mismatches found'
+      : `${run.details.mismatch_count} mismatches detected`
+  }
+  return 'No additional details'
+}
+
+function describeFreshness(status: string | undefined) {
+  switch (status) {
+    case 'fresh':
+      return 'Fresh'
+    case 'warning':
+      return 'Warning'
+    case 'critical':
+      return 'Critical'
+    case 'missing':
+      return 'Missing'
+    default:
+      return 'Unknown'
+  }
+}
+
+function describeActualsFreshness(status: StatusResponse | undefined) {
+  const freshness = status?.actuals_freshness
+  if (!freshness) {
+    return 'No sync state available'
+  }
+  if (freshness.status === 'missing') {
+    return 'YNAB has not been synced yet'
+  }
+  if (typeof freshness.hours_stale === 'number') {
+    return `${freshness.hours_stale.toFixed(1)} hours stale`
+  }
+  return `Last sync ${formatRunAt(freshness.last_updated_at)}`
+}
+
+function StatusDetailCard({ label, value, detail }: { label: string; value: string; detail: string }) {
+  return (
+    <div className="rounded-lg bg-muted/30 p-4">
+      <div className="text-label-upper">{label}</div>
+      <div className="mt-2 text-foreground">{value}</div>
+      <div className="mt-1 text-sm text-muted-foreground">{detail}</div>
+    </div>
+  )
+}
+
+function basename(value: string | undefined) {
+  if (!value) {
+    return 'Budget.xlsx'
+  }
+  const parts = value.split(/[\\/]/)
+  return parts[parts.length - 1] || value
 }
