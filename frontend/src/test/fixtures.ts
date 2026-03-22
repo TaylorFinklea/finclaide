@@ -24,6 +24,7 @@ export const statusFixture: StatusResponse = {
   plan_provenance: {
     source_type: 'workbook',
     workbook_path: '/input/Budget.xlsx',
+    workbook_url: null,
     sheet_name: '2026 Budget',
     import_id: 5,
     imported_at: '2026-03-15T12:00:00+00:00',

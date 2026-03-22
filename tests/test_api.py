@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import httpx
 import pytest
 
 from tests.workbook_builder import build_budget_workbook
@@ -284,6 +285,58 @@ def test_failed_reconcile_is_reflected_in_latest_runs(app_factory, auth_header):
     latest_reconcile = status_payload["latest_runs"]["reconcile"]
     assert latest_reconcile["status"] == "failed"
     assert "Cannot reconcile before importing a budget." == latest_reconcile["details"]["error"]
+
+
+def test_budget_import_can_download_remote_workbook_export(app_factory, auth_header, tmp_path: Path):
+    workbook = build_budget_workbook(tmp_path / "RemoteBudget.xlsx")
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert str(request.url) == "https://example.com/budget.xlsx"
+        return httpx.Response(
+            200,
+            headers={"content-type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"},
+            content=workbook.read_bytes(),
+        )
+
+    app = app_factory(
+        workbook_path=tmp_path / "DownloadedBudget.xlsx",
+        workbook_url="https://example.com/budget.xlsx",
+        budget_transport=httpx.MockTransport(handler),
+    )
+    client = app.test_client()
+
+    response = client.post("/api/budget/import", headers=auth_header)
+    payload = response.get_json()
+
+    assert response.status_code == 200
+    assert payload["row_count"] == 11
+
+    status_payload = client.get("/api/status", headers=auth_header).get_json()
+    assert status_payload["plan_provenance"]["source_type"] == "remote_export"
+    assert status_payload["plan_provenance"]["workbook_url"] == "https://example.com/budget.xlsx"
+    latest_import = status_payload["latest_runs"]["budget_import"]
+    assert latest_import["status"] == "success"
+    assert latest_import["details"]["byte_count"] > 0
+
+
+def test_failed_remote_workbook_download_is_reflected_in_latest_runs(app_factory, auth_header, tmp_path: Path):
+    def handler(_: httpx.Request) -> httpx.Response:
+        return httpx.Response(404, json={"error": "not_found"})
+
+    app = app_factory(
+        workbook_path=tmp_path / "DownloadedBudget.xlsx",
+        workbook_url="https://example.com/missing.xlsx",
+        budget_transport=httpx.MockTransport(handler),
+    )
+    client = app.test_client()
+
+    response = client.post("/api/budget/import", headers=auth_header)
+    assert response.status_code == 400
+
+    status_payload = client.get("/api/status", headers=auth_header).get_json()
+    latest_import = status_payload["latest_runs"]["budget_import"]
+    assert latest_import["status"] == "failed"
+    assert "Failed to download workbook export" in latest_import["details"]["error"]
 
 
 def test_healthcheck_and_dashboard_render(app_factory):

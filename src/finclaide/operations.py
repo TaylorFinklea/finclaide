@@ -29,14 +29,31 @@ def _run_with_tracking(container: Any, source: str, callback) -> dict[str, Any]:
 
 
 def run_budget_import(container: Any) -> dict[str, Any]:
-    return _run_with_tracking(
-        container,
-        "budget_import",
-        lambda: container.budget_importer.import_budget(
-            container.config.budget_xlsx,
+    started_at = utc_now()
+    source_details = container.budget_workbook_source.describe()
+    try:
+        source_details = container.budget_workbook_source.prepare()
+        result = container.budget_importer.import_budget(
+            container.budget_workbook_source.current_path(),
             container.config.budget_sheet_name,
-        ),
+        )
+    except Exception as error:
+        container.database.record_run(
+            "budget_import",
+            "failed",
+            {**source_details, "source": "budget_import", "error": str(error)},
+            started_at=started_at,
+            finished_at=utc_now(),
+        )
+        raise
+    container.database.record_run(
+        "budget_import",
+        "success",
+        {**source_details, **result},
+        started_at=started_at,
+        finished_at=utc_now(),
     )
+    return result
 
 
 def run_ynab_sync(container: Any) -> dict[str, Any]:

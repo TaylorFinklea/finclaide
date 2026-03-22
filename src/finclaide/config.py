@@ -13,6 +13,8 @@ class AppConfig:
     api_token: str | None
     db_path: Path
     budget_xlsx: Path
+    budget_xlsx_url: str | None
+    budget_xlsx_download_path: Path | None
     host: str
     port: int
     frontend_dist: Path | None = None
@@ -26,6 +28,12 @@ class AppConfig:
             api_token=os.getenv("FINCLAIDE_API_TOKEN"),
             db_path=Path(os.getenv("FINCLAIDE_DB_PATH", "/data/finclaide.db")),
             budget_xlsx=Path(os.getenv("FINCLAIDE_BUDGET_XLSX", "/input/Budget.xlsx")),
+            budget_xlsx_url=os.getenv("FINCLAIDE_BUDGET_XLSX_URL"),
+            budget_xlsx_download_path=(
+                Path(download_path)
+                if (download_path := os.getenv("FINCLAIDE_BUDGET_XLSX_DOWNLOAD_PATH"))
+                else None
+            ),
             frontend_dist=(
                 Path(frontend_dist)
                 if (frontend_dist := os.getenv("FINCLAIDE_FRONTEND_DIST"))

@@ -19,6 +19,7 @@ const FreshnessSchema = z.object({
 const PlanProvenanceSchema = z.object({
   source_type: z.string(),
   workbook_path: z.string(),
+  workbook_url: NullableString.optional(),
   sheet_name: z.string(),
   import_id: z.number().nullable(),
   imported_at: NullableString,

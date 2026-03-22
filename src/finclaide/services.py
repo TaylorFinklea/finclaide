@@ -227,8 +227,13 @@ class ReportService:
                 "hours_stale": actuals_hours_stale,
             },
             "plan_provenance": {
-                "source_type": "workbook",
-                "workbook_path": str(self.config.budget_xlsx),
+                "source_type": "remote_export" if self.config.budget_xlsx_url else "local_workbook",
+                "workbook_path": str(
+                    self.config.budget_xlsx_download_path or self.config.budget_xlsx
+                    if self.config.budget_xlsx_url
+                    else self.config.budget_xlsx
+                ),
+                "workbook_url": self.config.budget_xlsx_url,
                 "sheet_name": self.config.budget_sheet_name,
                 "import_id": latest_import["id"] if latest_import else None,
                 "imported_at": plan_last_updated_at,
@@ -655,6 +660,7 @@ class ServiceContainer:
     config: AppConfig
     database: Database
     budget_importer: Any
+    budget_workbook_source: Any
     ynab_sync: Any
     reconcile: ReconciliationService
     reports: ReportService

@@ -7,6 +7,7 @@ from finclaide.analytics import AnalyticsService
 from finclaide.analytics_api import analytics_api
 from finclaide.api import api, register_error_handlers
 from finclaide.budget_sheet import BudgetImporter
+from finclaide.budget_source import create_budget_workbook_source
 from finclaide.config import AppConfig
 from finclaide.database import Database
 from finclaide.frontend import register_frontend
@@ -20,6 +21,7 @@ def create_app(
     config_overrides: dict | None = None,
     *,
     ynab_transport: httpx.BaseTransport | None = None,
+    budget_transport: httpx.BaseTransport | None = None,
 ) -> Flask:
     config = AppConfig.from_env(config_overrides)
     database = Database(config.db_path)
@@ -31,6 +33,7 @@ def create_app(
         config=config,
         database=database,
         budget_importer=BudgetImporter(database),
+        budget_workbook_source=create_budget_workbook_source(config, transport=budget_transport),
         ynab_sync=YNABSyncService(config=config, database=database, client=ynab_client),
         reconcile=ReconciliationService(database=database),
         reports=ReportService(config=config, database=database, operation_lock=operation_lock),

@@ -9,6 +9,13 @@ Docker-first financial planning and reporting for a single YNAB plan plus a Goog
 3. Run `make build`.
 4. Run `make up`.
 
+If you want Finclaide to refresh the planning workbook automatically instead of relying on a manually downloaded file, set:
+
+- `FINCLAIDE_BUDGET_XLSX_URL` to a direct `.xlsx` export URL
+- optionally `FINCLAIDE_BUDGET_XLSX_DOWNLOAD_PATH` to control where the downloaded workbook is cached locally
+
+When `FINCLAIDE_BUDGET_XLSX_URL` is configured, budget import will fetch the remote workbook export first and then run the normal deterministic importer against the downloaded file.
+
 The React dashboard is available at `http://localhost:8050/`, the browser-safe UI API is available under `http://localhost:8050/ui-api/*`, and the private external API remains available under `http://localhost:8050/api/*`.
 
 ## Frontend Development

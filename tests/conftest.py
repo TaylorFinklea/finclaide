@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
+import httpx
 
 from finclaide.app import create_app
 from finclaide.database import Database
@@ -20,8 +21,10 @@ def app_factory(tmp_path: Path):
     def factory(
         *,
         workbook_path: Path | None = None,
+        workbook_url: str | None = None,
         categories_fixture: str = "categories.json",
         transactions_fixture: str = "transactions_initial.json",
+        budget_transport: httpx.BaseTransport | None = None,
     ):
         db_path = tmp_path / "finclaide.db"
         app = create_app(
@@ -31,6 +34,7 @@ def app_factory(tmp_path: Path):
                 "ynab_plan_id": "plan-123",
                 "db_path": db_path,
                 "budget_xlsx": workbook_path or build_budget_workbook(tmp_path / "Budget.xlsx"),
+                "budget_xlsx_url": workbook_url,
                 "host": "127.0.0.1",
                 "port": 8050,
             },
@@ -38,6 +42,7 @@ def app_factory(tmp_path: Path):
                 categories_fixture=categories_fixture,
                 transactions_fixture=transactions_fixture,
             ),
+            budget_transport=budget_transport,
         )
         app.testing = True
         return app
