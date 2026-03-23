@@ -25,6 +25,8 @@ def app_factory(tmp_path: Path):
         categories_fixture: str = "categories.json",
         transactions_fixture: str = "transactions_initial.json",
         budget_transport: httpx.BaseTransport | None = None,
+        scheduled_refresh_enabled: bool = False,
+        scheduled_refresh_interval_minutes: int = 360,
     ):
         db_path = tmp_path / "finclaide.db"
         app = create_app(
@@ -35,6 +37,8 @@ def app_factory(tmp_path: Path):
                 "db_path": db_path,
                 "budget_xlsx": workbook_path or build_budget_workbook(tmp_path / "Budget.xlsx"),
                 "budget_xlsx_url": workbook_url,
+                "scheduled_refresh_enabled": scheduled_refresh_enabled,
+                "scheduled_refresh_interval_minutes": scheduled_refresh_interval_minutes,
                 "host": "127.0.0.1",
                 "port": 8050,
             },

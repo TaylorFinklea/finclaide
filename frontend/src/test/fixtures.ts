@@ -22,7 +22,7 @@ export const statusFixture: StatusResponse = {
     hours_stale: 28.4,
   },
   plan_provenance: {
-    source_type: 'workbook',
+    source_type: 'local_workbook',
     workbook_path: '/input/Budget.xlsx',
     workbook_url: null,
     sheet_name: '2026 Budget',
@@ -36,6 +36,15 @@ export const statusFixture: StatusResponse = {
     last_synced_at: '2026-03-15T12:01:00+00:00',
     server_knowledge: 2334,
     last_result: 'success',
+  },
+  scheduled_refresh: {
+    enabled: true,
+    interval_minutes: 360,
+    next_run_at: '2026-03-15T18:00:00+00:00',
+    last_started_at: '2026-03-15T12:15:00+00:00',
+    last_finished_at: '2026-03-15T12:15:08+00:00',
+    last_status: 'failed',
+    last_error: 'Reconciliation failed with 1 mismatches.',
   },
   latest_runs: {
     budget_import: {
@@ -55,6 +64,12 @@ export const statusFixture: StatusResponse = {
       started_at: '2026-03-15T12:02:00+00:00',
       finished_at: '2026-03-15T12:02:01+00:00',
       details: { mismatch_count: 0 },
+    },
+    scheduled_refresh: {
+      status: 'failed',
+      started_at: '2026-03-15T12:15:00+00:00',
+      finished_at: '2026-03-15T12:15:08+00:00',
+      details: { reconcile_error: 'Reconciliation failed with 1 mismatches.' },
     },
   },
 }

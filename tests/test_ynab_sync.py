@@ -19,6 +19,8 @@ def test_ynab_sync_initial_and_delta(tmp_path: Path):
         budget_xlsx=tmp_path / "Budget.xlsx",
         budget_xlsx_url=None,
         budget_xlsx_download_path=None,
+        scheduled_refresh_enabled=False,
+        scheduled_refresh_interval_minutes=360,
         host="127.0.0.1",
         port=8050,
     )

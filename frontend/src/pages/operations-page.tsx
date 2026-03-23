@@ -5,6 +5,7 @@ import { LoaderCircle, RefreshCw } from 'lucide-react'
 import { toast } from 'sonner'
 
 import { useAppMonth } from '@/app/month-context'
+import { StatusChip } from '@/components/status-chip'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import type { StatusResponse } from '@/lib/api'
@@ -171,6 +172,14 @@ export function OperationsPage() {
               detail={describeActualsFreshness(statusQuery.data)}
             />
             <div className="rounded-lg bg-muted/30 p-4">
+              <div className="flex items-center justify-between gap-3">
+                <div className="text-label-upper">Scheduled Refresh</div>
+                <StatusChip status={describeScheduleStatus(statusQuery.data)} />
+              </div>
+              <div className="mt-2 text-foreground">{describeScheduleHeadline(statusQuery.data)}</div>
+              <div className="mt-1 text-sm text-muted-foreground">{describeScheduleDetail(statusQuery.data)}</div>
+            </div>
+            <div className="rounded-lg bg-muted/30 p-4">
               <div className="text-label-upper">Mismatch Count</div>
               <div className="mt-2 text-foreground">{summaryQuery.data?.mismatches.length ?? 0}</div>
             </div>
@@ -256,6 +265,20 @@ function describeRun(source: string, run: LatestRun) {
       ? 'No mismatches found'
       : `${run.details.mismatch_count} mismatches detected`
   }
+  if (source === 'scheduled_refresh') {
+    if ('reconcile_error' in run.details && typeof run.details.reconcile_error === 'string') {
+      return run.details.reconcile_error
+    }
+    if (
+      'budget_import' in run.details &&
+      typeof run.details.budget_import === 'object' &&
+      run.details.budget_import !== null &&
+      'row_count' in run.details.budget_import &&
+      typeof run.details.budget_import.row_count === 'number'
+    ) {
+      return `Imported ${run.details.budget_import.row_count} planned rows in scheduled refresh`
+    }
+  }
   return 'No additional details'
 }
 
@@ -286,6 +309,45 @@ function describeActualsFreshness(status: StatusResponse | undefined) {
     return `${freshness.hours_stale.toFixed(1)} hours stale`
   }
   return `Last sync ${formatRunAt(freshness.last_updated_at)}`
+}
+
+function describeScheduleStatus(status: StatusResponse | undefined) {
+  const schedule = status?.scheduled_refresh
+  if (!schedule?.enabled) {
+    return 'missing'
+  }
+  return schedule.last_status ?? 'warning'
+}
+
+function describeScheduleHeadline(status: StatusResponse | undefined) {
+  const schedule = status?.scheduled_refresh
+  if (!schedule?.enabled) {
+    return 'Automatic refresh is disabled'
+  }
+  if (schedule.last_status === 'success') {
+    return `Last run succeeded ${formatRunAt(schedule.last_finished_at)}`
+  }
+  if (schedule.last_status === 'failed') {
+    return `Last run failed ${formatRunAt(schedule.last_finished_at)}`
+  }
+  if (schedule.last_status === 'skipped') {
+    return `Last run skipped ${formatRunAt(schedule.last_finished_at)}`
+  }
+  return `Next run ${formatRunAt(schedule.next_run_at)}`
+}
+
+function describeScheduleDetail(status: StatusResponse | undefined) {
+  const schedule = status?.scheduled_refresh
+  if (!schedule?.enabled) {
+    return 'Set FINCLAIDE_SCHEDULED_REFRESH_ENABLED to turn on automatic import, sync, and reconcile.'
+  }
+  if (schedule.last_error) {
+    return schedule.last_error
+  }
+  if (typeof schedule.interval_minutes === 'number') {
+    return `Runs every ${schedule.interval_minutes} minutes. Next run ${formatRunAt(schedule.next_run_at)}.`
+  }
+  return 'No scheduler details available'
 }
 
 function StatusDetailCard({ label, value, detail }: { label: string; value: string; detail: string }) {

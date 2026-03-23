@@ -12,6 +12,7 @@ from finclaide.config import AppConfig
 from finclaide.database import Database
 from finclaide.frontend import register_frontend
 from finclaide.locking import OperationLock
+from finclaide.scheduled_refresh import ScheduledRefreshService
 from finclaide.services import ReconciliationService, ReportService, ServiceContainer
 from finclaide.ui_api import ui_api
 from finclaide.ynab import YNABClient, YNABSyncService
@@ -38,8 +39,18 @@ def create_app(
         reconcile=ReconciliationService(database=database),
         reports=ReportService(config=config, database=database, operation_lock=operation_lock),
         analytics=AnalyticsService(config=config, database=database, operation_lock=operation_lock),
+        scheduled_refresh=None,
         operation_lock=operation_lock,
     )
+    services.scheduled_refresh = ScheduledRefreshService(
+        enabled=config.scheduled_refresh_enabled,
+        interval_minutes=config.scheduled_refresh_interval_minutes,
+        database=database,
+        operation_lock=operation_lock,
+        container=services,
+    )
+    services.reports.scheduled_refresh = services.scheduled_refresh
+    services.scheduled_refresh.start()
 
     app = Flask(__name__)
     app.config["FINCLAIDE_CONFIG"] = config

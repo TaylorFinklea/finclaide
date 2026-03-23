@@ -29,6 +29,8 @@ describe('OverviewPage', () => {
     renderWithProviders(<OverviewPage />)
 
     expect(await screen.findByText('Overage Watch')).toBeInTheDocument()
+    expect(screen.getByText('Automation Health')).toBeInTheDocument()
+    expect(screen.getAllByText('Reconciliation failed with 1 mismatches.')).not.toHaveLength(0)
     expect(screen.getByText('Expenses / Groceries')).toBeInTheDocument()
     expect(screen.getByText('Fun / Eat Out')).toBeInTheDocument()
     expect(screen.getAllByText(/Suggested floor/i)).toHaveLength(2)

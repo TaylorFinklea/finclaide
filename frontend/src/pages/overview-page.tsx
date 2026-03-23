@@ -72,6 +72,39 @@ export function OverviewPage() {
         />
       </section>
 
+      <Card className="border-border/40 bg-card">
+        <CardHeader className="flex flex-row items-center justify-between gap-4">
+          <div>
+            <CardTitle>Automation Health</CardTitle>
+            <p className="mt-2 text-sm text-muted-foreground">
+              Scheduled import, YNAB sync, and reconcile state.
+            </p>
+          </div>
+          <StatusChip status={automationHealthStatus(status)} />
+        </CardHeader>
+        <CardContent className="grid gap-4 md:grid-cols-3">
+          <div className="rounded-lg bg-muted/30 p-4">
+            <div className="text-label-upper">Scheduler</div>
+            <div className="mt-2 text-foreground">{automationHealthHeadline(status)}</div>
+            <div className="mt-1 text-sm text-muted-foreground">{automationHealthDetail(status)}</div>
+          </div>
+          <div className="rounded-lg bg-muted/30 p-4">
+            <div className="text-label-upper">Plan Freshness</div>
+            <div className="mt-2 text-foreground">{status.plan_freshness.status}</div>
+            <div className="mt-1 text-sm text-muted-foreground">
+              Last import {formatRunAt(status.plan_freshness.last_updated_at)}
+            </div>
+          </div>
+          <div className="rounded-lg bg-muted/30 p-4">
+            <div className="text-label-upper">YNAB Freshness</div>
+            <div className="mt-2 text-foreground">{status.actuals_freshness.status}</div>
+            <div className="mt-1 text-sm text-muted-foreground">
+              Last sync {formatRunAt(status.actuals_freshness.last_updated_at)}
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
       <div className="grid gap-6 xl:grid-cols-[1.6fr_1fr]">
         <Card className="border-border/40 bg-card">
           <CardHeader className="flex flex-row items-center justify-between">
@@ -267,6 +300,51 @@ export function OverviewPage() {
       </div>
     </div>
   )
+}
+
+function automationHealthStatus(status: Awaited<ReturnType<typeof getStatus>>) {
+  const schedule = status.scheduled_refresh
+  if (!schedule.enabled) {
+    return 'missing'
+  }
+  if (schedule.last_status === 'failed') {
+    return 'critical'
+  }
+  if (schedule.last_status === 'skipped') {
+    return 'warning'
+  }
+  if (status.actuals_freshness.status === 'critical' || status.plan_freshness.status === 'missing') {
+    return 'warning'
+  }
+  return schedule.last_status ?? 'fresh'
+}
+
+function automationHealthHeadline(status: Awaited<ReturnType<typeof getStatus>>) {
+  const schedule = status.scheduled_refresh
+  if (!schedule.enabled) {
+    return 'Automatic refresh is disabled'
+  }
+  if (schedule.last_status === 'success') {
+    return `Last run succeeded ${formatRunAt(schedule.last_finished_at)}`
+  }
+  if (schedule.last_status === 'failed') {
+    return `Last run failed ${formatRunAt(schedule.last_finished_at)}`
+  }
+  if (schedule.last_status === 'skipped') {
+    return `Last run skipped ${formatRunAt(schedule.last_finished_at)}`
+  }
+  return `Next run ${formatRunAt(schedule.next_run_at)}`
+}
+
+function automationHealthDetail(status: Awaited<ReturnType<typeof getStatus>>) {
+  const schedule = status.scheduled_refresh
+  if (!schedule.enabled) {
+    return 'Automatic refresh can keep the workbook import, YNAB sync, and reconcile flow current without manual runs.'
+  }
+  if (schedule.last_error) {
+    return schedule.last_error
+  }
+  return `Runs every ${schedule.interval_minutes ?? '—'} minutes. Next run ${formatRunAt(schedule.next_run_at)}.`
 }
 
 function formatOverageWatchWindow(startMonth: string | null, endMonth: string | null) {

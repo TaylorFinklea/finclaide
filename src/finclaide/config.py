@@ -15,6 +15,8 @@ class AppConfig:
     budget_xlsx: Path
     budget_xlsx_url: str | None
     budget_xlsx_download_path: Path | None
+    scheduled_refresh_enabled: bool
+    scheduled_refresh_interval_minutes: int
     host: str
     port: int
     frontend_dist: Path | None = None
@@ -33,6 +35,12 @@ class AppConfig:
                 Path(download_path)
                 if (download_path := os.getenv("FINCLAIDE_BUDGET_XLSX_DOWNLOAD_PATH"))
                 else None
+            ),
+            scheduled_refresh_enabled=os.getenv(
+                "FINCLAIDE_SCHEDULED_REFRESH_ENABLED", ""
+            ).lower() in {"1", "true", "yes", "on"},
+            scheduled_refresh_interval_minutes=int(
+                os.getenv("FINCLAIDE_SCHEDULED_REFRESH_INTERVAL_MINUTES", "360")
             ),
             frontend_dist=(
                 Path(frontend_dist)

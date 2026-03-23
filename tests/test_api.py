@@ -59,6 +59,7 @@ def test_budget_import_sync_reconcile_and_summary(app_factory, auth_header, ui_h
     assert "latest_runs" in ui_status_payload
     assert ui_status_payload["plan_freshness"]["status"] == "fresh"
     assert ui_status_payload["actuals_provenance"]["plan_id"] == "plan-123"
+    assert ui_status_payload["scheduled_refresh"]["enabled"] is False
 
     api_status_response = client.get("/api/status", headers=auth_header)
     assert api_status_response.status_code == 200
@@ -337,6 +338,74 @@ def test_failed_remote_workbook_download_is_reflected_in_latest_runs(app_factory
     latest_import = status_payload["latest_runs"]["budget_import"]
     assert latest_import["status"] == "failed"
     assert "Failed to download workbook export" in latest_import["details"]["error"]
+
+
+def test_scheduled_refresh_run_is_reflected_in_status(app_factory, auth_header, tmp_path: Path):
+    workbook = build_budget_workbook(tmp_path / "Budget.xlsx")
+    app = app_factory(
+        workbook_path=workbook,
+        scheduled_refresh_enabled=True,
+        scheduled_refresh_interval_minutes=120,
+    )
+    app.extensions["finclaide"].scheduled_refresh.stop()
+    client = app.test_client()
+    services = app.extensions["finclaide"]
+
+    result = services.scheduled_refresh.run_once()
+    status_payload = client.get("/api/status", headers=auth_header).get_json()
+    latest_run = status_payload["latest_runs"]["scheduled_refresh"]
+
+    assert result["status"] == "success"
+    assert status_payload["scheduled_refresh"]["enabled"] is True
+    assert status_payload["scheduled_refresh"]["interval_minutes"] == 120
+    assert status_payload["scheduled_refresh"]["last_status"] == "success"
+    assert status_payload["scheduled_refresh"]["last_finished_at"] is not None
+    assert status_payload["scheduled_refresh"]["next_run_at"] is not None
+    assert latest_run["status"] == "success"
+    assert latest_run["details"]["reconcile"]["mismatch_count"] == 0
+
+
+def test_scheduled_refresh_failure_is_reflected_in_status(app_factory, auth_header, tmp_path: Path):
+    workbook = build_budget_workbook(tmp_path / "Budget.xlsx")
+    app = app_factory(
+        workbook_path=workbook,
+        categories_fixture="categories_missing_investments.json",
+        scheduled_refresh_enabled=True,
+    )
+    app.extensions["finclaide"].scheduled_refresh.stop()
+    client = app.test_client()
+    services = app.extensions["finclaide"]
+
+    result = services.scheduled_refresh.run_once()
+    status_payload = client.get("/api/status", headers=auth_header).get_json()
+    latest_run = status_payload["latest_runs"]["scheduled_refresh"]
+
+    assert result["status"] == "failed"
+    assert "Reconciliation failed" in result["reconcile_error"]
+    assert status_payload["scheduled_refresh"]["last_status"] == "failed"
+    assert "Reconciliation failed" in status_payload["scheduled_refresh"]["last_error"]
+    assert latest_run["status"] == "failed"
+    assert "Reconciliation failed" in latest_run["details"]["reconcile_error"]
+
+
+def test_scheduled_refresh_skip_is_reflected_in_status(app_factory, auth_header):
+    app = app_factory(scheduled_refresh_enabled=True)
+    app.extensions["finclaide"].scheduled_refresh.stop()
+    client = app.test_client()
+    services = app.extensions["finclaide"]
+
+    with services.operation_lock.guard("budget_import"):
+        result = services.scheduled_refresh.run_once()
+
+    status_payload = client.get("/api/status", headers=auth_header).get_json()
+    latest_run = status_payload["latest_runs"]["scheduled_refresh"]
+
+    assert result["status"] == "skipped"
+    assert "already running" in result["error"]
+    assert status_payload["scheduled_refresh"]["last_status"] == "skipped"
+    assert "already running" in status_payload["scheduled_refresh"]["last_error"]
+    assert latest_run["status"] == "skipped"
+    assert "already running" in latest_run["details"]["error"]
 
 
 def test_healthcheck_and_dashboard_render(app_factory):

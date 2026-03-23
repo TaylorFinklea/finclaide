@@ -34,6 +34,16 @@ const ActualsProvenanceSchema = z.object({
   last_result: NullableString,
 })
 
+const ScheduledRefreshSchema = z.object({
+  enabled: z.boolean(),
+  interval_minutes: z.number().nullable(),
+  next_run_at: NullableString,
+  last_started_at: NullableString,
+  last_finished_at: NullableString,
+  last_status: NullableString,
+  last_error: NullableString,
+})
+
 export const StatusSchema = z.object({
   plan_id: NullableString,
   budget_sheet: z.string(),
@@ -49,6 +59,7 @@ export const StatusSchema = z.object({
   actuals_freshness: FreshnessSchema,
   plan_provenance: PlanProvenanceSchema,
   actuals_provenance: ActualsProvenanceSchema,
+  scheduled_refresh: ScheduledRefreshSchema,
   latest_runs: z.record(z.string(), LatestRunSchema).optional(),
 })
 

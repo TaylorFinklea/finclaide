@@ -156,6 +156,7 @@ class ReportService:
     config: AppConfig
     database: Database
     operation_lock: OperationLock
+    scheduled_refresh: Any | None = None
 
     def status(self, *, include_recent_runs: bool = False) -> dict[str, Any]:
         with self.database.connect() as connection:
@@ -246,6 +247,19 @@ class ReportService:
                 "server_knowledge": sync_state["server_knowledge"] if sync_state else None,
                 "last_result": latest_runs.get("ynab_sync", {}).get("status") if include_recent_runs else None,
             },
+            "scheduled_refresh": (
+                self.scheduled_refresh.snapshot()
+                if self.scheduled_refresh is not None
+                else {
+                    "enabled": False,
+                    "interval_minutes": None,
+                    "next_run_at": None,
+                    "last_started_at": None,
+                    "last_finished_at": None,
+                    "last_status": None,
+                    "last_error": None,
+                }
+            ),
         }
         if include_recent_runs:
             payload["latest_runs"] = latest_runs
@@ -665,4 +679,5 @@ class ServiceContainer:
     reconcile: ReconciliationService
     reports: ReportService
     analytics: Any
+    scheduled_refresh: Any | None
     operation_lock: OperationLock
