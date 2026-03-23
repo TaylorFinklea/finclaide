@@ -65,6 +65,10 @@ def test_budget_import_sync_reconcile_and_summary(app_factory, auth_header, ui_h
     assert api_status_response.status_code == 200
     assert "latest_runs" in api_status_response.get_json()
 
+    runs_response = client.get("/api/runs?limit=5", headers=auth_header)
+    assert runs_response.status_code == 200
+    assert len(runs_response.get_json()["runs"]) >= 3
+
     ui_summary = client.get("/ui-api/summary?month=2026-03")
     assert ui_summary.status_code == 200
     assert ui_summary.get_json()["month"] == "2026-03"
@@ -300,6 +304,7 @@ def test_budget_import_can_download_remote_workbook_export(app_factory, auth_hea
         )
 
     app = app_factory(
+        budget_source="remote_url",
         workbook_path=tmp_path / "DownloadedBudget.xlsx",
         workbook_url="https://example.com/budget.xlsx",
         budget_transport=httpx.MockTransport(handler),
@@ -325,6 +330,7 @@ def test_failed_remote_workbook_download_is_reflected_in_latest_runs(app_factory
         return httpx.Response(404, json={"error": "not_found"})
 
     app = app_factory(
+        budget_source="remote_url",
         workbook_path=tmp_path / "DownloadedBudget.xlsx",
         workbook_url="https://example.com/missing.xlsx",
         budget_transport=httpx.MockTransport(handler),
@@ -340,11 +346,97 @@ def test_failed_remote_workbook_download_is_reflected_in_latest_runs(app_factory
     assert "Failed to download workbook export" in latest_import["details"]["error"]
 
 
+def test_budget_import_can_export_google_sheet_with_service_account(
+    app_factory, auth_header, tmp_path: Path
+):
+    workbook = build_budget_workbook(tmp_path / "GoogleBudget.xlsx")
+    service_account = tmp_path / "service-account.json"
+    service_account.write_text('{"type":"service_account"}')
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.headers["Authorization"] == "Bearer test-google-token"
+        assert request.url.params["mimeType"] == (
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        )
+        assert request.url.path.endswith("/files/sheet-123/export")
+        return httpx.Response(
+            200,
+            headers={"content-type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"},
+            content=workbook.read_bytes(),
+        )
+
+    app = app_factory(
+        budget_source="google_sheets",
+        workbook_path=tmp_path / "DownloadedBudget.xlsx",
+        google_service_account_path=service_account,
+        google_sheets_file_id="sheet-123",
+        budget_transport=httpx.MockTransport(handler),
+        budget_access_token_provider=lambda: "test-google-token",
+    )
+    client = app.test_client()
+
+    response = client.post("/api/budget/import", headers=auth_header)
+    payload = response.get_json()
+
+    assert response.status_code == 200
+    assert payload["row_count"] == 11
+
+    status_payload = client.get("/api/status", headers=auth_header).get_json()
+    assert status_payload["plan_provenance"]["source_type"] == "google_sheets"
+    assert status_payload["plan_provenance"]["google_sheets_file_id"] == "sheet-123"
+    latest_import = status_payload["latest_runs"]["budget_import"]
+    assert latest_import["status"] == "success"
+    assert latest_import["details"]["byte_count"] > 0
+
+
+def test_google_sheets_source_requires_service_account_path(app_factory, auth_header, tmp_path: Path):
+    app = app_factory(
+        budget_source="google_sheets",
+        workbook_path=tmp_path / "DownloadedBudget.xlsx",
+        google_sheets_file_id="sheet-123",
+        budget_access_token_provider=lambda: "test-google-token",
+    )
+    client = app.test_client()
+
+    response = client.post("/api/budget/import", headers=auth_header)
+    assert response.status_code == 400
+    assert "GOOGLE_SERVICE_ACCOUNT_PATH" in response.get_json()["error"]
+
+
+def test_google_sheets_export_failure_is_reflected_in_latest_runs(
+    app_factory, auth_header, tmp_path: Path
+):
+    service_account = tmp_path / "service-account.json"
+    service_account.write_text('{"type":"service_account"}')
+
+    def handler(_: httpx.Request) -> httpx.Response:
+        return httpx.Response(403, json={"error": "forbidden"})
+
+    app = app_factory(
+        budget_source="google_sheets",
+        workbook_path=tmp_path / "DownloadedBudget.xlsx",
+        google_service_account_path=service_account,
+        google_sheets_file_id="sheet-123",
+        budget_transport=httpx.MockTransport(handler),
+        budget_access_token_provider=lambda: "test-google-token",
+    )
+    client = app.test_client()
+
+    response = client.post("/api/budget/import", headers=auth_header)
+    assert response.status_code == 400
+
+    status_payload = client.get("/api/status", headers=auth_header).get_json()
+    latest_import = status_payload["latest_runs"]["budget_import"]
+    assert latest_import["status"] == "failed"
+    assert "Failed to export Google Sheets workbook" in latest_import["details"]["error"]
+
+
 def test_scheduled_refresh_run_is_reflected_in_status(app_factory, auth_header, tmp_path: Path):
     workbook = build_budget_workbook(tmp_path / "Budget.xlsx")
     app = app_factory(
         workbook_path=workbook,
         scheduled_refresh_enabled=True,
+        scheduled_refresh_bootstrap_on_start=False,
         scheduled_refresh_interval_minutes=120,
     )
     app.extensions["finclaide"].scheduled_refresh.stop()
@@ -371,6 +463,7 @@ def test_scheduled_refresh_failure_is_reflected_in_status(app_factory, auth_head
         workbook_path=workbook,
         categories_fixture="categories_missing_investments.json",
         scheduled_refresh_enabled=True,
+        scheduled_refresh_bootstrap_on_start=False,
     )
     app.extensions["finclaide"].scheduled_refresh.stop()
     client = app.test_client()
@@ -389,7 +482,7 @@ def test_scheduled_refresh_failure_is_reflected_in_status(app_factory, auth_head
 
 
 def test_scheduled_refresh_skip_is_reflected_in_status(app_factory, auth_header):
-    app = app_factory(scheduled_refresh_enabled=True)
+    app = app_factory(scheduled_refresh_enabled=True, scheduled_refresh_bootstrap_on_start=False)
     app.extensions["finclaide"].scheduled_refresh.stop()
     client = app.test_client()
     services = app.extensions["finclaide"]
@@ -406,6 +499,28 @@ def test_scheduled_refresh_skip_is_reflected_in_status(app_factory, auth_header)
     assert "already running" in status_payload["scheduled_refresh"]["last_error"]
     assert latest_run["status"] == "skipped"
     assert "already running" in latest_run["details"]["error"]
+
+
+def test_scheduler_bootstraps_when_no_prior_successful_runs(app_factory, auth_header, tmp_path: Path):
+    workbook = build_budget_workbook(tmp_path / "Budget.xlsx")
+    app = app_factory(
+        workbook_path=workbook,
+        scheduled_refresh_enabled=True,
+        scheduled_refresh_bootstrap_on_start=True,
+        scheduled_refresh_interval_minutes=120,
+    )
+    client = app.test_client()
+
+    for _ in range(50):
+        status_payload = client.get("/api/status", headers=auth_header).get_json()
+        if status_payload["scheduled_refresh"]["last_status"] is not None:
+            break
+    else:
+        pytest.fail("Scheduled refresh did not bootstrap on startup.")
+
+    assert status_payload["scheduled_refresh"]["last_status"] == "success"
+    assert status_payload["last_budget_import_id"] is not None
+    assert status_payload["last_ynab_sync_at"] is not None
 
 
 def test_healthcheck_and_dashboard_render(app_factory):

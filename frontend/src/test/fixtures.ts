@@ -1,4 +1,4 @@
-import type { StatusResponse, SummaryResponse, TransactionsPageResponse } from '@/lib/api'
+import type { RunEntry, StatusResponse, SummaryResponse, TransactionsPageResponse } from '@/lib/api'
 
 export const statusFixture: StatusResponse = {
   plan_id: 'plan-123',
@@ -205,4 +205,41 @@ export const transactionsFixture: TransactionsPageResponse = {
   total_count: 1,
   limit: 25,
   offset: 0,
+}
+
+export const runsFixture: { runs: RunEntry[] } = {
+  runs: [
+    {
+      id: 12,
+      source: 'scheduled_refresh',
+      status: 'failed',
+      started_at: '2026-03-15T12:15:00+00:00',
+      finished_at: '2026-03-15T12:15:08+00:00',
+      details: { reconcile_error: 'Reconciliation failed with 1 mismatches.' },
+    },
+    {
+      id: 11,
+      source: 'reconcile',
+      status: 'success',
+      started_at: '2026-03-15T12:02:00+00:00',
+      finished_at: '2026-03-15T12:02:01+00:00',
+      details: { mismatch_count: 0 },
+    },
+    {
+      id: 10,
+      source: 'ynab_sync',
+      status: 'failed',
+      started_at: '2026-03-15T12:01:00+00:00',
+      finished_at: '2026-03-15T12:01:05+00:00',
+      details: { error: 'Temporary YNAB timeout' },
+    },
+    {
+      id: 9,
+      source: 'budget_import',
+      status: 'success',
+      started_at: '2026-03-15T12:00:00+00:00',
+      finished_at: '2026-03-15T12:00:02+00:00',
+      details: { row_count: 75 },
+    },
+  ],
 }

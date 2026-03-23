@@ -5,18 +5,26 @@ Docker-first financial planning and reporting for a single YNAB plan plus a Goog
 ## Runtime
 
 1. Copy `.env.example` to `.env` and fill in the YNAB and API tokens.
-2. Confirm `BUDGET_XLSX_HOST_PATH` points at the exported workbook on the host.
+2. Choose a budget source:
+   - `local_file`: confirm `BUDGET_XLSX_HOST_PATH` points at the workbook on the host.
+   - `remote_url`: set `FINCLAIDE_BUDGET_XLSX_URL`.
+   - `google_sheets`: set `FINCLAIDE_BUDGET_SOURCE=google_sheets`, `FINCLAIDE_GOOGLE_SHEETS_FILE_ID`, and `GOOGLE_SERVICE_ACCOUNT_HOST_PATH` to a service-account JSON file shared on the sheet.
 3. Run `make build`.
 4. Run `make up`.
 
 If you want Finclaide to refresh the planning workbook automatically instead of relying on a manually downloaded file, set:
 
-- `FINCLAIDE_BUDGET_XLSX_URL` to a direct `.xlsx` export URL
+- `FINCLAIDE_BUDGET_SOURCE` to `remote_url` or `google_sheets`
+- `FINCLAIDE_BUDGET_XLSX_URL` to a direct `.xlsx` export URL for `remote_url`
+- `FINCLAIDE_GOOGLE_SHEETS_FILE_ID` and `GOOGLE_SERVICE_ACCOUNT_HOST_PATH` for `google_sheets`
 - optionally `FINCLAIDE_BUDGET_XLSX_DOWNLOAD_PATH` to control where the downloaded workbook is cached locally
 - `FINCLAIDE_SCHEDULED_REFRESH_ENABLED=true` to run automatic import, YNAB sync, and reconcile cycles
+- `FINCLAIDE_SCHEDULED_REFRESH_BOOTSTRAP_ON_START=true` to run one startup refresh if the database has never had a successful import/sync
 - optionally `FINCLAIDE_SCHEDULED_REFRESH_INTERVAL_MINUTES=360` to control the refresh cadence
 
-When `FINCLAIDE_BUDGET_XLSX_URL` is configured, budget import will fetch the remote workbook export first and then run the normal deterministic importer against the downloaded file.
+When `FINCLAIDE_BUDGET_SOURCE=google_sheets`, budget import exports the spreadsheet through Google Drive as `.xlsx` using the mounted service account and then runs the normal deterministic importer against that download.
+
+When `FINCLAIDE_BUDGET_SOURCE=remote_url`, budget import fetches the remote workbook export first and then runs the normal deterministic importer against the downloaded file.
 
 When scheduled refresh is enabled, Finclaide records the outcome of each automatic `import -> sync -> reconcile` run in the same run history surfaced by `/api/status` and the dashboard Operations page.
 

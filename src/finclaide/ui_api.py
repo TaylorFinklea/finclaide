@@ -56,6 +56,13 @@ def status():
     return jsonify(_container().reports.status(include_recent_runs=True))
 
 
+@ui_api.get("/runs")
+@require_same_origin
+def runs():
+    limit = min(max(int(request.args.get("limit", "20")), 1), 100)
+    return jsonify(_container().reports.runs(limit=limit, source=request.args.get("source")))
+
+
 @ui_api.get("/summary")
 @require_same_origin
 def summary():

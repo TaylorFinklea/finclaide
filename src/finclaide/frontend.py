@@ -43,4 +43,8 @@ def register_frontend(app: Flask) -> None:
 
 def current_frontend_dist(app: Flask) -> Path:
     config = app.config["FINCLAIDE_CONFIG"]
-    return config.frontend_dist or _default_frontend_dist()
+    if config.frontend_dist is None:
+        return _default_frontend_dist()
+    if config.frontend_dist.is_absolute():
+        return config.frontend_dist
+    return (Path.cwd() / config.frontend_dist).resolve()

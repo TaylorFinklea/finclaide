@@ -20,12 +20,17 @@ def budget_workbook(tmp_path: Path) -> Path:
 def app_factory(tmp_path: Path):
     def factory(
         *,
+        budget_source: str = "local_file",
         workbook_path: Path | None = None,
         workbook_url: str | None = None,
+        google_service_account_path: Path | None = None,
+        google_sheets_file_id: str | None = None,
         categories_fixture: str = "categories.json",
         transactions_fixture: str = "transactions_initial.json",
         budget_transport: httpx.BaseTransport | None = None,
+        budget_access_token_provider=None,
         scheduled_refresh_enabled: bool = False,
+        scheduled_refresh_bootstrap_on_start: bool = False,
         scheduled_refresh_interval_minutes: int = 360,
     ):
         db_path = tmp_path / "finclaide.db"
@@ -35,9 +40,13 @@ def app_factory(tmp_path: Path):
                 "ynab_access_token": "token",
                 "ynab_plan_id": "plan-123",
                 "db_path": db_path,
+                "budget_source": budget_source,
                 "budget_xlsx": workbook_path or build_budget_workbook(tmp_path / "Budget.xlsx"),
                 "budget_xlsx_url": workbook_url,
+                "google_service_account_path": google_service_account_path,
+                "google_sheets_file_id": google_sheets_file_id,
                 "scheduled_refresh_enabled": scheduled_refresh_enabled,
+                "scheduled_refresh_bootstrap_on_start": scheduled_refresh_bootstrap_on_start,
                 "scheduled_refresh_interval_minutes": scheduled_refresh_interval_minutes,
                 "host": "127.0.0.1",
                 "port": 8050,
@@ -47,6 +56,7 @@ def app_factory(tmp_path: Path):
                 transactions_fixture=transactions_fixture,
             ),
             budget_transport=budget_transport,
+            budget_access_token_provider=budget_access_token_provider,
         )
         app.testing = True
         return app

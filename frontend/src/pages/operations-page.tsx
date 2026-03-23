@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useState } from 'react'
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { LoaderCircle, RefreshCw } from 'lucide-react'
@@ -8,12 +8,11 @@ import { useAppMonth } from '@/app/month-context'
 import { StatusChip } from '@/components/status-chip'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import type { StatusResponse } from '@/lib/api'
-import { getErrorMessage, getStatus, getSummary, importBudget, reconcile, refreshAll, syncYnab } from '@/lib/api'
+import type { RunEntry, StatusResponse } from '@/lib/api'
+import { getErrorMessage, getRuns, getStatus, getSummary, importBudget, reconcile, refreshAll, syncYnab } from '@/lib/api'
 import { formatMonthLabel, formatRunAt } from '@/lib/format'
 
 type OperationKind = 'budget-import' | 'ynab-sync' | 'reconcile' | 'refresh-all'
-type LatestRun = NonNullable<StatusResponse['latest_runs']>[string]
 
 export function OperationsPage() {
   const { month } = useAppMonth()
@@ -21,10 +20,12 @@ export function OperationsPage() {
   const [latestPayload, setLatestPayload] = useState<Record<string, unknown> | null>(null)
   const statusQuery = useQuery({ queryKey: ['status'], queryFn: getStatus })
   const summaryQuery = useQuery({ queryKey: ['summary', month], queryFn: () => getSummary(month) })
+  const runsQuery = useQuery({ queryKey: ['runs'], queryFn: () => getRuns(12) })
 
   const invalidateAll = async () => {
     await Promise.all([
       queryClient.invalidateQueries({ queryKey: ['status'] }),
+      queryClient.invalidateQueries({ queryKey: ['runs'] }),
       queryClient.invalidateQueries({ queryKey: ['summary'] }),
       queryClient.invalidateQueries({ queryKey: ['transactions'] }),
     ])
@@ -80,7 +81,7 @@ export function OperationsPage() {
   })
 
   const busy = importMutation.isPending || syncMutation.isPending || reconcileMutation.isPending || refreshMutation.isPending
-  const latestRuns = useMemo(() => statusQuery.data?.latest_runs ?? {}, [statusQuery.data])
+  const recentRuns = runsQuery.data?.runs ?? []
 
   return (
     <div className="space-y-6">
@@ -126,19 +127,22 @@ export function OperationsPage() {
       <div className="grid gap-6 xl:grid-cols-[1.1fr_1fr]">
         <Card className="border-border/40 bg-card">
           <CardHeader>
-            <CardTitle>Latest Runs</CardTitle>
+            <CardTitle>Recent Runs</CardTitle>
           </CardHeader>
           <CardContent className="space-y-3">
-            {Object.entries(latestRuns).length ? (
-              Object.entries(latestRuns).map(([source, details]) => (
-                <div key={source} className="rounded-lg bg-muted/30 p-4">
-                  <div className="text-label-upper">{source}</div>
+            {recentRuns.length ? (
+              recentRuns.map((run) => (
+                <div key={run.id} className="rounded-lg bg-muted/30 p-4">
+                  <div className="flex items-center justify-between gap-4">
+                    <div className="text-label-upper">{formatRunSource(run.source)}</div>
+                    <StatusChip status={run.status} />
+                  </div>
                   <div className="mt-2 flex items-center justify-between gap-4">
-                    <div className="font-medium text-foreground">{details.status}</div>
-                    <div className="text-sm text-muted-foreground">{formatRunAt(details.finished_at)}</div>
+                    <div className="font-medium text-foreground">{formatRunAt(run.finished_at)}</div>
+                    <div className="text-sm text-muted-foreground">{formatRunAt(run.started_at)}</div>
                   </div>
                   <div className="mt-2 text-sm text-muted-foreground">
-                    {describeRun(source, details)}
+                    {describeRun(run)}
                   </div>
                 </div>
               ))
@@ -250,22 +254,22 @@ function labelFor(kind: OperationKind) {
   }
 }
 
-function describeRun(source: string, run: LatestRun) {
+function describeRun(run: RunEntry) {
   if ('error' in run.details && typeof run.details.error === 'string') {
     return run.details.error
   }
-  if (source === 'budget_import' && typeof run.details.row_count === 'number') {
+  if (run.source === 'budget_import' && typeof run.details.row_count === 'number') {
     return `Imported ${run.details.row_count} planned rows`
   }
-  if (source === 'ynab_sync' && typeof run.details.transaction_count === 'number') {
+  if (run.source === 'ynab_sync' && typeof run.details.transaction_count === 'number') {
     return `Synced ${run.details.transaction_count} transactions`
   }
-  if (source === 'reconcile' && typeof run.details.mismatch_count === 'number') {
+  if (run.source === 'reconcile' && typeof run.details.mismatch_count === 'number') {
     return run.details.mismatch_count === 0
       ? 'No mismatches found'
       : `${run.details.mismatch_count} mismatches detected`
   }
-  if (source === 'scheduled_refresh') {
+  if (run.source === 'scheduled_refresh') {
     if ('reconcile_error' in run.details && typeof run.details.reconcile_error === 'string') {
       return run.details.reconcile_error
     }
@@ -280,6 +284,21 @@ function describeRun(source: string, run: LatestRun) {
     }
   }
   return 'No additional details'
+}
+
+function formatRunSource(source: string) {
+  switch (source) {
+    case 'budget_import':
+      return 'Budget Import'
+    case 'ynab_sync':
+      return 'YNAB Sync'
+    case 'reconcile':
+      return 'Reconcile'
+    case 'scheduled_refresh':
+      return 'Scheduled Refresh'
+    default:
+      return source
+  }
 }
 
 function describeFreshness(status: string | undefined) {

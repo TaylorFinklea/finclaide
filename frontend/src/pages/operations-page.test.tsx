@@ -3,11 +3,12 @@ import userEvent from '@testing-library/user-event'
 import { vi } from 'vitest'
 
 import { OperationsPage } from '@/pages/operations-page'
-import { statusFixture, summaryFixture } from '@/test/fixtures'
+import { runsFixture, statusFixture, summaryFixture } from '@/test/fixtures'
 import { renderWithProviders } from '@/test/test-utils'
 
 const apiMocks = vi.hoisted(() => ({
   getStatus: vi.fn(),
+  getRuns: vi.fn(),
   getSummary: vi.fn(),
   importBudget: vi.fn(),
   syncYnab: vi.fn(),
@@ -27,6 +28,7 @@ vi.mock('@/lib/api', async () => {
 describe('OperationsPage', () => {
   beforeEach(() => {
     apiMocks.getStatus.mockResolvedValue(statusFixture)
+    apiMocks.getRuns.mockResolvedValue(runsFixture)
     apiMocks.getSummary.mockResolvedValue(summaryFixture)
     apiMocks.importBudget.mockResolvedValue({ row_count: 75 })
     apiMocks.syncYnab.mockResolvedValue({ transaction_count: 10 })
@@ -40,7 +42,9 @@ describe('OperationsPage', () => {
     await screen.findByText('Operations')
     expect(await screen.findByText('Plan Data')).toBeInTheDocument()
     expect(await screen.findByText('YNAB Data')).toBeInTheDocument()
-    expect(await screen.findByText('Scheduled Refresh')).toBeInTheDocument()
+    expect(await screen.findAllByText('Scheduled Refresh')).not.toHaveLength(0)
+    expect(await screen.findByText('Recent Runs')).toBeInTheDocument()
+    expect(await screen.findByText('Budget Import')).toBeInTheDocument()
     expect(await screen.findAllByText('Reconciliation failed with 1 mismatches.')).not.toHaveLength(0)
     expect(await screen.findByText('Temporary YNAB timeout')).toBeInTheDocument()
     await userEvent.click(screen.getByRole('button', { name: 'Import Budget' }))

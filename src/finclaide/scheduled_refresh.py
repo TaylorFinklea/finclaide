@@ -18,6 +18,7 @@ def _iso_after_minutes(minutes: int) -> str:
 @dataclass
 class ScheduledRefreshService:
     enabled: bool
+    bootstrap_on_start: bool
     interval_minutes: int
     database: Database
     operation_lock: Any
@@ -108,8 +109,32 @@ class ScheduledRefreshService:
         return {"status": status, **details}
 
     def _loop(self) -> None:
+        if self.bootstrap_on_start and self._should_bootstrap():
+            self.run_once()
         while not self._stop_event.wait(self.interval_minutes * 60):
             self.run_once()
 
     def _set_next_run(self) -> None:
         self._next_run_at = _iso_after_minutes(self.interval_minutes) if self.enabled else None
+
+    def _should_bootstrap(self) -> bool:
+        with self.database.connect() as connection:
+            successful_import = connection.execute(
+                """
+                SELECT 1
+                FROM sync_runs
+                WHERE source = 'budget_import' AND status = 'success'
+                ORDER BY id DESC
+                LIMIT 1
+                """
+            ).fetchone()
+            successful_sync = connection.execute(
+                """
+                SELECT 1
+                FROM sync_runs
+                WHERE source = 'ynab_sync' AND status = 'success'
+                ORDER BY id DESC
+                LIMIT 1
+                """
+            ).fetchone()
+        return successful_import is None or successful_sync is None

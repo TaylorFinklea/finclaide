@@ -23,6 +23,7 @@ def create_app(
     *,
     ynab_transport: httpx.BaseTransport | None = None,
     budget_transport: httpx.BaseTransport | None = None,
+    budget_access_token_provider=None,
 ) -> Flask:
     config = AppConfig.from_env(config_overrides)
     database = Database(config.db_path)
@@ -34,7 +35,11 @@ def create_app(
         config=config,
         database=database,
         budget_importer=BudgetImporter(database),
-        budget_workbook_source=create_budget_workbook_source(config, transport=budget_transport),
+        budget_workbook_source=create_budget_workbook_source(
+            config,
+            transport=budget_transport,
+            access_token_provider=budget_access_token_provider,
+        ),
         ynab_sync=YNABSyncService(config=config, database=database, client=ynab_client),
         reconcile=ReconciliationService(database=database),
         reports=ReportService(config=config, database=database, operation_lock=operation_lock),
@@ -44,6 +49,7 @@ def create_app(
     )
     services.scheduled_refresh = ScheduledRefreshService(
         enabled=config.scheduled_refresh_enabled,
+        bootstrap_on_start=config.scheduled_refresh_bootstrap_on_start,
         interval_minutes=config.scheduled_refresh_interval_minutes,
         database=database,
         operation_lock=operation_lock,

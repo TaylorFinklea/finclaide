@@ -5,7 +5,15 @@ services:
       - .env
     environment:
       FINCLAIDE_DB_PATH: ${FINCLAIDE_DB_PATH:-/data/finclaide.db}
+      FINCLAIDE_BUDGET_SOURCE: ${FINCLAIDE_BUDGET_SOURCE:-local_file}
       FINCLAIDE_BUDGET_XLSX: ${FINCLAIDE_BUDGET_XLSX:-/input/Budget.xlsx}
+      FINCLAIDE_BUDGET_XLSX_URL: ${FINCLAIDE_BUDGET_XLSX_URL:-}
+      FINCLAIDE_BUDGET_XLSX_DOWNLOAD_PATH: ${FINCLAIDE_BUDGET_XLSX_DOWNLOAD_PATH:-}
+      FINCLAIDE_GOOGLE_SERVICE_ACCOUNT_PATH: ${FINCLAIDE_GOOGLE_SERVICE_ACCOUNT_PATH:-/run/secrets/google-service-account.json}
+      FINCLAIDE_GOOGLE_SHEETS_FILE_ID: ${FINCLAIDE_GOOGLE_SHEETS_FILE_ID:-}
+      FINCLAIDE_SCHEDULED_REFRESH_ENABLED: ${FINCLAIDE_SCHEDULED_REFRESH_ENABLED:-true}
+      FINCLAIDE_SCHEDULED_REFRESH_BOOTSTRAP_ON_START: ${FINCLAIDE_SCHEDULED_REFRESH_BOOTSTRAP_ON_START:-true}
+      FINCLAIDE_SCHEDULED_REFRESH_INTERVAL_MINUTES: ${FINCLAIDE_SCHEDULED_REFRESH_INTERVAL_MINUTES:-360}
       FINCLAIDE_HOST: ${FINCLAIDE_HOST:-0.0.0.0}
       FINCLAIDE_PORT: ${FINCLAIDE_PORT:-8050}
     ports:
@@ -13,6 +21,7 @@ services:
     volumes:
       - finclaide_data:/data
       - ${BUDGET_XLSX_HOST_PATH:-/Users/tfinklea/Downloads/Budget.xlsx}:/input/Budget.xlsx:ro
+      - ${GOOGLE_SERVICE_ACCOUNT_HOST_PATH:-./docker/google-service-account.placeholder.json}:/run/secrets/google-service-account.json:ro
 
 volumes:
   finclaide_data:

@@ -44,6 +44,19 @@ const ScheduledRefreshSchema = z.object({
   last_error: NullableString,
 })
 
+export const RunEntrySchema = z.object({
+  id: z.number(),
+  source: z.string(),
+  status: z.string(),
+  started_at: NullableString,
+  finished_at: NullableString,
+  details: z.record(z.string(), z.any()),
+})
+
+const RunsSchema = z.object({
+  runs: z.array(RunEntrySchema),
+})
+
 export const StatusSchema = z.object({
   plan_id: NullableString,
   budget_sheet: z.string(),
@@ -149,6 +162,7 @@ export type OverageWatch = z.infer<typeof OverageWatchSchema>
 export type OverageWatchCategory = z.infer<typeof OverageWatchCategorySchema>
 export type TransactionRow = z.infer<typeof TransactionSchema>
 export type TransactionsPageResponse = z.infer<typeof TransactionsPageSchema>
+export type RunEntry = z.infer<typeof RunEntrySchema>
 
 export class ApiError extends Error {
   status: number
@@ -195,6 +209,14 @@ export async function getStatus() {
 export async function getSummary(month: string) {
   const search = new URLSearchParams({ month })
   return requestJson(`/ui-api/summary?${search.toString()}`, SummarySchema)
+}
+
+export async function getRuns(limit = 20, source?: string) {
+  const search = new URLSearchParams({ limit: String(limit) })
+  if (source) {
+    search.set('source', source)
+  }
+  return requestJson(`/ui-api/runs?${search.toString()}`, RunsSchema)
 }
 
 export type TransactionsParams = {

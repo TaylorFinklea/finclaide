@@ -19,6 +19,13 @@ def status():
     return jsonify(_container().reports.status(include_recent_runs=True))
 
 
+@api.get("/runs")
+@require_bearer_token
+def runs():
+    limit = min(max(int(request.args.get("limit", "20")), 1), 100)
+    return jsonify(_container().reports.runs(limit=limit, source=request.args.get("source")))
+
+
 @api.post("/budget/import")
 @require_bearer_token
 def import_budget():

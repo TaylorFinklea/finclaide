@@ -4,6 +4,7 @@ import math
 import json
 from dataclasses import dataclass
 from datetime import UTC, date, datetime
+from pathlib import Path
 from typing import Any
 
 from finclaide.config import AppConfig
@@ -228,13 +229,10 @@ class ReportService:
                 "hours_stale": actuals_hours_stale,
             },
             "plan_provenance": {
-                "source_type": "remote_export" if self.config.budget_xlsx_url else "local_workbook",
-                "workbook_path": str(
-                    self.config.budget_xlsx_download_path or self.config.budget_xlsx
-                    if self.config.budget_xlsx_url
-                    else self.config.budget_xlsx
-                ),
+                "source_type": self._plan_source_type(),
+                "workbook_path": str(self._plan_workbook_path()),
                 "workbook_url": self.config.budget_xlsx_url,
+                "google_sheets_file_id": self.config.google_sheets_file_id,
                 "sheet_name": self.config.budget_sheet_name,
                 "import_id": latest_import["id"] if latest_import else None,
                 "imported_at": plan_last_updated_at,
@@ -264,6 +262,33 @@ class ReportService:
         if include_recent_runs:
             payload["latest_runs"] = latest_runs
         return payload
+
+    def runs(self, *, limit: int = 20, source: str | None = None) -> dict[str, Any]:
+        with self.database.connect() as connection:
+            query = """
+                SELECT id, source, status, started_at, finished_at, details_json
+                FROM sync_runs
+            """
+            params: list[Any] = []
+            if source:
+                query += " WHERE source = ?"
+                params.append(source)
+            query += " ORDER BY id DESC LIMIT ?"
+            params.append(limit)
+            rows = connection.execute(query, tuple(params)).fetchall()
+        return {
+            "runs": [
+                {
+                    "id": row["id"],
+                    "source": row["source"],
+                    "status": row["status"],
+                    "started_at": row["started_at"],
+                    "finished_at": row["finished_at"],
+                    "details": json.loads(row["details_json"] or "{}"),
+                }
+                for row in rows
+            ]
+        }
 
     def summary(self, month: str | None = None) -> dict[str, Any]:
         month_start, month_end, month_number, month_label = _month_bounds(month)
@@ -667,6 +692,20 @@ class ReportService:
             "analysis_month_count": len(month_labels),
             "categories": categories,
         }
+
+    def _plan_source_type(self) -> str:
+        if self.config.budget_source == "google_sheets":
+            return "google_sheets"
+        if self.config.budget_source == "remote_url":
+            return "remote_export"
+        return "local_workbook"
+
+    def _plan_workbook_path(self) -> Path:
+        if self.config.budget_source == "google_sheets":
+            return self.config.budget_xlsx_download_path or self.config.db_path.with_name("Budget.google.xlsx")
+        if self.config.budget_source == "remote_url":
+            return self.config.budget_xlsx_download_path or self.config.db_path.with_name("Budget.remote.xlsx")
+        return self.config.budget_xlsx
 
 
 @dataclass
