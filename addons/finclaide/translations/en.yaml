@@ -1,0 +1,40 @@
+configuration:
+  ynab_access_token:
+    name: YNAB Access Token
+    description: Personal access token used to sync actuals from YNAB.
+  ynab_plan_id:
+    name: YNAB Plan ID
+    description: Budget ID for the YNAB plan Finclaide should sync.
+  budget_source:
+    name: Budget Source
+    description: Where Finclaide should load the planning workbook from.
+  budget_sheet_name:
+    name: Budget Sheet Name
+    description: Worksheet tab name Finclaide should import from the workbook.
+  local_workbook_file:
+    name: Local Workbook File
+    description: Filename inside the add-on config directory for local workbook mode.
+  remote_workbook_url:
+    name: Remote Workbook URL
+    description: Direct `.xlsx` export URL used when remote URL mode is selected.
+  google_file_id:
+    name: Google File ID
+    description: Google Sheets or Drive file ID for the planning workbook.
+  google_service_account_file:
+    name: Google Service Account File
+    description: JSON credential filename inside the add-on config directory.
+  scheduled_refresh_enabled:
+    name: Scheduled Refresh Enabled
+    description: Enable automatic import, sync, and reconcile runs.
+  scheduled_refresh_bootstrap_on_start:
+    name: Bootstrap Refresh On Start
+    description: Run an initial refresh on startup when the database has no successful import or sync yet.
+  scheduled_refresh_interval_minutes:
+    name: Scheduled Refresh Interval
+    description: Refresh cadence in minutes.
+  enable_private_api:
+    name: Enable Private API
+    description: Expose `/api/*` through ingress for bearer-token clients.
+  api_token:
+    name: Private API Token
+    description: Bearer token required if the private API is enabled.

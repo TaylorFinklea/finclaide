@@ -9,6 +9,7 @@ import { AppMonthProvider, useAppMonth } from '@/app/month-context'
 import { Skeleton } from '@/components/ui/skeleton'
 import { getStatus } from '@/lib/api'
 import { formatMonthLabel } from '@/lib/format'
+import { getBasePath } from '@/lib/runtime'
 import { cn } from '@/lib/utils'
 
 const OverviewPage = lazy(async () => import('@/pages/overview-page').then((module) => ({ default: module.OverviewPage })))
@@ -33,10 +34,12 @@ const navItems = [
 ] as const
 
 export default function App() {
+  const basename = getBasePath() || undefined
+
   return (
     <QueryClientProvider client={queryClient}>
       <AppMonthProvider>
-        <BrowserRouter>
+        <BrowserRouter basename={basename}>
           <AppShell />
           <Toaster richColors theme="dark" />
         </BrowserRouter>

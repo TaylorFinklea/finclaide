@@ -30,6 +30,12 @@ When scheduled refresh is enabled, Finclaide records the outcome of each automat
 
 The React dashboard is available at `http://localhost:8050/`, the browser-safe UI API is available under `http://localhost:8050/ui-api/*`, and the private external API remains available under `http://localhost:8050/api/*`.
 
+## Home Assistant Add-on
+
+The repository now includes a Home Assistant add-on scaffold under [addons/finclaide](addons/finclaide). The add-on is designed for ingress-first deployment, stores runtime state in the add-on data volume, and reads Google service account credentials or local workbook files from the add-on config volume.
+
+See [addons/finclaide/DOCS.md](addons/finclaide/DOCS.md) for setup details and [repository.yaml](repository.yaml) for the add-on repository entry.
+
 ## Frontend Development
 
 The production container serves a built Vite SPA from Flask. For local UI development, run the backend normally and start the frontend on the host:

@@ -1,5 +1,7 @@
 import { z } from 'zod'
 
+import { withBasePath } from '@/lib/runtime'
+
 const NullableString = z.string().nullable()
 const NullableNumber = z.number().nullable()
 
@@ -230,17 +232,17 @@ async function requestJson<T>(
 }
 
 export async function getStatus() {
-  return requestJson('/ui-api/status', StatusSchema)
+  return requestJson(withBasePath('/ui-api/status'), StatusSchema)
 }
 
 export async function getSummary(month: string) {
   const search = new URLSearchParams({ month })
-  return requestJson(`/ui-api/summary?${search.toString()}`, SummarySchema)
+  return requestJson(withBasePath(`/ui-api/summary?${search.toString()}`), SummarySchema)
 }
 
 export async function getWeeklyReview(month: string) {
   const search = new URLSearchParams({ month })
-  return requestJson(`/ui-api/review/weekly?${search.toString()}`, WeeklyReviewSchema)
+  return requestJson(withBasePath(`/ui-api/review/weekly?${search.toString()}`), WeeklyReviewSchema)
 }
 
 export async function getRuns(limit = 20, source?: string) {
@@ -248,7 +250,7 @@ export async function getRuns(limit = 20, source?: string) {
   if (source) {
     search.set('source', source)
   }
-  return requestJson(`/ui-api/runs?${search.toString()}`, RunsSchema)
+  return requestJson(withBasePath(`/ui-api/runs?${search.toString()}`), RunsSchema)
 }
 
 export type TransactionsParams = {
@@ -268,7 +270,7 @@ export async function getTransactions(params: TransactionsParams) {
       search.set(key, String(value))
     }
   })
-  return requestJson(`/ui-api/transactions?${search.toString()}`, TransactionsPageSchema)
+  return requestJson(withBasePath(`/ui-api/transactions?${search.toString()}`), TransactionsPageSchema)
 }
 
 const MutationResultSchema = z.record(z.string(), z.any())
@@ -277,7 +279,7 @@ async function postUiOperation<T extends Record<string, unknown>>(
   path: string,
   body?: T,
 ): Promise<Record<string, unknown>> {
-  return requestJson(path, MutationResultSchema, {
+  return requestJson(withBasePath(path), MutationResultSchema, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',

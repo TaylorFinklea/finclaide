@@ -1,0 +1,39 @@
+server {
+  listen 8099;
+  server_name _;
+
+  allow 172.30.32.2;
+  deny all;
+
+  location /healthz {
+    proxy_pass http://127.0.0.1:8050/healthz;
+    proxy_http_version 1.1;
+    proxy_set_header Host $host;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+    proxy_set_header X-Forwarded-Prefix $http_x_ingress_path;
+    proxy_set_header X-Ingress-Path $http_x_ingress_path;
+  }
+
+  location /ui-api/ {
+    proxy_pass http://127.0.0.1:8050/ui-api/;
+    proxy_http_version 1.1;
+    proxy_set_header Host $host;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+    proxy_set_header X-Forwarded-Prefix $http_x_ingress_path;
+    proxy_set_header X-Ingress-Path $http_x_ingress_path;
+  }
+
+  __API_LOCATION__
+
+  location / {
+    proxy_pass http://127.0.0.1:8050/;
+    proxy_http_version 1.1;
+    proxy_set_header Host $host;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+    proxy_set_header X-Forwarded-Prefix $http_x_ingress_path;
+    proxy_set_header X-Ingress-Path $http_x_ingress_path;
+  }
+}

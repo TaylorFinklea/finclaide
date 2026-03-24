@@ -667,3 +667,14 @@ def test_healthcheck_and_dashboard_render(app_factory):
     root_response = client.get("/")
     assert root_response.status_code == 200
     assert b"<div id=\"root\"></div>" in root_response.data
+
+
+def test_dashboard_render_injects_ingress_base_path(app_factory):
+    app = app_factory()
+    client = app.test_client()
+
+    response = client.get("/", headers={"X-Ingress-Path": "/api/hassio_ingress/example"})
+
+    assert response.status_code == 200
+    assert b"window.__FINCLAIDE_BASE_PATH__ = \"/api/hassio_ingress/example\"" in response.data
+    assert b"<base href=\"/api/hassio_ingress/example/\">" in response.data

@@ -1,0 +1,53 @@
+name: Finclaide
+slug: finclaide
+description: Private YNAB and Google Sheets finance dashboard with Home Assistant ingress support.
+url: https://github.com/TaylorFinklea/finclaide
+version: "0.1.0"
+startup: application
+boot: auto
+backup: hot
+ingress: true
+ingress_port: 8099
+ingress_stream: true
+panel_title: Finclaide
+panel_icon: mdi:finance
+panel_admin: true
+watchdog: http://[HOST]:[PORT:8099]/healthz
+arch:
+  - amd64
+  - aarch64
+map:
+  - type: addon_config
+    read_only: false
+    path: /config
+  - type: data
+    read_only: false
+    path: /data
+options:
+  ynab_access_token: ""
+  ynab_plan_id: ""
+  budget_source: google_sheets
+  budget_sheet_name: 2026 Budget
+  local_workbook_file: Budget.xlsx
+  remote_workbook_url: ""
+  google_file_id: ""
+  google_service_account_file: google-service-account.json
+  scheduled_refresh_enabled: true
+  scheduled_refresh_bootstrap_on_start: true
+  scheduled_refresh_interval_minutes: 360
+  enable_private_api: false
+  api_token: ""
+schema:
+  ynab_access_token: password
+  ynab_plan_id: str
+  budget_source: list(local_file|remote_url|google_sheets)
+  budget_sheet_name: str
+  local_workbook_file: str
+  remote_workbook_url: "url?"
+  google_file_id: "str?"
+  google_service_account_file: str
+  scheduled_refresh_enabled: bool
+  scheduled_refresh_bootstrap_on_start: bool
+  scheduled_refresh_interval_minutes: "int(15,1440)"
+  enable_private_api: bool
+  api_token: "password?"

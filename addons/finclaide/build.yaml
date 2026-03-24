@@ -1,0 +1,7 @@
+args:
+  FINCLAIDE_REPO_URL: https://github.com/TaylorFinklea/finclaide.git
+  FINCLAIDE_REF: main
+labels:
+  org.opencontainers.image.title: Finclaide Home Assistant Add-on
+  org.opencontainers.image.description: Home Assistant ingress packaging for Finclaide.
+  org.opencontainers.image.source: https://github.com/TaylorFinklea/finclaide
