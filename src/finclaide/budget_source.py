@@ -14,6 +14,8 @@ from finclaide.errors import ConfigError, DataIntegrityError
 
 GOOGLE_DRIVE_EXPORT_SCOPE = "https://www.googleapis.com/auth/drive.readonly"
 GOOGLE_SHEETS_EXPORT_MIME = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+GOOGLE_SHEETS_MIME_TYPE = "application/vnd.google-apps.spreadsheet"
+XLSX_MIME_TYPE = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 
 AccessTokenProvider = Callable[[], str]
 
@@ -78,17 +80,58 @@ class BudgetWorkbookSource:
         if not self.config.google_service_account_path:
             raise ConfigError("FINCLAIDE_GOOGLE_SERVICE_ACCOUNT_PATH is required for google_sheets source.")
         token = self._access_token_provider()()
-        export_url = (
-            "https://www.googleapis.com/drive/v3/files/"
-            f"{quote(self.config.google_sheets_file_id, safe='')}/export"
+        file_id = quote(self.config.google_sheets_file_id, safe="")
+        headers = {"Authorization": f"Bearer {token}"}
+        metadata = self._google_drive_metadata(file_id, headers=headers)
+        mime_type = str(metadata.get("mimeType") or "")
+        if name := metadata.get("name"):
+            details["drive_file_name"] = name
+        if mime_type == GOOGLE_SHEETS_MIME_TYPE:
+            export_url = f"https://www.googleapis.com/drive/v3/files/{file_id}/export"
+            return self._download(
+                export_url,
+                details=details,
+                params={"mimeType": GOOGLE_SHEETS_EXPORT_MIME},
+                headers=headers,
+                error_prefix="Failed to export Google Sheets workbook",
+            )
+        if mime_type == XLSX_MIME_TYPE:
+            download_url = f"https://www.googleapis.com/drive/v3/files/{file_id}"
+            return self._download(
+                download_url,
+                details=details,
+                params={"alt": "media", "supportsAllDrives": "true"},
+                headers=headers,
+                error_prefix="Failed to download Google Drive workbook",
+            )
+        raise DataIntegrityError(
+            "Google Sheets source requires either a native Google Sheet or an XLSX file in Drive; "
+            f"got '{mime_type or 'unknown'}'."
         )
-        return self._download(
-            export_url,
-            details=details,
-            params={"mimeType": GOOGLE_SHEETS_EXPORT_MIME},
-            headers={"Authorization": f"Bearer {token}"},
-            error_prefix="Failed to export Google Sheets workbook",
-        )
+
+    def _google_drive_metadata(
+        self,
+        file_id: str,
+        *,
+        headers: dict[str, str],
+    ) -> dict[str, Any]:
+        metadata_url = f"https://www.googleapis.com/drive/v3/files/{file_id}"
+        try:
+            response = self.client.get(
+                metadata_url,
+                params={"fields": "id,name,mimeType", "supportsAllDrives": "true"},
+                headers=headers,
+            )
+            response.raise_for_status()
+        except httpx.HTTPError as error:
+            raise DataIntegrityError(f"Failed to inspect Google Drive workbook: {error}") from error
+        try:
+            payload = response.json()
+        except ValueError as error:
+            raise DataIntegrityError("Google Drive metadata response was not valid JSON.") from error
+        if not isinstance(payload, dict):
+            raise DataIntegrityError("Google Drive metadata response was not an object.")
+        return payload
 
     def _download(
         self,

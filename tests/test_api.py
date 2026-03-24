@@ -355,6 +355,18 @@ def test_budget_import_can_export_google_sheet_with_service_account(
 
     def handler(request: httpx.Request) -> httpx.Response:
         assert request.headers["Authorization"] == "Bearer test-google-token"
+        if request.url.path.endswith("/files/sheet-123"):
+            assert request.url.params["fields"] == "id,name,mimeType"
+            assert request.url.params["supportsAllDrives"] == "true"
+            return httpx.Response(
+                200,
+                json={
+                    "id": "sheet-123",
+                    "name": "Budget",
+                    "mimeType": "application/vnd.google-apps.spreadsheet",
+                },
+            )
+        assert request.headers["Authorization"] == "Bearer test-google-token"
         assert request.url.params["mimeType"] == (
             "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         )
@@ -389,6 +401,58 @@ def test_budget_import_can_export_google_sheet_with_service_account(
     assert latest_import["details"]["byte_count"] > 0
 
 
+def test_budget_import_can_download_google_drive_xlsx_with_service_account(
+    app_factory, auth_header, tmp_path: Path
+):
+    workbook = build_budget_workbook(tmp_path / "GoogleDriveBudget.xlsx")
+    service_account = tmp_path / "service-account.json"
+    service_account.write_text('{"type":"service_account"}')
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.headers["Authorization"] == "Bearer test-google-token"
+        if request.url.path.endswith("/files/sheet-123"):
+            if request.url.params.get("alt") == "media":
+                assert request.url.params["supportsAllDrives"] == "true"
+                return httpx.Response(
+                    200,
+                    headers={
+                        "content-type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                    },
+                    content=workbook.read_bytes(),
+                )
+            return httpx.Response(
+                200,
+                json={
+                    "id": "sheet-123",
+                    "name": "Budget.xlsx",
+                    "mimeType": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                },
+            )
+        raise AssertionError(f"Unexpected request URL: {request.url}")
+
+    app = app_factory(
+        budget_source="google_sheets",
+        workbook_path=tmp_path / "DownloadedBudget.xlsx",
+        google_service_account_path=service_account,
+        google_sheets_file_id="sheet-123",
+        budget_transport=httpx.MockTransport(handler),
+        budget_access_token_provider=lambda: "test-google-token",
+    )
+    client = app.test_client()
+
+    response = client.post("/api/budget/import", headers=auth_header)
+    payload = response.get_json()
+
+    assert response.status_code == 200
+    assert payload["row_count"] == 11
+
+    status_payload = client.get("/api/status", headers=auth_header).get_json()
+    latest_import = status_payload["latest_runs"]["budget_import"]
+    assert latest_import["status"] == "success"
+    assert latest_import["details"]["byte_count"] > 0
+    assert latest_import["details"]["drive_file_name"] == "Budget.xlsx"
+
+
 def test_google_sheets_source_requires_service_account_path(app_factory, auth_header, tmp_path: Path):
     app = app_factory(
         budget_source="google_sheets",
@@ -409,7 +473,16 @@ def test_google_sheets_export_failure_is_reflected_in_latest_runs(
     service_account = tmp_path / "service-account.json"
     service_account.write_text('{"type":"service_account"}')
 
-    def handler(_: httpx.Request) -> httpx.Response:
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path.endswith("/files/sheet-123"):
+            return httpx.Response(
+                200,
+                json={
+                    "id": "sheet-123",
+                    "name": "Budget",
+                    "mimeType": "application/vnd.google-apps.spreadsheet",
+                },
+            )
         return httpx.Response(403, json={"error": "forbidden"})
 
     app = app_factory(
@@ -513,7 +586,10 @@ def test_scheduler_bootstraps_when_no_prior_successful_runs(app_factory, auth_he
 
     for _ in range(50):
         status_payload = client.get("/api/status", headers=auth_header).get_json()
-        if status_payload["scheduled_refresh"]["last_status"] is not None:
+        if (
+            status_payload["scheduled_refresh"]["last_status"] is not None
+            and status_payload["last_ynab_sync_at"] is not None
+        ):
             break
     else:
         pytest.fail("Scheduled refresh did not bootstrap on startup.")
