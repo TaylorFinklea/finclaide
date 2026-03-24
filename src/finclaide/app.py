@@ -13,7 +13,7 @@ from finclaide.database import Database
 from finclaide.frontend import register_frontend
 from finclaide.locking import OperationLock
 from finclaide.scheduled_refresh import ScheduledRefreshService
-from finclaide.services import ReconciliationService, ReportService, ServiceContainer
+from finclaide.services import ReconciliationService, ReportService, ServiceContainer, WeeklyReviewService
 from finclaide.ui_api import ui_api
 from finclaide.ynab import YNABClient, YNABSyncService
 
@@ -44,9 +44,11 @@ def create_app(
         reconcile=ReconciliationService(database=database),
         reports=ReportService(config=config, database=database, operation_lock=operation_lock),
         analytics=AnalyticsService(config=config, database=database, operation_lock=operation_lock),
+        review=None,
         scheduled_refresh=None,
         operation_lock=operation_lock,
     )
+    services.review = WeeklyReviewService(reports=services.reports, analytics=services.analytics)
     services.scheduled_refresh = ScheduledRefreshService(
         enabled=config.scheduled_refresh_enabled,
         bootstrap_on_start=config.scheduled_refresh_bootstrap_on_start,

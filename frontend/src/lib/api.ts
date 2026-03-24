@@ -57,6 +57,31 @@ const RunsSchema = z.object({
   runs: z.array(RunEntrySchema),
 })
 
+const ReviewItemSchema = z.object({
+  kind: z.string(),
+  signal_class: z.string(),
+  severity: z.string(),
+  title: z.string(),
+  why_it_matters: z.string(),
+  recommended_action: NullableString,
+  group_name: NullableString,
+  category_name: NullableString,
+  evidence: z.record(z.string(), z.any()),
+})
+
+const WeeklyReviewSchema = z.object({
+  month: z.string(),
+  generated_at: z.string(),
+  overall_status: z.string(),
+  headline: z.string(),
+  blockers: z.array(ReviewItemSchema),
+  changes: z.array(ReviewItemSchema),
+  overages: z.array(ReviewItemSchema),
+  anomalies: z.array(ReviewItemSchema),
+  recommendations: z.array(ReviewItemSchema),
+  supporting_metrics: z.record(z.string(), z.any()),
+})
+
 export const StatusSchema = z.object({
   plan_id: NullableString,
   budget_sheet: z.string(),
@@ -163,6 +188,8 @@ export type OverageWatchCategory = z.infer<typeof OverageWatchCategorySchema>
 export type TransactionRow = z.infer<typeof TransactionSchema>
 export type TransactionsPageResponse = z.infer<typeof TransactionsPageSchema>
 export type RunEntry = z.infer<typeof RunEntrySchema>
+export type ReviewItem = z.infer<typeof ReviewItemSchema>
+export type WeeklyReviewResponse = z.infer<typeof WeeklyReviewSchema>
 
 export class ApiError extends Error {
   status: number
@@ -209,6 +236,11 @@ export async function getStatus() {
 export async function getSummary(month: string) {
   const search = new URLSearchParams({ month })
   return requestJson(`/ui-api/summary?${search.toString()}`, SummarySchema)
+}
+
+export async function getWeeklyReview(month: string) {
+  const search = new URLSearchParams({ month })
+  return requestJson(`/ui-api/review/weekly?${search.toString()}`, WeeklyReviewSchema)
 }
 
 export async function getRuns(limit = 20, source?: string) {

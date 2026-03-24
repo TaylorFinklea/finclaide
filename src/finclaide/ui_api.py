@@ -70,6 +70,12 @@ def summary():
     return jsonify(_container().reports.summary(month=month))
 
 
+@ui_api.get("/review/weekly")
+@require_same_origin
+def weekly_review():
+    return jsonify(_container().review.weekly(month=request.args.get("month")))
+
+
 @ui_api.get("/transactions")
 @require_same_origin
 def transactions():

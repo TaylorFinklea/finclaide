@@ -1,4 +1,10 @@
-import type { RunEntry, StatusResponse, SummaryResponse, TransactionsPageResponse } from '@/lib/api'
+import type {
+  RunEntry,
+  StatusResponse,
+  SummaryResponse,
+  TransactionsPageResponse,
+  WeeklyReviewResponse,
+} from '@/lib/api'
 
 export const statusFixture: StatusResponse = {
   plan_id: 'plan-123',
@@ -242,4 +248,84 @@ export const runsFixture: { runs: RunEntry[] } = {
       details: { row_count: 75 },
     },
   ],
+}
+
+export const reviewFixture: WeeklyReviewResponse = {
+  month: '2026-03',
+  generated_at: '2026-03-15T12:06:00+00:00',
+  overall_status: 'warning',
+  headline: 'Expenses / Groceries is over plan by $652.20 in 2026-03',
+  blockers: [
+    {
+      kind: 'stale_data_blocker',
+      signal_class: 'system',
+      severity: 'warning',
+      title: 'YNAB sync is 28 hours old',
+      why_it_matters: 'Run sync_ynab to update.',
+      recommended_action: 'Run YNAB sync before relying on this review.',
+      group_name: null,
+      category_name: null,
+      evidence: { alert_category: 'stale_data', hours_stale: 28.4 },
+    },
+  ],
+  changes: [
+    {
+      kind: 'month_change',
+      signal_class: 'core_spend',
+      severity: 'warning',
+      title: 'Expenses / Groceries is up $420.00 versus 2026-02',
+      why_it_matters: '2026-03 spend was $1,452.00; 2026-02 was $1,032.00.',
+      recommended_action: 'Confirm whether this is a durable behavior change before adjusting the budget baseline.',
+      group_name: 'Expenses',
+      category_name: 'Groceries',
+      evidence: { delta_milliunits: 420000 },
+    },
+  ],
+  overages: [
+    {
+      kind: 'overage',
+      signal_class: 'core_spend',
+      severity: 'critical',
+      title: 'Expenses / Groceries is over plan by $652.20 in 2026-03',
+      why_it_matters: 'Actual spending is $1,452.20 against a plan of $800.00.',
+      recommended_action: 'Review recent transactions and decide whether to cut back or raise the category target.',
+      group_name: 'Expenses',
+      category_name: 'Groceries',
+      evidence: { variance_milliunits: 652200 },
+    },
+  ],
+  anomalies: [
+    {
+      kind: 'transaction_anomaly',
+      signal_class: 'core_spend',
+      severity: 'warning',
+      title: 'Walmart looks unusual in Expenses / Groceries',
+      why_it_matters: '$260.69 is 3.1σ above the category\'s typical transaction size.',
+      recommended_action: 'Verify whether this was intentional and whether it should change the category plan.',
+      group_name: 'Expenses',
+      category_name: 'Groceries',
+      evidence: { sigma_distance: 3.1 },
+    },
+  ],
+  recommendations: [
+    {
+      kind: 'budget_recommendation',
+      signal_class: 'core_spend',
+      severity: 'warning',
+      title: 'Expenses / Groceries: increase budget to $1,406.02/mo',
+      why_it_matters: 'Averaging $1406/mo against $800 plan. Projected $16072 annual overage.',
+      recommended_action: 'Adjust the planned category amount only if the recent run rate reflects real expected behavior.',
+      group_name: 'Expenses',
+      category_name: 'Groceries',
+      evidence: { suggested_planned_milliunits: 1406020 },
+    },
+  ],
+  supporting_metrics: {
+    blocker_count: 1,
+    change_count: 1,
+    overage_count: 1,
+    anomaly_count: 1,
+    recommendation_count: 1,
+    projected_annual_variance_milliunits: 16072240,
+  },
 }

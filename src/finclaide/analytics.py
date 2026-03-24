@@ -26,6 +26,20 @@ def _current_month_label() -> str:
     return now.strftime("%Y-%m")
 
 
+def _month_reference(month: str | None = None) -> date:
+    if month:
+        parsed = datetime.strptime(month, "%Y-%m").date()
+        return date(parsed.year, parsed.month, 1)
+    now = datetime.now(UTC).date()
+    return date(now.year, now.month, 1)
+
+
+def _next_month_start(reference: date) -> date:
+    if reference.month == 12:
+        return date(reference.year + 1, 1, 1)
+    return date(reference.year, reference.month + 1, 1)
+
+
 def _months_in_year(plan_year: int, through_month: int) -> list[str]:
     return [f"{plan_year:04d}-{m:02d}" for m in range(1, through_month + 1)]
 
@@ -112,11 +126,14 @@ class AnalyticsService:
         months: int = 6,
         group_name: str | None = None,
         category_name: str | None = None,
+        as_of_month: str | None = None,
     ) -> dict[str, Any]:
         """Monthly spending time series with trend analysis."""
-        since = _n_months_ago(months)
-        conditions = ["t.deleted = 0", "t.date >= ?"]
-        params: list[Any] = [f"{since}-01"]
+        reference = _month_reference(as_of_month)
+        since = _n_months_ago(months, reference=reference)
+        through = _next_month_start(reference).isoformat()
+        conditions = ["t.deleted = 0", "t.date >= ?", "t.date < ?"]
+        params: list[Any] = [f"{since}-01", through]
         if group_name:
             conditions.append("COALESCE(c.group_name, t.group_name) = ?")
             params.append(group_name)
@@ -188,6 +205,7 @@ class AnalyticsService:
         return {
             "lookback_months": months,
             "since": since,
+            "as_of_month": reference.strftime("%Y-%m"),
             "categories": categories,
         }
 
@@ -299,9 +317,12 @@ class AnalyticsService:
         self,
         months: int = 3,
         threshold_sigma: float = 2.0,
+        as_of_month: str | None = None,
     ) -> dict[str, Any]:
         """Find unusual transactions and category-level spending spikes."""
-        since = f"{_n_months_ago(months)}-01"
+        reference = _month_reference(as_of_month)
+        since = f"{_n_months_ago(months, reference=reference)}-01"
+        through = _next_month_start(reference).isoformat()
 
         with self.database.connect() as conn:
             # Per-category stats
@@ -319,10 +340,11 @@ class AnalyticsService:
                 LEFT JOIN categories c ON c.id = t.category_id
                 WHERE t.deleted = 0
                   AND t.date >= ?
+                  AND t.date < ?
                   AND t.amount_milliunits < 0
                 ORDER BY group_name, category_name, t.date
                 """,
-                (since,),
+                (since, through),
             ).fetchall()
 
             # Monthly totals per category for category-level anomalies
@@ -337,9 +359,10 @@ class AnalyticsService:
                 LEFT JOIN categories c ON c.id = t.category_id
                 WHERE t.deleted = 0
                   AND t.date >= ?
+                  AND t.date < ?
                 GROUP BY 1, 2, 3
                 """,
-                (since,),
+                (since, through),
             ).fetchall()
 
         # Transaction anomalies: group transactions by category, compute per-category stats
@@ -411,6 +434,7 @@ class AnalyticsService:
 
         return {
             "lookback_months": months,
+            "as_of_month": reference.strftime("%Y-%m"),
             "threshold_sigma": threshold_sigma,
             "transaction_anomalies": sorted(transaction_anomalies, key=lambda a: -a["sigma_distance"]),
             "category_anomalies": sorted(category_anomalies, key=lambda a: -a["sigma_distance"]),
@@ -420,11 +444,11 @@ class AnalyticsService:
     # budget_recommendations
     # ------------------------------------------------------------------
 
-    def budget_recommendations(self) -> dict[str, Any]:
+    def budget_recommendations(self, as_of_month: str | None = None) -> dict[str, Any]:
         """Concrete budget adjustment suggestions based on actual spending."""
-        current = _current_month_label()
+        current = as_of_month or _current_month_label()
         projection = self.year_end_projection(current)
-        trends = self.spending_trends(months=6)
+        trends = self.spending_trends(months=6, as_of_month=current)
 
         # Build trend lookup
         trend_lookup: dict[tuple[str, str], dict[str, Any]] = {}

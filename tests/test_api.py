@@ -346,6 +346,66 @@ def test_failed_remote_workbook_download_is_reflected_in_latest_runs(app_factory
     assert "Failed to download workbook export" in latest_import["details"]["error"]
 
 
+def test_weekly_review_returns_structure_and_month_scoped_anomalies(app_factory, auth_header, tmp_path: Path):
+    workbook = build_budget_workbook(tmp_path / "Budget.xlsx")
+    app = app_factory(workbook_path=workbook)
+    client = app.test_client()
+
+    client.post("/api/budget/import", headers=auth_header)
+    client.post("/api/ynab/sync", headers=auth_header)
+    client.post("/api/reconcile", headers=auth_header)
+
+    response = client.get("/api/review/weekly?month=2026-03", headers=auth_header)
+    payload = response.get_json()
+
+    assert response.status_code == 200
+    assert payload["month"] == "2026-03"
+    assert payload["overall_status"] in {"healthy", "warning", "critical"}
+    assert isinstance(payload["headline"], str)
+    assert "blockers" in payload
+    assert "changes" in payload
+    assert "overages" in payload
+    assert "anomalies" in payload
+    assert "recommendations" in payload
+    assert "supporting_metrics" in payload
+    assert all(
+        item["evidence"].get("date", "").startswith("2026-03")
+        for item in payload["anomalies"]
+    )
+
+
+def test_weekly_review_warns_when_budget_and_sync_are_missing(app_factory, auth_header):
+    app = app_factory()
+    client = app.test_client()
+
+    response = client.get("/api/review/weekly?month=2026-03", headers=auth_header)
+    payload = response.get_json()
+
+    assert response.status_code == 200
+    assert payload["overall_status"] in {"warning", "critical"}
+    assert payload["blockers"]
+    blocker_kinds = {item["kind"] for item in payload["blockers"]}
+    assert "no_budget_blocker" in blocker_kinds
+
+
+def test_weekly_review_deemphasizes_payment_flow_recommendations(app_factory, auth_header, tmp_path: Path):
+    workbook = build_budget_workbook(tmp_path / "Budget.xlsx")
+    app = app_factory(workbook_path=workbook)
+    client = app.test_client()
+
+    client.post("/api/budget/import", headers=auth_header)
+    client.post("/api/ynab/sync", headers=auth_header)
+    client.post("/api/reconcile", headers=auth_header)
+
+    response = client.get("/api/review/weekly?month=2026-03", headers=auth_header)
+    payload = response.get_json()
+
+    assert response.status_code == 200
+    signal_classes = [item["signal_class"] for item in payload["recommendations"]]
+    if "payment_flow" in signal_classes:
+        assert signal_classes.index("core_spend") < signal_classes.index("payment_flow")
+
+
 def test_budget_import_can_export_google_sheet_with_service_account(
     app_factory, auth_header, tmp_path: Path
 ):

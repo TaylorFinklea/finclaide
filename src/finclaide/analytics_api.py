@@ -30,6 +30,7 @@ def trends():
             months=months,
             group_name=request.args.get("group"),
             category_name=request.args.get("category"),
+            as_of_month=request.args.get("as_of_month"),
         )
     )
 
@@ -49,13 +50,19 @@ def projection():
 def anomalies():
     months = int(request.args.get("months", "3"))
     threshold = float(request.args.get("threshold", "2.0"))
-    return jsonify(_container().analytics.detect_anomalies(months=months, threshold_sigma=threshold))
+    return jsonify(
+        _container().analytics.detect_anomalies(
+            months=months,
+            threshold_sigma=threshold,
+            as_of_month=request.args.get("as_of_month"),
+        )
+    )
 
 
 @analytics_api.get("/recommendations")
 @require_bearer_token
 def recommendations():
-    return jsonify(_container().analytics.budget_recommendations())
+    return jsonify(_container().analytics.budget_recommendations(as_of_month=request.args.get("as_of_month")))
 
 
 @analytics_api.get("/aggregate")

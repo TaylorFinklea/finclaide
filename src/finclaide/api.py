@@ -60,6 +60,12 @@ def summary():
     return jsonify(_container().reports.summary(month=month))
 
 
+@api.get("/review/weekly")
+@require_bearer_token
+def weekly_review():
+    return jsonify(_container().review.weekly(month=request.args.get("month")))
+
+
 @api.get("/transactions")
 @require_bearer_token
 def transactions():

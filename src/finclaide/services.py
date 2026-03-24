@@ -50,6 +50,13 @@ def _hours_stale(value: str | None) -> float | None:
     return round((datetime.now(UTC) - datetime.fromisoformat(value)).total_seconds() / 3600, 1)
 
 
+def _previous_month_label(month: str) -> str:
+    selected = datetime.strptime(month, "%Y-%m").date()
+    if selected.month == 1:
+        return f"{selected.year - 1:04d}-12"
+    return f"{selected.year:04d}-{selected.month - 1:02d}"
+
+
 @dataclass
 class ReconciliationService:
     database: Database
@@ -709,6 +716,351 @@ class ReportService:
 
 
 @dataclass
+class WeeklyReviewService:
+    reports: ReportService
+    analytics: Any
+
+    def weekly(self, month: str | None = None) -> dict[str, Any]:
+        summary = self.reports.summary(month=month)
+        status = self.reports.status(include_recent_runs=True)
+        month_label = summary["month"]
+        prior_month = _previous_month_label(month_label)
+        health = self.analytics.financial_health_check()
+        comparison = self.analytics.compare_months(prior_month, month_label)
+        anomalies = self.analytics.detect_anomalies(months=3, threshold_sigma=2.0, as_of_month=month_label)
+        recommendations = self.analytics.budget_recommendations(as_of_month=month_label)
+
+        blockers = self._blockers(status=status, health=health)
+        overages = self._overages(summary=summary, month_label=month_label)
+        changes = self._changes(comparison=comparison)
+        anomaly_items = self._anomalies(anomalies=anomalies, month_label=month_label)
+        recommendation_items = self._recommendations(recommendations=recommendations)
+
+        headline = self._headline(
+            month_label=month_label,
+            blockers=blockers,
+            overages=overages,
+            changes=changes,
+            anomalies=anomaly_items,
+            recommendations=recommendation_items,
+        )
+        overall_status = self._overall_status(
+            blockers=blockers,
+            overages=overages,
+            changes=changes,
+            anomalies=anomaly_items,
+            recommendations=recommendation_items,
+        )
+
+        planned_total = sum(group["planned_milliunits"] for group in summary["groups"])
+        actual_total = sum(group["actual_milliunits"] for group in summary["groups"])
+        return {
+            "month": month_label,
+            "generated_at": utc_now(),
+            "overall_status": overall_status,
+            "headline": headline,
+            "blockers": blockers,
+            "changes": changes,
+            "overages": overages,
+            "anomalies": anomaly_items,
+            "recommendations": recommendation_items,
+            "supporting_metrics": {
+                "planned_total_milliunits": planned_total,
+                "actual_total_milliunits": actual_total,
+                "variance_total_milliunits": actual_total - planned_total,
+                "blocker_count": len(blockers),
+                "change_count": len(changes),
+                "overage_count": len(overages),
+                "anomaly_count": len(anomaly_items),
+                "recommendation_count": len(recommendation_items),
+                "projected_annual_variance_milliunits": recommendations["summary"]["total_projected_variance_milliunits"],
+                "categories_over_budget": recommendations["summary"]["categories_over_budget"],
+                "categories_under_budget": recommendations["summary"]["categories_under_budget"],
+            },
+        }
+
+    def _blockers(self, *, status: dict[str, Any], health: dict[str, Any]) -> list[dict[str, Any]]:
+        items: list[dict[str, Any]] = []
+        for alert in health["alerts"]:
+            if alert["category"] not in {"stale_data", "no_budget", "reconciliation"}:
+                continue
+            evidence: dict[str, Any] = {"alert_category": alert["category"]}
+            recommended_action = None
+            if alert["category"] == "stale_data":
+                evidence["hours_stale"] = status["actuals_freshness"]["hours_stale"]
+                evidence["last_synced_at"] = status["actuals_freshness"]["last_updated_at"]
+                recommended_action = "Run YNAB sync before relying on this review."
+            elif alert["category"] == "no_budget":
+                evidence["last_budget_import_at"] = status["last_budget_import_at"]
+                recommended_action = "Import the planning workbook before reviewing category performance."
+            elif alert["category"] == "reconciliation":
+                evidence["last_reconcile_status"] = status["last_reconcile_status"]
+                evidence["mismatch_count"] = (
+                    status.get("latest_runs", {})
+                    .get("reconcile", {})
+                    .get("details", {})
+                    .get("mismatch_count")
+                )
+                recommended_action = "Resolve exact-match category mismatches in YNAB before adjusting the plan."
+            items.append(
+                {
+                    "kind": f"{alert['category']}_blocker",
+                    "signal_class": "system",
+                    "severity": alert["severity"],
+                    "title": alert["title"],
+                    "why_it_matters": alert["detail"],
+                    "recommended_action": recommended_action,
+                    "group_name": None,
+                    "category_name": None,
+                    "evidence": evidence,
+                    "impact_milliunits": 0,
+                }
+            )
+        return sorted(items, key=self._priority_key)
+
+    def _overages(self, *, summary: dict[str, Any], month_label: str) -> list[dict[str, Any]]:
+        items: list[dict[str, Any]] = []
+        for group in summary["groups"]:
+            for category in group["categories"]:
+                variance = category["variance_milliunits"]
+                planned = category["planned_milliunits"]
+                actual = category["actual_milliunits"]
+                if variance <= 0:
+                    continue
+                if variance < 50_000 and not (planned == 0 and actual >= 25_000):
+                    continue
+                severity = self._variance_severity(variance=variance, planned=planned)
+                items.append(
+                    {
+                        "kind": "overage",
+                        "signal_class": self._signal_class(group["group_name"], category["category_name"]),
+                        "severity": severity,
+                        "title": (
+                            f"{group['group_name']} / {category['category_name']} is over plan by "
+                            f"{self._format_money(variance)} in {month_label}"
+                        ),
+                        "why_it_matters": (
+                            f"Actual spending is {self._format_money(actual)} against a plan of "
+                            f"{self._format_money(planned)}."
+                        ),
+                        "recommended_action": (
+                            "Review recent transactions and decide whether to cut back or raise the category target."
+                        ),
+                        "group_name": group["group_name"],
+                        "category_name": category["category_name"],
+                        "evidence": {
+                            "month": month_label,
+                            "planned_milliunits": planned,
+                            "actual_milliunits": actual,
+                            "variance_milliunits": variance,
+                        },
+                        "impact_milliunits": variance,
+                    }
+                )
+        return sorted(items, key=self._priority_key)
+
+    def _changes(self, *, comparison: dict[str, Any]) -> list[dict[str, Any]]:
+        items: list[dict[str, Any]] = []
+        for category in comparison["categories"]:
+            delta = category["delta_milliunits"]
+            if abs(delta) < 75_000:
+                continue
+            delta_percent = category["delta_percent"]
+            direction = "up" if delta > 0 else "down"
+            severity = (
+                "warning"
+                if abs(delta) >= 250_000 or (delta_percent is not None and abs(delta_percent) >= 50)
+                else "info"
+            )
+            items.append(
+                {
+                    "kind": "month_change",
+                    "signal_class": self._signal_class(category["group_name"], category["category_name"]),
+                    "severity": severity,
+                    "title": (
+                        f"{category['group_name']} / {category['category_name']} is {direction} "
+                        f"{self._format_money(abs(delta))} versus {comparison['month_a']}"
+                    ),
+                    "why_it_matters": (
+                        f"{comparison['month_b']} spend was {self._format_money(category['month_b_milliunits'])}; "
+                        f"{comparison['month_a']} was {self._format_money(category['month_a_milliunits'])}."
+                    ),
+                    "recommended_action": (
+                        "Confirm whether this is a durable behavior change before adjusting the budget baseline."
+                    ),
+                    "group_name": category["group_name"],
+                    "category_name": category["category_name"],
+                    "evidence": {
+                        "month_a": comparison["month_a"],
+                        "month_b": comparison["month_b"],
+                        "month_a_milliunits": category["month_a_milliunits"],
+                        "month_b_milliunits": category["month_b_milliunits"],
+                        "delta_milliunits": delta,
+                        "delta_percent": delta_percent,
+                    },
+                    "impact_milliunits": abs(delta),
+                }
+            )
+        return sorted(items, key=self._priority_key)
+
+    def _anomalies(self, *, anomalies: dict[str, Any], month_label: str) -> list[dict[str, Any]]:
+        items: list[dict[str, Any]] = []
+        for anomaly in anomalies["transaction_anomalies"]:
+            if not anomaly["date"].startswith(month_label):
+                continue
+            amount = abs(anomaly["amount_milliunits"])
+            items.append(
+                {
+                    "kind": "transaction_anomaly",
+                    "signal_class": self._signal_class(anomaly["group_name"], anomaly["category_name"]),
+                    "severity": "warning" if anomaly["sigma_distance"] >= 3 else "info",
+                    "title": (
+                        f"{anomaly['payee_name'] or 'Transaction'} looks unusual in "
+                        f"{anomaly['group_name'] or 'Uncategorized'} / {anomaly['category_name'] or 'Uncategorized'}"
+                    ),
+                    "why_it_matters": (
+                        f"{self._format_money(amount)} is {anomaly['sigma_distance']}σ above the category's typical transaction size."
+                    ),
+                    "recommended_action": "Verify whether this was intentional and whether it should change the category plan.",
+                    "group_name": anomaly["group_name"] or None,
+                    "category_name": anomaly["category_name"] or None,
+                    "evidence": {
+                        "date": anomaly["date"],
+                        "amount_milliunits": anomaly["amount_milliunits"],
+                        "sigma_distance": anomaly["sigma_distance"],
+                        "category_mean_milliunits": anomaly["category_mean_milliunits"],
+                        "category_stddev_milliunits": anomaly["category_stddev_milliunits"],
+                    },
+                    "impact_milliunits": amount,
+                }
+            )
+        return sorted(items, key=self._priority_key)
+
+    def _recommendations(self, *, recommendations: dict[str, Any]) -> list[dict[str, Any]]:
+        items: list[dict[str, Any]] = []
+        for recommendation in recommendations["recommendations"]:
+            signal_class = self._signal_class(
+                recommendation["group_name"],
+                recommendation["category_name"],
+            )
+            severity = "warning" if abs(recommendation["projected_annual_impact_milliunits"]) >= 5_000_000 else "info"
+            items.append(
+                {
+                    "kind": "budget_recommendation",
+                    "signal_class": signal_class,
+                    "severity": severity,
+                    "title": (
+                        f"{recommendation['group_name']} / {recommendation['category_name']}: "
+                        f"{recommendation['action'].replace('_', ' ')} to "
+                        f"{self._format_money(recommendation['suggested_planned_milliunits'])}/mo"
+                    ),
+                    "why_it_matters": recommendation["reason"],
+                    "recommended_action": (
+                        "Adjust the planned category amount only if the recent run rate reflects real expected behavior."
+                    ),
+                    "group_name": recommendation["group_name"],
+                    "category_name": recommendation["category_name"],
+                    "evidence": {
+                        "action": recommendation["action"],
+                        "current_planned_milliunits": recommendation["current_planned_milliunits"],
+                        "suggested_planned_milliunits": recommendation["suggested_planned_milliunits"],
+                        "projected_annual_impact_milliunits": recommendation["projected_annual_impact_milliunits"],
+                        "confidence": recommendation["confidence"],
+                        "trend_direction": recommendation["trend_direction"],
+                    },
+                    "impact_milliunits": abs(recommendation["projected_annual_impact_milliunits"]),
+                }
+            )
+        return sorted(items, key=self._priority_key)
+
+    def _headline(
+        self,
+        *,
+        month_label: str,
+        blockers: list[dict[str, Any]],
+        overages: list[dict[str, Any]],
+        changes: list[dict[str, Any]],
+        anomalies: list[dict[str, Any]],
+        recommendations: list[dict[str, Any]],
+    ) -> str:
+        if blockers:
+            return blockers[0]["title"]
+        if overages:
+            return overages[0]["title"]
+        if changes:
+            return changes[0]["title"]
+        if anomalies:
+            return anomalies[0]["title"]
+        if recommendations:
+            return recommendations[0]["title"]
+        return f"No material issues were flagged for {month_label}."
+
+    def _overall_status(
+        self,
+        *,
+        blockers: list[dict[str, Any]],
+        overages: list[dict[str, Any]],
+        changes: list[dict[str, Any]],
+        anomalies: list[dict[str, Any]],
+        recommendations: list[dict[str, Any]],
+    ) -> str:
+        severities = [
+            item["severity"]
+            for item in [*blockers, *overages, *changes, *anomalies, *recommendations]
+        ]
+        if "critical" in severities:
+            return "critical"
+        if "warning" in severities:
+            return "warning"
+        return "healthy"
+
+    def _signal_class(self, group_name: str | None, category_name: str | None) -> str:
+        normalized_group = (group_name or "").strip().lower()
+        normalized_category = (category_name or "").strip().lower()
+        if not normalized_group or not normalized_category:
+            return "uncategorized"
+        if normalized_group == "internal master category" or normalized_category.startswith("inflow:"):
+            return "uncategorized"
+        if normalized_group == "payments":
+            return "payment_flow"
+        if "reimbursement" in normalized_group or "reimbursement" in normalized_category:
+            return "reimbursement_flow"
+        if normalized_group == "one time purchase" or normalized_category in {"not budgetted", "annual expense"}:
+            return "one_off"
+        return "core_spend"
+
+    def _priority_key(self, item: dict[str, Any]) -> tuple[int, int, int, str]:
+        severity_rank = {"critical": 0, "warning": 1, "info": 2}
+        signal_rank = {
+            "system": 0,
+            "core_spend": 0,
+            "payment_flow": 1,
+            "reimbursement_flow": 1,
+            "one_off": 2,
+            "uncategorized": 2,
+        }
+        impact = int(item.get("impact_milliunits", 0))
+        return (
+            severity_rank.get(item["severity"], 99),
+            signal_rank.get(item.get("signal_class", "core_spend"), 99),
+            -impact,
+            item["title"],
+        )
+
+    def _variance_severity(self, *, variance: int, planned: int) -> str:
+        if variance >= 250_000 or (planned == 0 and variance >= 100_000):
+            return "critical"
+        if variance >= 100_000 or (planned > 0 and variance >= planned // 2):
+            return "warning"
+        return "info"
+
+    def _format_money(self, milliunits: int) -> str:
+        dollars = milliunits / 1000
+        sign = "-" if dollars < 0 else ""
+        return f"{sign}${abs(dollars):,.2f}"
+
+
+@dataclass
 class ServiceContainer:
     config: AppConfig
     database: Database
@@ -718,5 +1070,6 @@ class ServiceContainer:
     reconcile: ReconciliationService
     reports: ReportService
     analytics: Any
+    review: Any
     scheduled_refresh: Any | None
     operation_lock: OperationLock

@@ -7,7 +7,7 @@ import { MetricCard } from '@/components/metric-card'
 import { StatusChip } from '@/components/status-chip'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
-import { getStatus, getSummary } from '@/lib/api'
+import { getStatus, getSummary, getWeeklyReview, type ReviewItem } from '@/lib/api'
 import { formatCompactMoney, formatDay, formatMoney, formatMonthLabel, formatRunAt } from '@/lib/format'
 import { useAppMonth } from '@/app/month-context'
 import { GroupChart } from '@/components/group-chart'
@@ -16,6 +16,7 @@ export function OverviewPage() {
   const { month } = useAppMonth()
   const summaryQuery = useQuery({ queryKey: ['summary', month], queryFn: () => getSummary(month) })
   const statusQuery = useQuery({ queryKey: ['status'], queryFn: getStatus })
+  const reviewQuery = useQuery({ queryKey: ['review', month], queryFn: () => getWeeklyReview(month) })
 
   const annualCategories = useMemo(
     () =>
@@ -27,15 +28,23 @@ export function OverviewPage() {
     [summaryQuery.data],
   )
 
-  if (summaryQuery.isLoading || statusQuery.isLoading) {
+  if (summaryQuery.isLoading || statusQuery.isLoading || reviewQuery.isLoading) {
     return <OverviewSkeleton />
   }
 
   const summary = summaryQuery.data
   const status = statusQuery.data
-  if (!summary || !status) {
+  const review = reviewQuery.data
+  if (!summary || !status || !review) {
     return null
   }
+
+  const priorityItems =
+    review.blockers.length > 0
+      ? review.blockers.slice(0, 3)
+      : [...review.overages, ...review.changes, ...review.anomalies].slice(0, 3)
+  const attentionItems = [...review.blockers, ...review.overages, ...review.anomalies].slice(0, 3)
+  const actionItems = review.recommendations.slice(0, 3)
 
   return (
     <div className="space-y-8">
@@ -71,6 +80,81 @@ export function OverviewPage() {
           icon={<AlertTriangle className="h-4 w-4 text-muted-foreground" />}
         />
       </section>
+
+      <Card className="border-border/40 bg-card">
+        <CardHeader className="space-y-4">
+          <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+            <div>
+              <CardTitle>Weekly Review</CardTitle>
+              <p className="mt-2 text-sm text-muted-foreground">
+                {review.headline}
+              </p>
+            </div>
+            <div className="flex items-center gap-3">
+              <StatusChip status={review.overall_status} />
+              <div className="text-right text-sm text-muted-foreground">
+                <div>{review.supporting_metrics.blocker_count} blockers</div>
+                <div>{review.supporting_metrics.recommendation_count} suggested actions</div>
+              </div>
+            </div>
+          </div>
+
+          {priorityItems.length ? (
+            <div className="grid gap-3 xl:grid-cols-3">
+              {priorityItems.map((item) => (
+                <div
+                  key={`${item.kind}-${item.group_name ?? 'none'}-${item.category_name ?? 'none'}-${item.title}`}
+                  className="rounded-lg bg-muted/30 p-4"
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="text-sm font-medium text-foreground">{item.title}</div>
+                    <StatusChip status={item.severity} />
+                  </div>
+                  <p className="mt-2 text-sm text-muted-foreground">{item.why_it_matters}</p>
+                </div>
+              ))}
+            </div>
+          ) : null}
+
+          {review.blockers.length ? (
+            <div className="rounded-lg bg-rose-500/[0.08] p-4 ring-1 ring-inset ring-rose-500/20">
+              <div className="flex items-center gap-2 text-sm font-medium text-rose-100">
+                <AlertTriangle className="h-4 w-4" />
+                Review confidence is reduced until these blockers are resolved.
+              </div>
+              <div className="mt-3 space-y-2">
+                {review.blockers.slice(0, 3).map((item) => (
+                  <div key={item.title} className="text-sm text-rose-50/90">
+                    <span className="font-medium">{item.title}</span>
+                    <span className="text-rose-100/70"> — {item.recommended_action ?? item.why_it_matters}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ) : null}
+        </CardHeader>
+        <CardContent className="grid gap-4 xl:grid-cols-3">
+          <ReviewColumn
+            title="What Changed"
+            subtitle="Month-over-month shifts worth sanity-checking."
+            items={review.changes}
+            empty="No material month-over-month changes crossed the review thresholds."
+          />
+          <ReviewColumn
+            title="Needs Attention"
+            subtitle="Current blockers, overages, and unusual spend."
+            items={attentionItems}
+            empty="Nothing urgent is crowding the current review window."
+          />
+          <ReviewColumn
+            title="Recommended Actions"
+            subtitle="Suggested next steps grounded in the latest plan and actuals."
+            items={actionItems}
+            empty="No budget changes are being recommended right now."
+            showAction
+          />
+        </CardContent>
+      </Card>
 
       <Card className="border-border/40 bg-card">
         <CardHeader className="flex flex-row items-center justify-between gap-4">
@@ -372,6 +456,50 @@ function OverviewSkeleton() {
       <div className="grid gap-6 xl:grid-cols-[1.15fr_1fr]">
         <Skeleton className="h-[420px] rounded-xl" />
         <Skeleton className="h-[420px] rounded-xl" />
+      </div>
+    </div>
+  )
+}
+
+function ReviewColumn({
+  title,
+  subtitle,
+  items,
+  empty,
+  showAction = false,
+}: {
+  title: string
+  subtitle: string
+  items: ReviewItem[]
+  empty: string
+  showAction?: boolean
+}) {
+  return (
+    <div className="rounded-lg bg-muted/20 p-4">
+      <div className="text-base font-medium text-foreground">{title}</div>
+      <p className="mt-1 text-sm text-muted-foreground">{subtitle}</p>
+      <div className="mt-4 space-y-3">
+        {items.length ? (
+          items.map((item) => (
+            <div
+              key={`${item.kind}-${item.group_name ?? 'none'}-${item.category_name ?? 'none'}-${item.title}`}
+              className="rounded-lg bg-muted/30 p-3"
+            >
+              <div className="flex items-start justify-between gap-3">
+                <div className="text-sm font-medium text-foreground">{item.title}</div>
+                <StatusChip status={item.severity} />
+              </div>
+              <div className="mt-2 text-sm text-muted-foreground">{item.why_it_matters}</div>
+              {showAction && item.recommended_action ? (
+                <div className="mt-3 text-sm text-foreground/90">{item.recommended_action}</div>
+              ) : null}
+            </div>
+          ))
+        ) : (
+          <div className="rounded-lg bg-emerald-500/[0.06] p-4 text-sm text-emerald-100 ring-1 ring-inset ring-emerald-500/15">
+            {empty}
+          </div>
+        )}
       </div>
     </div>
   )
