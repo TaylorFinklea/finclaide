@@ -1,6 +1,8 @@
 # CLAUDE.md
 
-Use this repository as an MCP- and HTTP-served finance application, not as a loose collection of scripts.
+## Session Workflow
+
+Handoff state lives in `.docs/ai/` — see global `~/CLAUDE.md` for the standard workflow. Canonical roadmap with phase definitions is at `docs/roadmap.md`.
 
 ## What Finclaide Does
 
