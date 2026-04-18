@@ -3,6 +3,7 @@ import { useMemo } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { AlertTriangle, ArrowDownUp, RefreshCcw, ShieldCheck } from 'lucide-react'
 
+import { FailureCauseCard } from '@/components/failure-cause-card'
 import { MetricCard } from '@/components/metric-card'
 import { StatusChip } from '@/components/status-chip'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -48,6 +49,7 @@ export function OverviewPage() {
 
   return (
     <div className="space-y-8">
+      <FailureCauseCard status={status} />
       <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
         <MetricCard
           label="Budget Import"

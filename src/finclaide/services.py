@@ -240,7 +240,7 @@ class ReportService:
             if include_recent_runs:
                 run_rows = connection.execute(
                     """
-                    SELECT source, status, started_at, finished_at, details_json
+                    SELECT id, source, status, started_at, finished_at, details_json
                     FROM sync_runs
                     WHERE id IN (
                         SELECT MAX(id)
@@ -252,6 +252,7 @@ class ReportService:
                 ).fetchall()
                 latest_runs = {
                     row["source"]: {
+                        "id": row["id"],
                         "status": row["status"],
                         "started_at": row["started_at"],
                         "finished_at": row["finished_at"],

@@ -6,6 +6,7 @@ const NullableString = z.string().nullable()
 const NullableNumber = z.number().nullable()
 
 const LatestRunSchema = z.object({
+  id: z.number().optional(),
   status: z.string(),
   started_at: NullableString.optional(),
   finished_at: NullableString.optional(),
@@ -57,6 +58,25 @@ export const RunEntrySchema = z.object({
 
 const RunsSchema = z.object({
   runs: z.array(RunEntrySchema),
+})
+
+export const ReconcilePreviewEntrySchema = z.object({
+  group_name: z.string(),
+  category_name: z.string(),
+})
+
+export const ReconcilePreviewSchema = z.object({
+  previewed_at: z.string(),
+  planned_count: z.number(),
+  ynab_count: z.number(),
+  exact_matches: z.array(ReconcilePreviewEntrySchema),
+  missing_in_ynab: z.array(ReconcilePreviewEntrySchema),
+  extra_in_ynab: z.array(ReconcilePreviewEntrySchema),
+  counts: z.object({
+    exact: z.number(),
+    missing_in_ynab: z.number(),
+    extra_in_ynab: z.number(),
+  }),
 })
 
 const ReviewItemSchema = z.object({
@@ -190,6 +210,8 @@ export type OverageWatchCategory = z.infer<typeof OverageWatchCategorySchema>
 export type TransactionRow = z.infer<typeof TransactionSchema>
 export type TransactionsPageResponse = z.infer<typeof TransactionsPageSchema>
 export type RunEntry = z.infer<typeof RunEntrySchema>
+export type ReconcilePreviewEntry = z.infer<typeof ReconcilePreviewEntrySchema>
+export type ReconcilePreviewResponse = z.infer<typeof ReconcilePreviewSchema>
 export type ReviewItem = z.infer<typeof ReviewItemSchema>
 export type WeeklyReviewResponse = z.infer<typeof WeeklyReviewSchema>
 
@@ -251,6 +273,14 @@ export async function getRuns(limit = 20, source?: string) {
     search.set('source', source)
   }
   return requestJson(withBasePath(`/ui-api/runs?${search.toString()}`), RunsSchema)
+}
+
+export async function getRun(runId: number) {
+  return requestJson(withBasePath(`/ui-api/runs/${runId}`), RunEntrySchema)
+}
+
+export async function getReconcilePreview() {
+  return requestJson(withBasePath('/ui-api/reconcile/preview'), ReconcilePreviewSchema)
 }
 
 export type TransactionsParams = {

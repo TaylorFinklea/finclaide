@@ -44,9 +44,10 @@ describe('OperationsPage', () => {
     expect(await screen.findByText('YNAB Data')).toBeInTheDocument()
     expect(await screen.findAllByText('Scheduled Refresh')).not.toHaveLength(0)
     expect(await screen.findByText('Recent Runs')).toBeInTheDocument()
-    expect(await screen.findByText('Budget Import')).toBeInTheDocument()
+    expect(await screen.findAllByText('Budget Import')).not.toHaveLength(0)
     expect(await screen.findAllByText('Reconciliation failed with 1 mismatches.')).not.toHaveLength(0)
-    expect(await screen.findByText('Temporary YNAB timeout')).toBeInTheDocument()
+    expect(await screen.findAllByText('Temporary YNAB timeout')).not.toHaveLength(0)
+    expect(await screen.findByText('Failure cause')).toBeInTheDocument()
     await userEvent.click(screen.getByRole('button', { name: 'Import Budget' }))
 
     await waitFor(() => {

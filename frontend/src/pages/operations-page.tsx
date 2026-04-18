@@ -2,15 +2,29 @@ import { useState } from 'react'
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { LoaderCircle, RefreshCw } from 'lucide-react'
+import { Link } from 'react-router-dom'
 import { toast } from 'sonner'
 
 import { useAppMonth } from '@/app/month-context'
+import { FailureCauseCard } from '@/components/failure-cause-card'
+import { ReconcilePreviewCard } from '@/components/reconcile-preview-card'
 import { StatusChip } from '@/components/status-chip'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import type { RunEntry, StatusResponse } from '@/lib/api'
-import { getErrorMessage, getRuns, getStatus, getSummary, importBudget, reconcile, refreshAll, syncYnab } from '@/lib/api'
+import {
+  getErrorMessage,
+  getReconcilePreview,
+  getRuns,
+  getStatus,
+  getSummary,
+  importBudget,
+  reconcile,
+  refreshAll,
+  syncYnab,
+} from '@/lib/api'
 import { formatMonthLabel, formatRunAt } from '@/lib/format'
+import { withBasePath } from '@/lib/runtime'
 
 type OperationKind = 'budget-import' | 'ynab-sync' | 'reconcile' | 'refresh-all'
 
@@ -83,8 +97,52 @@ export function OperationsPage() {
   const busy = importMutation.isPending || syncMutation.isPending || reconcileMutation.isPending || refreshMutation.isPending
   const recentRuns = runsQuery.data?.runs ?? []
 
+  const reconcileFailed = statusQuery.data?.latest_runs?.reconcile?.status === 'failed'
+  const planImported = statusQuery.data?.last_budget_import_id !== null && statusQuery.data?.last_budget_import_id !== undefined
+  const previewQuery = useQuery({
+    queryKey: ['reconcile-preview'],
+    queryFn: getReconcilePreview,
+    enabled: reconcileFailed && planImported,
+    retry: false,
+  })
+
+  const handleRetry = (source: string) => {
+    if (source === 'budget_import') {
+      importMutation.mutate()
+    } else if (source === 'ynab_sync') {
+      syncMutation.mutate()
+    } else if (source === 'reconcile' || source === 'scheduled_refresh') {
+      reconcileMutation.mutate()
+    }
+  }
+
+  const retrying: Record<string, boolean> = {
+    budget_import: importMutation.isPending,
+    ynab_sync: syncMutation.isPending,
+    reconcile: reconcileMutation.isPending,
+    scheduled_refresh: reconcileMutation.isPending,
+  }
+
   return (
     <div className="space-y-6">
+      <FailureCauseCard
+        status={statusQuery.data}
+        onRetry={handleRetry}
+        retrying={retrying}
+      />
+
+      {reconcileFailed && planImported ? (
+        <ReconcilePreviewCard
+          preview={previewQuery.data}
+          isLoading={previewQuery.isLoading}
+          isError={previewQuery.isError}
+          error={previewQuery.error}
+          onRefresh={() => previewQuery.refetch()}
+          onRetryReconcile={() => reconcileMutation.mutate()}
+          retrying={reconcileMutation.isPending}
+        />
+      ) : null}
+
       <Card className="border-border/40 bg-card">
         <CardHeader>
           <CardTitle>Operations</CardTitle>
@@ -132,7 +190,12 @@ export function OperationsPage() {
           <CardContent className="space-y-3">
             {recentRuns.length ? (
               recentRuns.map((run) => (
-                <div key={run.id} className="rounded-lg bg-muted/30 p-4">
+                <Link
+                  key={run.id}
+                  to={withBasePath(`/operations/runs/${run.id}`)}
+                  className="block rounded-lg bg-muted/30 p-4 transition-colors duration-150 hover:bg-muted/50 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
+                  aria-label={`Open details for ${formatRunSource(run.source)} run #${run.id}`}
+                >
                   <div className="flex items-center justify-between gap-4">
                     <div className="text-label-upper">{formatRunSource(run.source)}</div>
                     <StatusChip status={run.status} />
@@ -141,10 +204,8 @@ export function OperationsPage() {
                     <div className="font-medium text-foreground">{formatRunAt(run.finished_at)}</div>
                     <div className="text-sm text-muted-foreground">{formatRunAt(run.started_at)}</div>
                   </div>
-                  <div className="mt-2 text-sm text-muted-foreground">
-                    {describeRun(run)}
-                  </div>
-                </div>
+                  <div className="mt-2 text-sm text-muted-foreground">{describeRun(run)}</div>
+                </Link>
               ))
             ) : (
               <p className="text-sm text-muted-foreground">No operation history yet.</p>

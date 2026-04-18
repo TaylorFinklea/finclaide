@@ -1,21 +1,23 @@
 import { lazy, Suspense, useMemo } from 'react'
 
 import { QueryClient, QueryClientProvider, useQuery } from '@tanstack/react-query'
-import { BarChart3, FolderSync, LayoutGrid, ReceiptText, TriangleAlert } from 'lucide-react'
-import { BrowserRouter, NavLink, Route, Routes } from 'react-router-dom'
+import { AlertCircle, BarChart3, FolderSync, LayoutGrid, ReceiptText, TriangleAlert } from 'lucide-react'
+import { BrowserRouter, Link, NavLink, Route, Routes } from 'react-router-dom'
 import { Toaster } from 'sonner'
 
 import { AppMonthProvider, useAppMonth } from '@/app/month-context'
+import { FreshnessChip } from '@/components/freshness-chip'
 import { Skeleton } from '@/components/ui/skeleton'
-import { getStatus } from '@/lib/api'
-import { formatMonthLabel } from '@/lib/format'
-import { getBasePath } from '@/lib/runtime'
+import { getStatus, type StatusResponse } from '@/lib/api'
+import { formatMonthLabel, formatRunAt } from '@/lib/format'
+import { getBasePath, withBasePath } from '@/lib/runtime'
 import { cn } from '@/lib/utils'
 
 const OverviewPage = lazy(async () => import('@/pages/overview-page').then((module) => ({ default: module.OverviewPage })))
 const CategoriesPage = lazy(async () => import('@/pages/categories-page').then((module) => ({ default: module.CategoriesPage })))
 const TransactionsPage = lazy(async () => import('@/pages/transactions-page').then((module) => ({ default: module.TransactionsPage })))
 const OperationsPage = lazy(async () => import('@/pages/operations-page').then((module) => ({ default: module.OperationsPage })))
+const RunDetailPage = lazy(async () => import('@/pages/run-detail-page').then((module) => ({ default: module.RunDetailPage })))
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -45,6 +47,48 @@ export default function App() {
         </BrowserRouter>
       </AppMonthProvider>
     </QueryClientProvider>
+  )
+}
+
+function ScheduledRefreshBanner({ status }: { status: StatusResponse | undefined }) {
+  if (!status) return null
+  const schedule = status.scheduled_refresh
+  if (!schedule.enabled) return null
+  const lastStatus = schedule.last_status
+  if (lastStatus !== 'failed' && lastStatus !== 'skipped') return null
+
+  const tone = lastStatus === 'failed'
+    ? 'border-rose-500/30 bg-rose-500/[0.08] text-rose-100'
+    : 'border-amber-500/30 bg-amber-500/[0.08] text-amber-100'
+  const headline = lastStatus === 'failed'
+    ? `Scheduled refresh failed ${formatRunAt(schedule.last_finished_at)}`
+    : `Scheduled refresh skipped ${formatRunAt(schedule.last_finished_at)}`
+  const detail =
+    schedule.last_error ??
+    (lastStatus === 'skipped'
+      ? 'A manual operation was running when the scheduled refresh fired. Next attempt will retry.'
+      : 'Open Operations to retry or read the run detail for the full payload.')
+
+  return (
+    <div
+      className={cn('mb-6 flex flex-col gap-3 rounded-xl p-4 ring-1 ring-inset md:flex-row md:items-center md:justify-between', tone)}
+      role="status"
+      aria-live="polite"
+    >
+      <div className="flex items-start gap-3">
+        <AlertCircle className="mt-0.5 h-4 w-4" />
+        <div>
+          <div className="text-sm font-medium">{headline}</div>
+          <div className="mt-1 text-xs opacity-80">{detail}</div>
+        </div>
+      </div>
+      <Link
+        to={withBasePath('/operations')}
+        className="self-start rounded-md border border-current/30 px-3 py-1.5 text-xs font-medium hover:bg-current/10 md:self-center"
+      >
+        Open Operations
+      </Link>
+    </div>
   )
 }
 
@@ -115,19 +159,29 @@ function AppShell() {
               </div>
             </div>
 
-            <div className="flex items-center gap-3">
-              <label className="text-label" htmlFor="workspace-month">
-                Month
-              </label>
-              <input
-                id="workspace-month"
-                className="rounded-lg border border-border/60 bg-muted/40 px-3 py-1.5 font-mono text-sm text-foreground outline-none transition-colors duration-150 focus:border-primary/60 focus:ring-1 focus:ring-primary/30"
-                type="month"
-                value={month}
-                onChange={(event) => setMonth(event.target.value)}
-              />
+            <div className="flex flex-col items-end gap-3">
+              {statusQuery.data ? (
+                <div className="flex flex-wrap items-center gap-x-4 gap-y-2 justify-end">
+                  <FreshnessChip label="Plan" freshness={statusQuery.data.plan_freshness} />
+                  <FreshnessChip label="YNAB" freshness={statusQuery.data.actuals_freshness} />
+                </div>
+              ) : null}
+              <div className="flex items-center gap-3">
+                <label className="text-label" htmlFor="workspace-month">
+                  Month
+                </label>
+                <input
+                  id="workspace-month"
+                  className="rounded-lg border border-border/60 bg-muted/40 px-3 py-1.5 font-mono text-sm text-foreground outline-none transition-colors duration-150 focus:border-primary/60 focus:ring-1 focus:ring-primary/30"
+                  type="month"
+                  value={month}
+                  onChange={(event) => setMonth(event.target.value)}
+                />
+              </div>
             </div>
           </header>
+
+          <ScheduledRefreshBanner status={statusQuery.data} />
 
           <Suspense fallback={<Skeleton className="h-[640px] rounded-2xl" />}>
             <Routes>
@@ -135,6 +189,7 @@ function AppShell() {
               <Route path="/categories" element={<CategoriesPage />} />
               <Route path="/transactions" element={<TransactionsPage />} />
               <Route path="/operations" element={<OperationsPage />} />
+              <Route path="/operations/runs/:id" element={<RunDetailPage />} />
             </Routes>
           </Suspense>
         </main>
