@@ -10,34 +10,80 @@ Finclaide is evolving into a polished private household finance OS. The product 
 - Product priorities: trustworthy data flow first, better decisions second, breadth later.
 - Planning source: spreadsheet remains canonical, but import should become automatic through Google Sheets sync.
 
-## Phase 1: Trusted Core Data Flow
+## Phase 1: Trusted Core Data Flow (active, rescoped 2026-04-18)
 
-Goal: make import, sync, and reconcile dependable every week.
+Goal: make import, sync, and reconcile diagnosable from the dashboard alone.
+The plumbing exists; the visibility does not.
 
-- Harden workbook parsing against real layout variants while keeping deterministic validation.
-- Improve operation state visibility so failures are explicit and actionable.
-- Expand regression coverage around importer edge cases, stale data, and reconciliation failures.
-- Make freshness and provenance visible in the dashboard and API responses.
+- Surface failure causes for import, sync, and reconcile in the dashboard
+  (no JSON spelunking).
+- Add a deterministic `/api/reconcile/preview` that classifies every planned
+  category against YNAB (exact-match / missing-in-YNAB / extra-in-YNAB)
+  without mutating data and without fuzzy matching.
+- Add a plan-staleness UX (header freshness chip + banner when scheduled
+  refresh skipped or failed its last cycle).
+- Add a run-detail view (`/api/runs/{id}` + `/operations/runs/:id` page) that
+  renders the full `details_json` as a structured card.
+- Add frontend baseline tests for the transactions page and a header/nav a11y
+  smoke test.
 
 Exit criteria:
 
-- Import, sync, and reconcile failures are diagnosable from the app without reading code.
-- Real-world workbook variants are covered by deterministic tests.
-- Core weekly workflow is stable enough to trust as an operating tool.
+- A failing import / sync / reconcile is diagnosable from the UI alone.
+- A missed scheduled refresh is impossible to overlook.
+- Reconcile failures route through the preview view so the user knows which
+  categories drifted before re-running.
 
-## Phase 2: Continuous Planning Ingestion
+## Phase 2: Continuous Planning Ingestion (substantially shipped — sweep)
 
 Goal: remove manual spreadsheet download and refresh friction.
 
-- Add automatic Google Sheets import while preserving workbook-compatible parsing semantics.
-- Add scheduled import, sync, and reconcile jobs with operation history.
-- Surface freshness, last-run outcome, and stale-data warnings in the UI and API.
-- Keep explicit provenance for every plan snapshot and actuals sync.
+Already shipped: Google Sheets import via Drive service account, remote URL
+import, scheduled refresh thread with bootstrap-on-start, run history with
+status, freshness scoring on `/api/status`.
+
+Remaining sweep:
+
+- Add failure-mode tests for `ScheduledRefreshService` (operation lock skip,
+  reconcile-failure recording, bootstrap respects prior success).
+- Make scheduled-refresh `last_status` and `next_run_at` more prominent in
+  the dashboard.
 
 Exit criteria:
 
-- The operator no longer needs to manually download the planning sheet for normal use.
-- The app can tell whether plan data or YNAB actuals are stale at a glance.
+- Scheduled refresh is fully covered by deterministic tests.
+- The operator can see the next scheduled run without leaving Operations.
+
+## Phase 2.5: Native Planning Surface (NEW — added 2026-04-18)
+
+Goal: replace the spreadsheet as the canonical planning surface. The React UI
+becomes the editing surface; SQLite owns plan state; Google Sheets becomes a
+read-only artifact written by the app on demand.
+
+- Introduce a SQLite plan model (`plans`, `plan_categories`, plan-version
+  snapshots) and a `PlanService` that abstracts read / write / branch /
+  commit / publish. Importer continues to hydrate the new model so the
+  spreadsheet stays a valid migration path.
+- Editor surfaces in the React UI for every block the workbook supports
+  (monthly, annual, one-time, stipends, savings) with first-class fields for
+  group, category, planned amount, annual target, due month, and notes.
+- What-if scenarios: branch off the active plan, edit, compare projected
+  variance vs current actuals, then commit or discard.
+- Versioning & rollback: every save produces a snapshot diffable and
+  restorable from the UI.
+- Publish-to-Sheets export: writes the current plan back into the configured
+  Google Sheet using the existing layout, plus an `.xlsx` download path for
+  offline sharing.
+- One-shot migration that takes the latest workbook import and hydrates the
+  new model as the active plan.
+
+Exit criteria:
+
+- The operator never opens Google Sheets to edit the plan.
+- A plan change in the UI is reflected in the next reconcile + summary
+  without any manual import step.
+- Sheet exports remain readable by non-app users (household members,
+  accountant) and round-trip back into the importer if needed.
 
 ## Phase 3: Decision Engine V1
 
