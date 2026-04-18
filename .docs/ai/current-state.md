@@ -10,36 +10,36 @@
 
 **Date**: 2026-04-18
 
-Reset the AI handoff suite based on a deep codebase walkthrough. Key changes:
+Shipped Phase 1 (Trusted Core Data Flow) end-to-end across three commits:
 
-- Switched `tier3_owner` from `codex` to `claude` in `.docs/ai/roadmap.md`.
-- Rescoped Phase 1 from a broad "trusted data flow" goal to a concrete
-  punch-list of the visibility gaps still felt in weekly use (failure-cause
-  surfacing, reconcile preview, plan-staleness UX, run-detail view, FE test
-  baseline).
-- Inserted Phase 2.5 ("Native Planning Surface") into `docs/roadmap.md` —
-  app becomes canonical for the plan; spreadsheet becomes an exported
-  artifact. Plan v1 must cover row editing, annual/one-time/sinking-fund
-  blocks, what-if scenarios, versioning/rollback, and publish-to-Sheets.
-- Populated the Haiku and Sonnet backlogs in `.docs/ai/roadmap.md` with
-  ~20 items, each with file:line references.
-- Recorded the source-of-truth direction shift, tier3 transfer, and the new
-  reconcile-preview policy in `.docs/ai/decisions.md`.
+- `bbe6243` — Slice A backend: `ReportService.run_by_id` +
+  `ReconciliationService.preview`; new `/api/runs/{id}` and
+  `/api/reconcile/preview` endpoints with `/ui-api` mirrors; 7 new pytest
+  tests.
+- `c0934c6` — Slice B frontend: `FailureCauseCard`, `FreshnessChip`,
+  `ReconcilePreviewCard`, `RunDetailPage`. Header gained Plan/YNAB freshness
+  chips. App shell got a `role=status` scheduled-refresh banner.
+  `status.latest_runs` now includes `id` so failure cards can deep-link.
+- `4676d2e` — Slice C tests: 3 new transactions-page cases (pagination /
+  filter / detail open) and 5 new header/nav a11y smoke cases. Stubbed jsdom
+  pointer-capture APIs in `test/setup.ts` so Radix Select tests work.
 
-No code changes this session — docs only.
+Roadmap updated to mark Phase 1 complete and point at Phase 2 sweep next.
+Phase report written under `.docs/ai/phases/phase-1.md`.
 
 ## Build Status
 
-- Not re-run this session. Last known green per `make test`. CI not present
-  in repo.
-- Frontend tests: 4 files (App, Overview, Operations, Categories). No
-  transactions-page coverage yet (tracked in Sonnet backlog).
+- Backend: `pytest` — 70/70 pass.
+- Frontend: `vitest run` — 12/12 pass.
+- Frontend: `tsc --noEmit -p tsconfig.app.json` — clean.
+- Container build: not re-run this session (no Dockerfile or dependency
+  changes).
 
 ## Active Milestone
 
-Phase 1 — Trusted Core Data Flow (rescoped). See
-`.docs/ai/roadmap.md#active-milestone`. Awaiting plan-mode approval to
-write the Phase 1 spec under `.docs/ai/phases/`.
+Phase 2 — Continuous Planning Ingestion (sweep). Small scope: failure-mode
+tests for `ScheduledRefreshService`, prominent surfacing of `next_run_at`
+on Operations. See `.docs/ai/roadmap.md`.
 
 ## Blockers
 

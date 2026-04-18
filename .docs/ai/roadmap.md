@@ -21,30 +21,43 @@ household, single plan, not a public SaaS.
 
 ## Active Milestone
 
-**Phase 1 — Trusted Core Data Flow (rescoped)**
+**Phase 1 — Trusted Core Data Flow (COMPLETE 2026-04-18)**
 
-Original goal stands: import, sync, and reconcile must be dependable every
-week. The pieces still missing in real weekly use:
+All sub-tasks shipped across three commits (`bbe6243`, `c0934c6`, `4676d2e`).
+See `.docs/ai/phases/phase-1.md` for the full spec + report.
 
-- [ ] Surface failure causes in the dashboard. Operations page shows raw run
-      JSON; users should see the cause of the last failure as a first-class
-      card with the actionable next step.
-- [ ] `/api/reconcile/preview` (and `/ui-api` mirror): deterministic diff of
+- [x] Surface failure causes in the dashboard. New `FailureCauseCard`
+      component renders on Operations (with Retry buttons) and Overview
+      (read-only) whenever any source's latest run failed.
+- [x] `/api/reconcile/preview` (and `/ui-api` mirror): deterministic diff of
       planned vs YNAB names — missing-in-YNAB, extra-in-YNAB, exact-match
-      counts. No mutations, no fuzzy matching yet.
-- [ ] Reconcile-preview surfaces on Overview banner and Operations panel
-      whenever the latest reconcile failed; one-click re-run after fixes.
-- [ ] Plan staleness UX: header freshness chip driven by
-      `status.plan_freshness` / `status.sync_freshness`, plus a banner when
-      scheduled refresh has skipped or failed its last cycle.
-- [ ] Run-detail view: `/api/runs/{id}` + `/operations/runs/:id` page that
-      renders `details_json` (incl. `error`) as a structured card rather than
-      a JSON dump.
-- [ ] Frontend baseline tests for the transactions page and a11y smoke for the
-      header/nav (currently uncovered).
+      counts. No mutations, no fuzzy matching.
+- [x] Reconcile-preview auto-fetches and renders on Operations whenever the
+      latest reconcile failed, with a one-click re-run button.
+- [x] Plan staleness UX: header `FreshnessChip` for Plan + YNAB on every page,
+      plus an `aria-live=polite` banner when scheduled refresh's last status
+      is `failed` or `skipped`.
+- [x] Run-detail view: `/api/runs/{id}` + `/operations/runs/:id` page that
+      renders `details_json` as status-aware structured cards (success
+      summary, failure block, skipped explanation) plus the raw payload.
+- [x] Frontend baseline tests: 3 new transactions-page cases (pagination,
+      filter, detail open) and 5 new header/nav a11y smoke cases.
 
-**Exit criteria** — A failing import / sync / reconcile is diagnosable from
-the UI alone, and a missed scheduled refresh is impossible to overlook.
+**Exit criteria — met:**
+- A failing import / sync / reconcile is diagnosable from the UI alone via
+  FailureCauseCard + run-detail view (no JSON spelunking required).
+- A missed scheduled refresh is impossible to overlook — top-level banner
+  with the cause + link to Operations.
+- Reconcile failures route through the new preview view automatically.
+
+**Test status**: pytest 70/70, vitest 12/12, TypeScript clean.
+
+## Next Active Milestone
+
+**Phase 2 — Continuous Planning Ingestion (sweep)** is the next active
+milestone — small scope (failure-mode tests for `ScheduledRefreshService`,
+prominent surfacing of `next_run_at` on Operations). After that, **Phase
+2.5 — Native Planning Surface** kicks off with a brainstorm + spec.
 
 ## Upcoming Milestones (named, not yet active)
 

@@ -51,6 +51,34 @@ export. Importer remains as a one-way migration path.
 weakened — the new model still validates totals and treats plan edits as
 discrete versioned snapshots.
 
+## [2026-04-18] Reconcile preview filters hidden + deleted YNAB rows
+
+**Context**: When implementing `/api/reconcile/preview` we needed a rule for
+which YNAB categories count as "extra in YNAB". YNAB exposes an Internal
+Master Category group (Inflow: Ready to Assign, etc.) and users can hide
+old categories.
+**Decision**: Filter to `categories.hidden = 0 AND categories.deleted = 0
+AND category_groups.hidden = 0 AND category_groups.deleted = 0`. No
+hard-coded name list.
+**Rationale**: Hidden=true is YNAB's universal "don't show me this" signal
+and naturally excludes the Internal Master Category group. Hard-coding
+group names would drift if YNAB changes its conventions. Trade-off: Credit
+Card Payments categories (which are not hidden) will show up as
+"extra_in_ynab" if the user doesn't plan them; if this becomes noisy, we
+revisit.
+
+## [2026-04-18] Failure-cause card is read-only on Overview, retry-enabled on Operations
+
+**Context**: Phase 1 needed failure visibility on both Overview (the
+default landing page) and Operations (the control panel).
+**Decision**: One reusable `FailureCauseCard` component that renders on
+both surfaces. On Operations it accepts an `onRetry` handler and renders
+Retry buttons; on Overview the prop is omitted, leaving only the "Open
+run" deep link.
+**Rationale**: Keeps mutation logic on the page that owns the operation
+mutations (Operations). Overview stays a "what's going on" surface rather
+than gaining a parallel control panel. Single component, no duplication.
+
 ## [2026-04-18] Reconcile diagnostics: deterministic preview now, suggestions later
 
 **Context**: Operator wants reconcile failures easier to diagnose without
