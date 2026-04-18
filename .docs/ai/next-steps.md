@@ -4,27 +4,30 @@
 
 ## Immediate
 
-- [ ] Phase 2 sweep: add failure-mode tests for `ScheduledRefreshService`
-      (operation-lock skip path, reconcile-failure recording, bootstrap
-      respects prior success). One file in `tests/`, no production changes.
-- [ ] Phase 2 sweep: pull `scheduled_refresh.next_run_at` and `last_status`
-      into a more prominent panel on Operations (currently buried in the
-      Status sidebar). Small frontend-only change.
+- [ ] Brainstorm Phase 2.5 (Native Planning Surface) with the user. Key
+      open questions:
+  - SQLite plan model shape: keep the existing `planned_groups` /
+    `planned_categories` tables and add a `plans` parent + version
+    snapshots, or migrate to a fresh schema?
+  - Editor UX shape: per-block tabs vs unified table?
+  - What-if branching: how do scenarios reference / diff the active
+    plan? Soft-fork at the row level, or full snapshot copy?
+  - Publish-to-Sheets: write into the configured Google Sheet using the
+    same layout the importer expects (round-trip safe), or a separate
+    "export" sheet?
+- [ ] Author Phase 2.5 spec under `.docs/ai/phases/phase-2-5.md` once
+      brainstorm answers the above.
 
 ## Soon
 
-- [ ] Brainstorm + author Phase 2.5 spec (Native Planning Surface) under
-      `.docs/ai/phases/phase-2-5-spec.md`. Cover: SQLite plan model,
-      editor UX shape, what-if scenario branching, versioning/rollback,
-      publish-to-Sheets export protocol.
-- [ ] Dispatch a Haiku batch (4 items in parallel) once Phase 2 sweep
-      lands — magic-number comments, unused imports, icon-button titles,
-      empty-state messaging.
+- [ ] Dispatch a Haiku batch (4 items in parallel) once Phase 2.5 spec is
+      signed off — magic-number comments, unused imports, icon-button
+      titles, empty-state messaging.
 
 ## Deferred
 
 - Phase 3 work (analytics surfacing pages, suggested-mapping reconcile,
-  configurable thresholds) — not until Phase 2 + Phase 2.5 land.
-- Sonnet backlog items that depend on Phase 2.5's plan model (e.g.
-  variance drill-down) should wait.
+  configurable thresholds) — not until Phase 2.5 lands.
+- Sonnet backlog items that depend on the new plan model (variance
+  drill-down, threshold extraction) should wait for Phase 2.5.
 - Phase 7 (iOS / household visibility) — no movement planned.

@@ -10,36 +10,38 @@
 
 **Date**: 2026-04-18
 
-Shipped Phase 1 (Trusted Core Data Flow) end-to-end across three commits:
+Shipped Phase 1 (Trusted Core Data Flow) and Phase 2 (Continuous Planning
+Ingestion) end-to-end.
 
-- `bbe6243` — Slice A backend: `ReportService.run_by_id` +
-  `ReconciliationService.preview`; new `/api/runs/{id}` and
-  `/api/reconcile/preview` endpoints with `/ui-api` mirrors; 7 new pytest
-  tests.
-- `c0934c6` — Slice B frontend: `FailureCauseCard`, `FreshnessChip`,
-  `ReconcilePreviewCard`, `RunDetailPage`. Header gained Plan/YNAB freshness
-  chips. App shell got a `role=status` scheduled-refresh banner.
-  `status.latest_runs` now includes `id` so failure cards can deep-link.
-- `4676d2e` — Slice C tests: 3 new transactions-page cases (pagination /
-  filter / detail open) and 5 new header/nav a11y smoke cases. Stubbed jsdom
-  pointer-capture APIs in `test/setup.ts` so Radix Select tests work.
+Phase 1 — three commits:
+- `bbe6243` — backend: `/api/runs/{id}` + `/api/reconcile/preview`
+- `c0934c6` — frontend: failure-cause card, freshness chips, reconcile
+  preview card, run-detail page, scheduled-refresh banner
+- `4676d2e` — tests: transactions page (3 cases), header/nav a11y (5)
+- `9235962` — handoff doc updates
 
-Roadmap updated to mark Phase 1 complete and point at Phase 2 sweep next.
-Phase report written under `.docs/ai/phases/phase-1.md`.
+Phase 2 sweep — pending commit:
+- Added `test_scheduler_skips_bootstrap_when_prior_runs_succeeded` to
+  cover the only missing failure-mode case (other three were already
+  shipped in `test_api.py`).
+- New `AutomationStatusCard` component hoists scheduled-refresh status
+  out of the Status sidebar and into a dedicated card on Operations,
+  showing `next_run_at` with a relative countdown, last finished /
+  started timestamps, last status, and last error.
+- Removed the now-orphaned `describeScheduleStatus` /
+  `describeScheduleHeadline` / `describeScheduleDetail` helpers from
+  `operations-page.tsx`.
 
 ## Build Status
 
-- Backend: `pytest` — 70/70 pass.
+- Backend: `pytest` — 71/71 pass (1 new bootstrap test).
 - Frontend: `vitest run` — 12/12 pass.
 - Frontend: `tsc --noEmit -p tsconfig.app.json` — clean.
-- Container build: not re-run this session (no Dockerfile or dependency
-  changes).
 
 ## Active Milestone
 
-Phase 2 — Continuous Planning Ingestion (sweep). Small scope: failure-mode
-tests for `ScheduledRefreshService`, prominent surfacing of `next_run_at`
-on Operations. See `.docs/ai/roadmap.md`.
+**Phase 2.5 — Native Planning Surface**. Brainstorm + spec next, no code
+until aligned. See `.docs/ai/roadmap.md` for the sub-task list.
 
 ## Blockers
 

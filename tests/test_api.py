@@ -792,6 +792,27 @@ def test_scheduled_refresh_skip_is_reflected_in_status(app_factory, auth_header)
     assert "already running" in latest_run["details"]["error"]
 
 
+def test_scheduler_skips_bootstrap_when_prior_runs_succeeded(
+    app_factory, auth_header, tmp_path: Path
+):
+    workbook = build_budget_workbook(tmp_path / "Budget.xlsx")
+
+    seed_app = app_factory(workbook_path=workbook)
+    seed_client = seed_app.test_client()
+    assert seed_client.post("/api/budget/import", headers=auth_header).status_code == 200
+    assert seed_client.post("/api/ynab/sync", headers=auth_header).status_code == 200
+
+    app = app_factory(
+        workbook_path=workbook,
+        scheduled_refresh_enabled=True,
+        scheduled_refresh_bootstrap_on_start=True,
+    )
+    services = app.extensions["finclaide"]
+    services.scheduled_refresh.stop()
+
+    assert services.scheduled_refresh._should_bootstrap() is False
+
+
 def test_scheduler_bootstraps_when_no_prior_successful_runs(app_factory, auth_header, tmp_path: Path):
     workbook = build_budget_workbook(tmp_path / "Budget.xlsx")
     app = app_factory(

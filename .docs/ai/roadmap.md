@@ -54,20 +54,25 @@ See `.docs/ai/phases/phase-1.md` for the full spec + report.
 
 ## Next Active Milestone
 
-**Phase 2 — Continuous Planning Ingestion (sweep)** is the next active
-milestone — small scope (failure-mode tests for `ScheduledRefreshService`,
-prominent surfacing of `next_run_at` on Operations). After that, **Phase
-2.5 — Native Planning Surface** kicks off with a brainstorm + spec.
+**Phase 2.5 — Native Planning Surface** is now next. Brainstorm + spec
+required before any code (Plan model in SQLite, editor UX, what-if
+scenarios, versioning, publish-to-Sheets). See the full sub-task list
+below.
 
 ## Upcoming Milestones (named, not yet active)
 
-**Phase 2 — Continuous Planning Ingestion** (sweep, mostly shipped)
+**Phase 2 — Continuous Planning Ingestion** (COMPLETE 2026-04-18)
 
-- [ ] Failure-mode coverage of `ScheduledRefreshService` (skip when locked,
-      reconcile failures recorded as `status="failed"`, bootstrap respects
-      prior success — tests for each).
-- [ ] Surface scheduled refresh `last_status` and `next_run_at` more
-      prominently on Operations.
+- [x] Failure-mode coverage of `ScheduledRefreshService` — skip-when-locked
+      and reconcile-failure-recorded were already covered by
+      `test_scheduled_refresh_skip_is_reflected_in_status` and
+      `test_scheduled_refresh_failure_is_reflected_in_status`. Added
+      `test_scheduler_skips_bootstrap_when_prior_runs_succeeded` to close
+      the missing inverse case.
+- [x] `AutomationStatusCard` hoists scheduled-refresh status to a dedicated
+      Operations card showing `next_run_at` (with relative countdown), last
+      finished, last status, and last error. Removed the redundant copy
+      from the Status sidebar.
 
 **Phase 2.5 — Native Planning Surface (NEW, post-Phase-1)**
 
