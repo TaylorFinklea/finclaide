@@ -61,6 +61,62 @@ def _previous_month_label(month: str) -> str:
 class ReconciliationService:
     database: Database
 
+    def preview(self) -> dict[str, Any]:
+        with self.database.connect() as connection:
+            planned_rows = connection.execute(
+                """
+                SELECT group_name, category_name
+                FROM v_latest_planned_categories
+                ORDER BY group_name, category_name
+                """
+            ).fetchall()
+            if not planned_rows:
+                raise DataIntegrityError("Cannot preview reconcile before importing a budget.")
+
+            ynab_rows = connection.execute(
+                """
+                SELECT c.group_name AS group_name, c.name AS category_name
+                FROM categories AS c
+                JOIN category_groups AS g ON g.id = c.group_id
+                WHERE c.deleted = 0
+                  AND c.hidden = 0
+                  AND g.deleted = 0
+                  AND g.hidden = 0
+                ORDER BY c.group_name, c.name
+                """
+            ).fetchall()
+
+        planned_set: set[tuple[str, str]] = {
+            (row["group_name"], row["category_name"]) for row in planned_rows
+        }
+        ynab_set: set[tuple[str, str]] = {
+            (row["group_name"], row["category_name"]) for row in ynab_rows
+        }
+
+        def to_payload(pairs: set[tuple[str, str]]) -> list[dict[str, str]]:
+            return [
+                {"group_name": group, "category_name": category}
+                for group, category in sorted(pairs)
+            ]
+
+        exact_matches = planned_set & ynab_set
+        missing_in_ynab = planned_set - ynab_set
+        extra_in_ynab = ynab_set - planned_set
+
+        return {
+            "previewed_at": utc_now(),
+            "planned_count": len(planned_set),
+            "ynab_count": len(ynab_set),
+            "exact_matches": to_payload(exact_matches),
+            "missing_in_ynab": to_payload(missing_in_ynab),
+            "extra_in_ynab": to_payload(extra_in_ynab),
+            "counts": {
+                "exact": len(exact_matches),
+                "missing_in_ynab": len(missing_in_ynab),
+                "extra_in_ynab": len(extra_in_ynab),
+            },
+        }
+
     def reconcile(self) -> dict[str, Any]:
         run_at = utc_now()
         mismatches: list[dict[str, Any]] = []
@@ -295,6 +351,27 @@ class ReportService:
                 }
                 for row in rows
             ]
+        }
+
+    def run_by_id(self, run_id: int) -> dict[str, Any] | None:
+        with self.database.connect() as connection:
+            row = connection.execute(
+                """
+                SELECT id, source, status, started_at, finished_at, details_json
+                FROM sync_runs
+                WHERE id = ?
+                """,
+                (run_id,),
+            ).fetchone()
+        if row is None:
+            return None
+        return {
+            "id": row["id"],
+            "source": row["source"],
+            "status": row["status"],
+            "started_at": row["started_at"],
+            "finished_at": row["finished_at"],
+            "details": json.loads(row["details_json"] or "{}"),
         }
 
     def summary(self, month: str | None = None) -> dict[str, Any]:

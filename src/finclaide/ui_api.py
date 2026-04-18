@@ -63,6 +63,21 @@ def runs():
     return jsonify(_container().reports.runs(limit=limit, source=request.args.get("source")))
 
 
+@ui_api.get("/runs/<int:run_id>")
+@require_same_origin
+def run_detail(run_id: int):
+    result = _container().reports.run_by_id(run_id)
+    if result is None:
+        return jsonify({"error": "not_found", "error_detail": {"kind": "not_found", "message": f"Run {run_id} does not exist."}}), 404
+    return jsonify(result)
+
+
+@ui_api.get("/reconcile/preview")
+@require_same_origin
+def reconcile_preview():
+    return jsonify(_container().reconcile.preview())
+
+
 @ui_api.get("/summary")
 @require_same_origin
 def summary():

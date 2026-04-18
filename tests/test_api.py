@@ -227,6 +227,164 @@ def test_reconcile_fails_on_missing_category(app_factory, auth_header, tmp_path:
     assert "mismatches" in reconcile_response.get_json()["error"]
 
 
+def test_run_detail_returns_full_run_for_known_id(app_factory, auth_header, tmp_path: Path):
+    workbook = build_budget_workbook(tmp_path / "Budget.xlsx")
+    app = app_factory(workbook_path=workbook)
+    client = app.test_client()
+
+    client.post("/api/budget/import", headers=auth_header)
+    client.post("/api/ynab/sync", headers=auth_header)
+
+    runs = client.get("/api/runs?limit=10", headers=auth_header).get_json()["runs"]
+    target = next(run for run in runs if run["source"] == "budget_import")
+
+    response = client.get(f"/api/runs/{target['id']}", headers=auth_header)
+
+    assert response.status_code == 200
+    payload = response.get_json()
+    assert payload["id"] == target["id"]
+    assert payload["source"] == "budget_import"
+    assert payload["status"] == "success"
+    assert payload["details"]["row_count"] == target["details"]["row_count"]
+
+
+def test_run_detail_returns_404_for_unknown_id(client, auth_header):
+    response = client.get("/api/runs/999999", headers=auth_header)
+
+    assert response.status_code == 404
+    body = response.get_json()
+    assert body["error"] == "not_found"
+    assert body["error_detail"]["kind"] == "not_found"
+
+
+def test_ui_api_run_detail_mirrors_api(app_factory, tmp_path: Path):
+    workbook = build_budget_workbook(tmp_path / "Budget.xlsx")
+    app = app_factory(workbook_path=workbook)
+    client = app.test_client()
+
+    client.post("/api/budget/import", headers={"Authorization": "Bearer test-token"})
+    runs = client.get("/ui-api/runs?limit=5").get_json()["runs"]
+    target = next(run for run in runs if run["source"] == "budget_import")
+
+    response = client.get(f"/ui-api/runs/{target['id']}")
+
+    assert response.status_code == 200
+    assert response.get_json()["id"] == target["id"]
+
+
+def test_reconcile_preview_classifies_planned_categories(app_factory, auth_header, tmp_path: Path):
+    workbook = build_budget_workbook(tmp_path / "Budget.xlsx")
+    app = app_factory(workbook_path=workbook)
+    client = app.test_client()
+
+    client.post("/api/budget/import", headers=auth_header)
+    client.post("/api/ynab/sync", headers=auth_header)
+
+    response = client.get("/api/reconcile/preview", headers=auth_header)
+
+    assert response.status_code == 200
+    payload = response.get_json()
+    assert payload["counts"]["missing_in_ynab"] == 0
+    assert payload["counts"]["exact"] == payload["planned_count"]
+    assert ("Expenses", "Groceries") in {
+        (item["group_name"], item["category_name"]) for item in payload["exact_matches"]
+    }
+
+
+def test_reconcile_preview_surfaces_missing_in_ynab(app_factory, auth_header, tmp_path: Path):
+    workbook = build_budget_workbook(tmp_path / "Budget.xlsx")
+    app = app_factory(
+        workbook_path=workbook,
+        categories_fixture="categories_missing_investments.json",
+    )
+    client = app.test_client()
+
+    client.post("/api/budget/import", headers=auth_header)
+    client.post("/api/ynab/sync", headers=auth_header)
+
+    response = client.get("/api/reconcile/preview", headers=auth_header)
+
+    assert response.status_code == 200
+    payload = response.get_json()
+    missing = {(item["group_name"], item["category_name"]) for item in payload["missing_in_ynab"]}
+    assert ("Savings", "Investments") in missing
+    assert payload["counts"]["missing_in_ynab"] >= 1
+
+
+def test_reconcile_preview_surfaces_extra_in_ynab(app_factory, auth_header, tmp_path: Path):
+    workbook = build_budget_workbook(tmp_path / "Budget.xlsx")
+    app = app_factory(workbook_path=workbook)
+    client = app.test_client()
+    services = app.extensions["finclaide"]
+
+    client.post("/api/budget/import", headers=auth_header)
+    client.post("/api/ynab/sync", headers=auth_header)
+
+    with services.database.connect() as connection:
+        connection.execute(
+            """
+            INSERT INTO categories(
+                id, plan_id, group_id, group_name, name,
+                hidden, deleted, balance_milliunits, raw_json, updated_at
+            ) VALUES (
+                'cat-extra', 'plan-123', 'grp-expenses', 'Expenses', 'Dining Out',
+                0, 0, 0, '{}', '2026-03-15T12:00:00+00:00'
+            )
+            """
+        )
+
+    response = client.get("/api/reconcile/preview", headers=auth_header)
+
+    assert response.status_code == 200
+    extras = {
+        (item["group_name"], item["category_name"])
+        for item in response.get_json()["extra_in_ynab"]
+    }
+    assert ("Expenses", "Dining Out") in extras
+
+
+def test_reconcile_preview_excludes_hidden_groups_and_categories(app_factory, auth_header, tmp_path: Path):
+    workbook = build_budget_workbook(tmp_path / "Budget.xlsx")
+    app = app_factory(workbook_path=workbook)
+    client = app.test_client()
+
+    client.post("/api/budget/import", headers=auth_header)
+    client.post("/api/ynab/sync", headers=auth_header)
+
+    response = client.get("/api/reconcile/preview", headers=auth_header)
+
+    assert response.status_code == 200
+    extras = {
+        (item["group_name"], item["category_name"])
+        for item in response.get_json()["extra_in_ynab"]
+    }
+    assert ("Legacy", "Archived") not in extras
+    assert not any(group == "Legacy" for group, _ in extras)
+
+
+def test_reconcile_preview_requires_imported_plan(client, auth_header):
+    response = client.get("/api/reconcile/preview", headers=auth_header)
+
+    assert response.status_code == 400
+    body = response.get_json()
+    assert "import" in body["error"].lower()
+
+
+def test_ui_api_reconcile_preview_mirrors_api(app_factory, tmp_path: Path):
+    workbook = build_budget_workbook(tmp_path / "Budget.xlsx")
+    app = app_factory(workbook_path=workbook)
+    client = app.test_client()
+
+    client.post("/api/budget/import", headers={"Authorization": "Bearer test-token"})
+    client.post("/api/ynab/sync", headers={"Authorization": "Bearer test-token"})
+
+    response = client.get("/ui-api/reconcile/preview")
+
+    assert response.status_code == 200
+    payload = response.get_json()
+    assert payload["counts"]["missing_in_ynab"] == 0
+
+
 def test_operations_are_serialized(app_factory, auth_header):
     app = app_factory()
     client = app.test_client()
