@@ -1,7 +1,7 @@
 import { lazy, Suspense, useMemo } from 'react'
 
 import { QueryClient, QueryClientProvider, useQuery } from '@tanstack/react-query'
-import { AlertCircle, BarChart3, FolderSync, LayoutGrid, ReceiptText, TriangleAlert } from 'lucide-react'
+import { AlertCircle, BarChart3, FolderSync, LayoutGrid, Pencil, ReceiptText, TriangleAlert } from 'lucide-react'
 import { BrowserRouter, Link, NavLink, Route, Routes } from 'react-router-dom'
 import { Toaster } from 'sonner'
 
@@ -18,6 +18,7 @@ const CategoriesPage = lazy(async () => import('@/pages/categories-page').then((
 const TransactionsPage = lazy(async () => import('@/pages/transactions-page').then((module) => ({ default: module.TransactionsPage })))
 const OperationsPage = lazy(async () => import('@/pages/operations-page').then((module) => ({ default: module.OperationsPage })))
 const RunDetailPage = lazy(async () => import('@/pages/run-detail-page').then((module) => ({ default: module.RunDetailPage })))
+const PlanningPage = lazy(async () => import('@/pages/planning-page').then((module) => ({ default: module.PlanningPage })))
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -32,6 +33,7 @@ const navItems = [
   { to: '/', label: 'Overview', icon: LayoutGrid },
   { to: '/categories', label: 'Categories', icon: BarChart3 },
   { to: '/transactions', label: 'Transactions', icon: ReceiptText },
+  { to: '/planning', label: 'Planning', icon: Pencil },
   { to: '/operations', label: 'Operations', icon: FolderSync },
 ] as const
 
@@ -190,6 +192,7 @@ function AppShell() {
               <Route path="/transactions" element={<TransactionsPage />} />
               <Route path="/operations" element={<OperationsPage />} />
               <Route path="/operations/runs/:id" element={<RunDetailPage />} />
+              <Route path="/planning" element={<PlanningPage />} />
             </Routes>
           </Suspense>
         </main>

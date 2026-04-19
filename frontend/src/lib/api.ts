@@ -201,6 +201,44 @@ export const TransactionsPageSchema = z.object({
   offset: z.number(),
 })
 
+export const PlanCategorySchema = z.object({
+  id: z.number(),
+  plan_id: z.number(),
+  group_name: z.string(),
+  category_name: z.string(),
+  block: z.enum(['monthly', 'annual', 'one_time', 'stipends', 'savings']),
+  planned_milliunits: z.number(),
+  annual_target_milliunits: z.number(),
+  due_month: z.number().nullable(),
+  notes: z.string().nullable(),
+  created_at: z.string(),
+  updated_at: z.string(),
+})
+
+export const PlanSchema = z.object({
+  id: z.number(),
+  plan_year: z.number(),
+  name: z.string(),
+  status: z.string(),
+  source: z.string(),
+  created_at: z.string(),
+  updated_at: z.string(),
+  archived_at: NullableString,
+  source_import_id: z.number().nullable(),
+})
+
+export const ActivePlanResponseSchema = z.object({
+  plan: PlanSchema,
+  blocks: z.object({
+    monthly: z.array(PlanCategorySchema),
+    annual: z.array(PlanCategorySchema),
+    one_time: z.array(PlanCategorySchema),
+    stipends: z.array(PlanCategorySchema),
+    savings: z.array(PlanCategorySchema),
+  }),
+  totals: z.record(z.string(), z.number()),
+})
+
 export type StatusResponse = z.infer<typeof StatusSchema>
 export type SummaryResponse = z.infer<typeof SummarySchema>
 export type SummaryGroup = z.infer<typeof SummaryGroupSchema>
@@ -214,6 +252,18 @@ export type ReconcilePreviewEntry = z.infer<typeof ReconcilePreviewEntrySchema>
 export type ReconcilePreviewResponse = z.infer<typeof ReconcilePreviewSchema>
 export type ReviewItem = z.infer<typeof ReviewItemSchema>
 export type WeeklyReviewResponse = z.infer<typeof WeeklyReviewSchema>
+export type PlanCategory = z.infer<typeof PlanCategorySchema>
+export type Plan = z.infer<typeof PlanSchema>
+export type ActivePlanResponse = z.infer<typeof ActivePlanResponseSchema>
+export type BlockKey = PlanCategory['block']
+
+export const BLOCK_LABELS: Record<BlockKey, string> = {
+  monthly: 'Monthly',
+  annual: 'Annual',
+  one_time: 'One-time',
+  stipends: 'Stipends',
+  savings: 'Savings',
+}
 
 export class ApiError extends Error {
   status: number
@@ -303,7 +353,7 @@ export async function getTransactions(params: TransactionsParams) {
   return requestJson(withBasePath(`/ui-api/transactions?${search.toString()}`), TransactionsPageSchema)
 }
 
-const MutationResultSchema = z.record(z.string(), z.any())
+export const MutationResultSchema = z.record(z.string(), z.any())
 
 async function postUiOperation<T extends Record<string, unknown>>(
   path: string,
@@ -333,6 +383,67 @@ export function reconcile() {
 
 export function refreshAll(month: string) {
   return postUiOperation('/ui-api/operations/refresh-all', { month })
+}
+
+export async function getActivePlan(year?: number) {
+  const search = year ? `?year=${year}` : ''
+  return requestJson(withBasePath(`/ui-api/plan/active${search}`), ActivePlanResponseSchema)
+}
+
+export type CreatePlanCategoryInput = {
+  plan_id: number
+  group_name: string
+  category_name: string
+  block: BlockKey
+  planned_milliunits: number
+  annual_target_milliunits: number
+  due_month: number | null
+  notes: string | null
+}
+
+export async function createPlanCategory(input: CreatePlanCategoryInput) {
+  return requestJson(withBasePath('/ui-api/plan/categories'), PlanCategorySchema, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'X-Finclaide-UI': '1',
+    },
+    body: JSON.stringify(input),
+  })
+}
+
+export type UpdatePlanCategoryInput = {
+  plan_id: number
+  planned_milliunits?: number
+  annual_target_milliunits?: number
+  due_month?: number | null
+  notes?: string | null
+  rename?: { group_name: string; category_name: string }
+}
+
+export async function updatePlanCategory(category_id: number, input: UpdatePlanCategoryInput) {
+  return requestJson(withBasePath(`/ui-api/plan/categories/${category_id}`), PlanCategorySchema, {
+    method: 'PATCH',
+    headers: {
+      'Content-Type': 'application/json',
+      'X-Finclaide-UI': '1',
+    },
+    body: JSON.stringify(input),
+  })
+}
+
+export async function deletePlanCategory(category_id: number, plan_id: number): Promise<void> {
+  const response = await fetch(
+    withBasePath(`/ui-api/plan/categories/${category_id}?plan_id=${plan_id}`),
+    {
+      method: 'DELETE',
+      headers: { 'X-Finclaide-UI': '1' },
+    },
+  )
+  if (!response.ok) {
+    const body = await response.json().catch(() => null)
+    throw new ApiError('Delete failed', response.status, body)
+  }
 }
 
 export function getErrorMessage(error: unknown): string {
