@@ -54,10 +54,10 @@ See `.docs/ai/phases/phase-1.md` for the full spec + report.
 
 ## Next Active Milestone
 
-**Phase 2.5 — Native Planning Surface** is now next. Brainstorm + spec
-required before any code (Plan model in SQLite, editor UX, what-if
-scenarios, versioning, publish-to-Sheets). See the full sub-task list
-below.
+**Phase 2.5b — Versioning & rollback** is now next. Plan + spec required:
+`plan_revisions` schema, retention policy, rebuild of `plans` table to
+extend the `status` CHECK constraint with 'draft' / 'scenario'. After
+2.5b, scenarios (2.5c) and publish-to-Sheets (2.5d) follow.
 
 ## Upcoming Milestones (named, not yet active)
 
@@ -74,25 +74,38 @@ below.
       finished, last status, and last error. Removed the redundant copy
       from the Status sidebar.
 
-**Phase 2.5 — Native Planning Surface (NEW, post-Phase-1)**
+**Phase 2.5 — Native Planning Surface** (split into a/b/c/d)
 
 Goal: app becomes canonical for the plan; spreadsheet is an exported artifact.
 
-- [ ] Plan model in SQLite (`plans` + `plan_categories` tables) and a
-      `PlanService` that abstracts read/write. Importer writes into the new
-      shape rather than the legacy `planned_*` tables — or both, briefly.
-- [ ] Editor surfaces in the React UI:
-  - monthly category rows (group/name/planned/notes)
-  - annual + one-time blocks (with due month)
-  - stipends and savings as first-class blocks
-- [ ] What-if scenarios: branch off the active plan, edit, compare projected
-      variance vs actuals, then commit or discard.
-- [ ] Versioning & rollback: every save snapshots; diff and restore via UI.
-- [ ] Publish-to-Sheets export: writes the current plan back into the
-      configured Google Sheet (preserves the existing layout) and offers an
-      `.xlsx` download path for offline sharing.
-- [ ] Migration: read the latest workbook import, hydrate the new model, mark
-      it as the active plan.
+- **2.5a — Plan model + editor + migration (COMPLETE 2026-04-19)**
+  - [x] SQLite `plans` + `plan_categories` tables + partial unique index
+        ("one active plan per year"). `v_latest_planned_categories` rebuilt
+        as a compatibility shim so existing consumers (reconcile / summary /
+        analytics) see no change.
+  - [x] `PlanService` (CRUD + rename) at `src/finclaide/plan_service.py`.
+  - [x] Importer mirrors into the new model atomically; archives the prior
+        active plan for the year.
+  - [x] One-shot startup hydration from latest `budget_imports` for upgrades.
+  - [x] React `/planning` page with 5 block tabs and click-to-edit Sheet.
+        Delete with confirm. Rename behind a checkbox (intentional friction).
+  - Commits: `761d387`, `121089e`, `0159407`. See
+    `.docs/ai/phases/phase-2-5a.md`.
+
+- **2.5b — Versioning & rollback (next)**
+  - [ ] `plan_revisions` snapshots every save (diff + restore via UI).
+  - [ ] Extend `plans.status` CHECK to allow 'draft' / 'scenario' (requires
+        SQLite table rebuild).
+  - [ ] Closes the lost-edit window if the importer overwrites in-flight
+        edits.
+
+- **2.5c — What-if scenarios**
+  - [ ] Branch off active plan; edit; compare projected variance vs actuals;
+        commit or discard.
+
+- **2.5d — Publish-to-Sheets**
+  - [ ] Round-trip into the configured Google Sheet using the importer-
+        compatible 4-block layout. `.xlsx` download path for offline sharing.
 
 **Phase 3 — Decision Engine V1**
 

@@ -79,6 +79,58 @@ run" deep link.
 mutations (Operations). Overview stays a "what's going on" surface rather
 than gaining a parallel control panel. Single component, no duplication.
 
+## [2026-04-19] Plan model lives alongside legacy tables; view is the seam
+
+**Context**: Phase 2.5a moves the canonical plan from a Google Sheet into
+SQLite. Multiple existing consumers (`ReconciliationService`,
+`ReportService.summary`, `AnalyticsService.year_end_projection`) read plan
+data via `v_latest_planned_categories`. Rewriting all of them at once was
+not warranted for the smallest coherent slice.
+**Decision**: New `plans` + `plan_categories` tables added alongside the
+existing `planned_groups` / `planned_categories`. The view is rebuilt to
+read from the active plan, returning the same column shape consumers
+expect. Importer keeps writing the legacy tables (audit) and now also
+mirrors into the new model.
+**Rationale**: Single seam to migrate. Existing 71 backend tests pass
+unchanged after the schema swap, proving the shim is correct. Lets future
+slices (2.5b/c/d) replace consumers piecemeal without an
+all-at-once rewrite.
+**Critical detail**: `CREATE VIEW IF NOT EXISTS` is sticky in SQLite, so
+the schema script must `DROP VIEW IF EXISTS v_latest_planned_categories`
+before the new `CREATE VIEW`, or upgrades silently keep the old
+definition.
+
+## [2026-04-19] Renames are gated behind an opt-in checkbox
+
+**Context**: The plan editor lets users edit category rows. A rename of
+group_name or category_name immediately breaks reconciliation (which is
+exact-match against YNAB).
+**Decision**: Group and category name fields are disabled in the edit
+Sheet by default. A checkbox labeled "Allow renaming group / category
+(breaks reconciliation until YNAB matches)" enables them. The API
+mirrors this — the standard `update_category` whitelist excludes the name
+fields; renames must come through `rename_category` (exposed as a
+`rename: { group_name, category_name }` sub-block on PATCH).
+**Rationale**: Keeps the common case (adjust planned amount, notes) safe
+from accidental reconciliation breakage while still supporting the
+deliberate rename workflow. Two-tier API contract makes the intent
+auditable in run history.
+
+## [2026-04-19] Editor saves do not share OperationLock
+
+**Context**: `OperationLock` is a single global mutex held during budget
+import / YNAB sync / reconcile (typically 30+ seconds for sync). Editor
+saves are sub-millisecond SQLite writes.
+**Decision**: `PlanService` does not acquire the operation lock. Editor
+saves can land during a long sync without contention. SQLite serializes
+the writes at the connection level, so the result is consistent (no torn
+rows). When `status.busy && current_operation === 'budget_import'` the
+planning page renders a non-blocking `aria-live=polite` banner warning
+that saved edits may be overwritten.
+**Rationale**: Blocking editor saves on a 30-second sync would feel
+broken. The lost-edit window is bounded by the importer's transaction
+length and addressed structurally in 2.5b (versioning).
+
 ## [2026-04-18] Reconcile diagnostics: deterministic preview now, suggestions later
 
 **Context**: Operator wants reconcile failures easier to diagnose without

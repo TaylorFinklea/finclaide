@@ -8,40 +8,42 @@
 
 ## Last Session Summary
 
-**Date**: 2026-04-18
+**Date**: 2026-04-19
 
-Shipped Phase 1 (Trusted Core Data Flow) and Phase 2 (Continuous Planning
-Ingestion) end-to-end.
+Shipped Phase 2.5a — Native Plan Model + Editor — across three commits per
+the approved plan at `/Users/tfinklea/.claude/plans/delightful-tinkering-boole.md`.
 
-Phase 1 — three commits:
-- `bbe6243` — backend: `/api/runs/{id}` + `/api/reconcile/preview`
-- `c0934c6` — frontend: failure-cause card, freshness chips, reconcile
-  preview card, run-detail page, scheduled-refresh banner
-- `4676d2e` — tests: transactions page (3 cases), header/nav a11y (5)
-- `9235962` — handoff doc updates
+- `761d387` — Slice 1 backend foundation: new `plans` + `plan_categories`
+  tables, partial unique index, rebuilt `v_latest_planned_categories` as a
+  compatibility shim, `PlanService` (CRUD + rename), `NotFoundError`,
+  importer mirror inside the existing transaction, one-shot startup
+  hydration. 22 new pytest cases.
+- `121089e` — Slice 2 API + container wiring: `/api/plan/*` and
+  `/ui-api/plan/*` routes (4 each), `NotFoundError` handler returning
+  404, `require_ui_write_request` loosened for DELETE bodies.
+  `PlanService` wired into `ServiceContainer` and `create_app`. 7 new
+  API tests.
+- `0159407` — Slice 3 editor UI: `/planning` route with 5 block tabs;
+  `PlanCategorySheet` for create/edit with rename-behind-checkbox
+  friction; Delete with Dialog confirm; aria-live banner when budget
+  import is running. 7 new vitest cases.
 
-Phase 2 sweep — pending commit:
-- Added `test_scheduler_skips_bootstrap_when_prior_runs_succeeded` to
-  cover the only missing failure-mode case (other three were already
-  shipped in `test_api.py`).
-- New `AutomationStatusCard` component hoists scheduled-refresh status
-  out of the Status sidebar and into a dedicated card on Operations,
-  showing `next_run_at` with a relative countdown, last finished /
-  started timestamps, last status, and last error.
-- Removed the now-orphaned `describeScheduleStatus` /
-  `describeScheduleHeadline` / `describeScheduleDetail` helpers from
-  `operations-page.tsx`.
+Roadmap updated to mark 2.5a complete and queue 2.5b (versioning) next.
+Phase report at `.docs/ai/phases/phase-2-5a.md`. Three new ADRs in
+`decisions.md`.
 
 ## Build Status
 
-- Backend: `pytest` — 71/71 pass (1 new bootstrap test).
-- Frontend: `vitest run` — 12/12 pass.
+- Backend: `pytest` — 100/100 pass.
+- Frontend: `vitest run` — 19/19 pass.
 - Frontend: `tsc --noEmit -p tsconfig.app.json` — clean.
 
 ## Active Milestone
 
-**Phase 2.5 — Native Planning Surface**. Brainstorm + spec next, no code
-until aligned. See `.docs/ai/roadmap.md` for the sub-task list.
+**Phase 2.5b — Versioning & rollback**. Brainstorm + spec required.
+Key open questions: revision granularity (per-save vs per-named-snapshot),
+retention policy, how to extend `plans.status` CHECK without ALTER
+(table rebuild).
 
 ## Blockers
 
