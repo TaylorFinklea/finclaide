@@ -12,3 +12,7 @@ class DataIntegrityError(FinclaideError):
 
 class OperationInProgressError(FinclaideError):
     """Raised when a conflicting write operation is already running."""
+
+
+class NotFoundError(FinclaideError):
+    """Raised when a referenced entity does not exist."""

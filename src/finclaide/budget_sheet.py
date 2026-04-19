@@ -129,8 +129,70 @@ class BudgetImporter:
                     ),
                 )
 
+            new_plan_id = self._mirror_into_plan_model(
+                connection,
+                plan_year=plan_year,
+                plan_name=sheet_name,
+                rows=rows,
+                source_import_id=import_id,
+            )
+
         summary["import_id"] = import_id
+        summary["plan_id"] = new_plan_id
         return summary
+
+    def _mirror_into_plan_model(
+        self,
+        connection,
+        *,
+        plan_year: int,
+        plan_name: str,
+        rows: list[PlannedCategoryRow],
+        source_import_id: int,
+    ) -> int:
+        now = utc_now()
+        connection.execute(
+            """
+            UPDATE plans
+            SET status = 'archived', archived_at = ?, updated_at = ?
+            WHERE plan_year = ? AND status = 'active'
+            """,
+            (now, now, plan_year),
+        )
+        plan_cursor = connection.execute(
+            """
+            INSERT INTO plans(
+                plan_year, name, status, source,
+                created_at, updated_at, source_import_id
+            )
+            VALUES (?, ?, 'active', 'imported', ?, ?, ?)
+            """,
+            (plan_year, plan_name, now, now, source_import_id),
+        )
+        new_plan_id = int(plan_cursor.lastrowid)
+        for row in rows:
+            connection.execute(
+                """
+                INSERT INTO plan_categories(
+                    plan_id, group_name, category_name, block,
+                    planned_milliunits, annual_target_milliunits, due_month,
+                    notes, created_at, updated_at
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, NULL, ?, ?)
+                """,
+                (
+                    new_plan_id,
+                    row.group_name,
+                    row.category_name,
+                    row.block,
+                    row.planned_milliunits,
+                    row.annual_target_milliunits,
+                    row.due_month,
+                    now,
+                    now,
+                ),
+            )
+        return new_plan_id
 
     def _parse_monthly_block(self, sheet_formula, sheet_cached) -> list[PlannedCategoryRow]:
         rows: list[PlannedCategoryRow] = []

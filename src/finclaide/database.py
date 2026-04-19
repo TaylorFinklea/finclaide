@@ -143,10 +143,61 @@ SELECT *
 FROM budget_imports
 WHERE id = (SELECT id FROM budget_imports ORDER BY imported_at DESC, id DESC LIMIT 1);
 
-CREATE VIEW IF NOT EXISTS v_latest_planned_categories AS
-SELECT pc.*
-FROM planned_categories pc
-JOIN v_latest_budget_import bi ON pc.import_id = bi.id;
+CREATE TABLE IF NOT EXISTS plans (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    plan_year INTEGER NOT NULL,
+    name TEXT NOT NULL,
+    status TEXT NOT NULL CHECK (status IN ('active', 'archived')),
+    source TEXT NOT NULL CHECK (source IN ('imported', 'edited')),
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    archived_at TEXT,
+    source_import_id INTEGER,
+    FOREIGN KEY (source_import_id) REFERENCES budget_imports(id) ON DELETE SET NULL
+);
+
+CREATE TABLE IF NOT EXISTS plan_categories (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    plan_id INTEGER NOT NULL,
+    group_name TEXT NOT NULL,
+    category_name TEXT NOT NULL,
+    block TEXT NOT NULL CHECK (block IN ('monthly','annual','one_time','stipends','savings')),
+    planned_milliunits INTEGER NOT NULL DEFAULT 0,
+    annual_target_milliunits INTEGER NOT NULL DEFAULT 0,
+    due_month INTEGER CHECK (due_month IS NULL OR due_month BETWEEN 1 AND 12),
+    notes TEXT,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    UNIQUE (plan_id, group_name, category_name),
+    FOREIGN KEY (plan_id) REFERENCES plans(id) ON DELETE CASCADE
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_plans_active_per_year
+    ON plans(plan_year)
+    WHERE status = 'active';
+
+CREATE INDEX IF NOT EXISTS idx_plan_categories_plan_id
+    ON plan_categories(plan_id);
+
+DROP VIEW IF EXISTS v_latest_planned_categories;
+
+CREATE VIEW v_latest_planned_categories AS
+SELECT
+    pc.id,
+    pc.plan_id AS import_id,
+    pc.group_name,
+    pc.category_name,
+    pc.block,
+    pc.planned_milliunits,
+    pc.annual_target_milliunits,
+    pc.due_month,
+    NULL AS formula_text,
+    NULL AS source_cell,
+    NULL AS planned_group_id
+FROM plan_categories pc
+JOIN plans p ON p.id = pc.plan_id
+WHERE p.status = 'active'
+ORDER BY pc.id;
 
 CREATE VIEW IF NOT EXISTS v_latest_reconciliation AS
 SELECT *
@@ -194,6 +245,59 @@ class Database:
                 ON CONFLICT(key) DO NOTHING
                 """,
                 (utc_now(),),
+            )
+        self._hydrate_plan_from_latest_import_if_empty()
+
+    def _hydrate_plan_from_latest_import_if_empty(self) -> None:
+        """If the new plans table is empty but the legacy budget_imports has
+        data, create an active plan from the most recent import. Idempotent —
+        no-op when any plans row already exists, and no-op when no legacy
+        imports exist (fresh install)."""
+        with self.connect() as connection:
+            existing = connection.execute(
+                "SELECT COUNT(*) AS n FROM plans"
+            ).fetchone()
+            if int(existing["n"]) > 0:
+                return
+            latest = connection.execute(
+                "SELECT * FROM v_latest_budget_import"
+            ).fetchone()
+            if latest is None:
+                return
+            now = utc_now()
+            plan_cursor = connection.execute(
+                """
+                INSERT INTO plans(
+                    plan_year, name, status, source,
+                    created_at, updated_at, source_import_id
+                )
+                VALUES (?, ?, 'active', 'imported', ?, ?, ?)
+                """,
+                (
+                    int(latest["plan_year"]),
+                    latest["sheet_name"],
+                    now,
+                    now,
+                    int(latest["id"]),
+                ),
+            )
+            new_plan_id = int(plan_cursor.lastrowid)
+            connection.execute(
+                """
+                INSERT INTO plan_categories(
+                    plan_id, group_name, category_name, block,
+                    planned_milliunits, annual_target_milliunits, due_month,
+                    notes, created_at, updated_at
+                )
+                SELECT
+                    ?, group_name, category_name, block,
+                    planned_milliunits, annual_target_milliunits, due_month,
+                    NULL, ?, ?
+                FROM planned_categories
+                WHERE import_id = ?
+                ORDER BY id
+                """,
+                (new_plan_id, now, now, int(latest["id"])),
             )
 
     def record_run(
