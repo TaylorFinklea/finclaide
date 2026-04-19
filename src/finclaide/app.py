@@ -12,6 +12,7 @@ from finclaide.config import AppConfig
 from finclaide.database import Database
 from finclaide.frontend import register_frontend
 from finclaide.locking import OperationLock
+from finclaide.plan_service import PlanService
 from finclaide.scheduled_refresh import ScheduledRefreshService
 from finclaide.services import ReconciliationService, ReportService, ServiceContainer, WeeklyReviewService
 from finclaide.ui_api import ui_api
@@ -47,6 +48,7 @@ def create_app(
         review=None,
         scheduled_refresh=None,
         operation_lock=operation_lock,
+        plan=PlanService(database=database),
     )
     services.review = WeeklyReviewService(reports=services.reports, analytics=services.analytics)
     services.scheduled_refresh = ScheduledRefreshService(

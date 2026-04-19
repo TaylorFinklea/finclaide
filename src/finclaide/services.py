@@ -1151,3 +1151,4 @@ class ServiceContainer:
     review: Any
     scheduled_refresh: Any | None
     operation_lock: OperationLock
+    plan: Any = None

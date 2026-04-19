@@ -838,6 +838,133 @@ def test_scheduler_bootstraps_when_no_prior_successful_runs(app_factory, auth_he
     assert status_payload["last_ynab_sync_at"] is not None
 
 
+def _setup_planning_app(app_factory, auth_header, tmp_path: Path):
+    workbook = build_budget_workbook(tmp_path / "Budget.xlsx")
+    app = app_factory(workbook_path=workbook)
+    client = app.test_client()
+    assert client.post("/api/budget/import", headers=auth_header).status_code == 200
+    return app, client
+
+
+def test_api_plan_active_requires_bearer_token(client):
+    response = client.get("/api/plan/active")
+    assert response.status_code == 401
+
+
+def test_api_plan_active_returns_grouped_blocks(app_factory, auth_header, tmp_path: Path):
+    _, client = _setup_planning_app(app_factory, auth_header, tmp_path)
+    response = client.get("/api/plan/active", headers=auth_header)
+    assert response.status_code == 200
+    payload = response.get_json()
+    assert payload["plan"]["plan_year"] == 2026
+    assert set(payload["blocks"]) == {"monthly", "annual", "one_time", "stipends", "savings"}
+    assert any(c["category_name"] == "Rent" for c in payload["blocks"]["monthly"])
+
+
+def test_api_plan_create_update_delete_round_trip(app_factory, auth_header, tmp_path: Path):
+    _, client = _setup_planning_app(app_factory, auth_header, tmp_path)
+    plan_id = client.get("/api/plan/active", headers=auth_header).get_json()["plan"]["id"]
+
+    create = client.post(
+        "/api/plan/categories",
+        headers=auth_header,
+        json={
+            "plan_id": plan_id,
+            "group_name": "Bills",
+            "category_name": "Streaming",
+            "block": "monthly",
+            "planned_milliunits": 25000,
+        },
+    )
+    assert create.status_code == 201
+    new_id = create.get_json()["id"]
+
+    patch = client.patch(
+        f"/api/plan/categories/{new_id}",
+        headers=auth_header,
+        json={"plan_id": plan_id, "planned_milliunits": 27500, "notes": "Netflix + Spotify"},
+    )
+    assert patch.status_code == 200
+    patched = patch.get_json()
+    assert patched["planned_milliunits"] == 27500
+    assert patched["notes"] == "Netflix + Spotify"
+
+    delete = client.delete(
+        f"/api/plan/categories/{new_id}?plan_id={plan_id}", headers=auth_header
+    )
+    assert delete.status_code == 204
+
+    follow_up = client.delete(
+        f"/api/plan/categories/{new_id}?plan_id={plan_id}", headers=auth_header
+    )
+    assert follow_up.status_code == 404
+    assert follow_up.get_json()["error_detail"]["kind"] == "not_found"
+
+
+def test_api_plan_patch_with_rename(app_factory, auth_header, tmp_path: Path):
+    _, client = _setup_planning_app(app_factory, auth_header, tmp_path)
+    payload = client.get("/api/plan/active", headers=auth_header).get_json()
+    plan_id = payload["plan"]["id"]
+    target = next(c for c in payload["blocks"]["monthly"] if c["category_name"] == "Fuel")
+
+    patch = client.patch(
+        f"/api/plan/categories/{target['id']}",
+        headers=auth_header,
+        json={
+            "plan_id": plan_id,
+            "rename": {"group_name": "Expenses", "category_name": "Gasoline"},
+        },
+    )
+    assert patch.status_code == 200
+    assert patch.get_json()["category_name"] == "Gasoline"
+
+
+def test_ui_api_plan_endpoints_mirror_api(app_factory, auth_header, tmp_path: Path):
+    _, client = _setup_planning_app(app_factory, auth_header, tmp_path)
+    payload = client.get("/ui-api/plan/active").get_json()
+    assert payload["plan"]["plan_year"] == 2026
+
+
+def test_ui_api_plan_writes_require_ui_header(app_factory, auth_header, tmp_path: Path):
+    _, client = _setup_planning_app(app_factory, auth_header, tmp_path)
+    plan_id = client.get("/ui-api/plan/active").get_json()["plan"]["id"]
+    response = client.post(
+        "/ui-api/plan/categories",
+        json={
+            "plan_id": plan_id,
+            "group_name": "Bills",
+            "category_name": "Phone",
+            "block": "monthly",
+            "planned_milliunits": 5000,
+        },
+    )
+    assert response.status_code == 403
+    assert response.get_json()["error"] == "missing_ui_header"
+
+
+def test_ui_api_plan_delete_works_without_body(app_factory, auth_header, tmp_path: Path):
+    _, client = _setup_planning_app(app_factory, auth_header, tmp_path)
+    plan_id = client.get("/ui-api/plan/active").get_json()["plan"]["id"]
+    create = client.post(
+        "/ui-api/plan/categories",
+        headers={"X-Finclaide-UI": "1"},
+        json={
+            "plan_id": plan_id,
+            "group_name": "Bills",
+            "category_name": "Phone",
+            "block": "monthly",
+            "planned_milliunits": 5000,
+        },
+    )
+    assert create.status_code == 201
+    new_id = create.get_json()["id"]
+    delete = client.delete(
+        f"/ui-api/plan/categories/{new_id}?plan_id={plan_id}",
+        headers={"X-Finclaide-UI": "1"},
+    )
+    assert delete.status_code == 204
+
+
 def test_healthcheck_and_dashboard_render(app_factory):
     app = app_factory()
     client = app.test_client()
