@@ -25,6 +25,7 @@ class AppConfig:
     host: str
     port: int
     frontend_dist: Path | None = None
+    frontend_url: str | None = None
     budget_sheet_name: str = "2026 Budget"
 
     @classmethod
@@ -93,6 +94,7 @@ class AppConfig:
                 if (frontend_dist := os.getenv("FINCLAIDE_FRONTEND_DIST"))
                 else None
             ),
+            frontend_url=os.getenv("FINCLAIDE_FRONTEND_URL"),
             host=os.getenv("FINCLAIDE_HOST", "0.0.0.0"),
             port=int(os.getenv("FINCLAIDE_PORT", "8050")),
             budget_sheet_name=_env_or_option(

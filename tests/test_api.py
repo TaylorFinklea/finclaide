@@ -965,22 +965,70 @@ def test_ui_api_plan_delete_works_without_body(app_factory, auth_header, tmp_pat
     assert delete.status_code == 204
 
 
-def test_healthcheck_and_dashboard_render(app_factory):
+def test_healthcheck_and_dashboard_fallback(app_factory):
     app = app_factory()
     client = app.test_client()
 
     assert client.get("/healthz").status_code == 200
     root_response = client.get("/")
     assert root_response.status_code == 200
-    assert b"<div id=\"root\"></div>" in root_response.data
+    assert b"FINCLAIDE_FRONTEND_URL" in root_response.data
 
 
-def test_dashboard_render_injects_ingress_base_path(app_factory):
+def test_frontend_reverse_proxies_to_configured_url(app_factory):
+    import httpx
+
+    captured = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured["method"] = request.method
+        captured["path"] = request.url.path
+        captured["x_ingress_path"] = request.headers.get("x-ingress-path")
+        return httpx.Response(
+            200,
+            headers={"Content-Type": "text/html"},
+            text="<html><body>svelte-served</body></html>",
+        )
+
+    transport = httpx.MockTransport(handler)
+
     app = app_factory()
+    app.config["FINCLAIDE_CONFIG"] = type(app.config["FINCLAIDE_CONFIG"])(
+        **{**app.config["FINCLAIDE_CONFIG"].__dict__, "frontend_url": "http://web:3000"}
+    )
     client = app.test_client()
 
-    response = client.get("/", headers={"X-Ingress-Path": "/api/hassio_ingress/example"})
+    import finclaide.frontend as frontend_module
+
+    real_request = frontend_module.httpx.request
+
+    def patched_request(method, url, **kwargs):
+        with httpx.Client(transport=transport) as test_client:
+            return test_client.request(method, url, **kwargs)
+
+    frontend_module.httpx.request = patched_request
+    try:
+        response = client.get("/categories", headers={"X-Ingress-Path": "/finclaide"})
+    finally:
+        frontend_module.httpx.request = real_request
 
     assert response.status_code == 200
-    assert b"window.__FINCLAIDE_BASE_PATH__ = \"/api/hassio_ingress/example\"" in response.data
-    assert b"<base href=\"/api/hassio_ingress/example/\">" in response.data
+    assert b"svelte-served" in response.data
+    assert captured["method"] == "GET"
+    assert captured["path"] == "/categories"
+    assert captured["x_ingress_path"] == "/finclaide"
+
+
+def test_frontend_does_not_proxy_api_paths(app_factory):
+    app = app_factory()
+    app.config["FINCLAIDE_CONFIG"] = type(app.config["FINCLAIDE_CONFIG"])(
+        **{**app.config["FINCLAIDE_CONFIG"].__dict__, "frontend_url": "http://web:3000"}
+    )
+    client = app.test_client()
+
+    # Healthz remains handled by Flask even with frontend_url set.
+    assert client.get("/healthz").status_code == 200
+
+    # API endpoint requires bearer token; gets 401, not proxied to Svelte.
+    api_response = client.get("/api/status")
+    assert api_response.status_code == 401
