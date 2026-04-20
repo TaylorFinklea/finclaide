@@ -4,6 +4,14 @@
 > active milestone breakdown, the tiered backlog for parallel AI work, and
 > Claude-specific operating rules.
 
+## Frontend stack (changed 2026-04-20)
+
+The frontend is now Svelte 5 + SvelteKit (`adapter-node`) running as a
+separate Docker service. Flask reverse-proxies non-API paths to the
+internal SvelteKit container so the browser sees one origin (8050). See
+the migration report at `.docs/ai/phases/svelte-migration.md` and the
+approved plan at `/Users/tfinklea/.claude/plans/delightful-tinkering-boole.md`.
+
 ## Vision
 
 Finclaide — private household finance OS. Dashboard-first, YNAB for actuals,

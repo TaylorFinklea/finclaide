@@ -4,47 +4,64 @@
 
 ## Active Branch
 
-`main`
+`svelte-migration` — not merged to `main` yet.
 
 ## Last Session Summary
 
-**Date**: 2026-04-19
+**Date**: 2026-04-20
 
-Shipped Phase 2.5a — Native Plan Model + Editor — across three commits per
-the approved plan at `/Users/tfinklea/.claude/plans/delightful-tinkering-boole.md`.
+Shipped the React → Svelte 5 + SvelteKit (`adapter-node`) migration as
+6 commits on a feature branch. Approved plan:
+`/Users/tfinklea/.claude/plans/delightful-tinkering-boole.md`.
 
-- `761d387` — Slice 1 backend foundation: new `plans` + `plan_categories`
-  tables, partial unique index, rebuilt `v_latest_planned_categories` as a
-  compatibility shim, `PlanService` (CRUD + rename), `NotFoundError`,
-  importer mirror inside the existing transaction, one-shot startup
-  hydration. 22 new pytest cases.
-- `121089e` — Slice 2 API + container wiring: `/api/plan/*` and
-  `/ui-api/plan/*` routes (4 each), `NotFoundError` handler returning
-  404, `require_ui_write_request` loosened for DELETE bodies.
-  `PlanService` wired into `ServiceContainer` and `create_app`. 7 new
-  API tests.
-- `0159407` — Slice 3 editor UI: `/planning` route with 5 block tabs;
-  `PlanCategorySheet` for create/edit with rename-behind-checkbox
-  friction; Delete with Dialog confirm; aria-live banner when budget
-  import is running. 7 new vitest cases.
+Commit log on `svelte-migration`:
 
-Roadmap updated to mark 2.5a complete and queue 2.5b (versioning) next.
-Phase report at `.docs/ai/phases/phase-2-5a.md`. Three new ADRs in
-`decisions.md`.
+- `69cc2e4` — Slice 1: SvelteKit project skeleton (svelte.config.js,
+  vite.config.ts, app.html, app.css verbatim Tailwind tokens, placeholder
+  route). Removed all React files. vite ^6 (downgraded from ^7 for
+  SvelteKit compat) + vitest ^2.
+- `1c093ac` — Slice 2: lib utils + UI primitives. Ported `lib/api.ts`
+  (verbatim Zod schemas), `format.ts`, `runtime.ts`, `utils.ts`. New
+  `lib/stores/month.svelte.ts` (Svelte 5 rune store). 23 UI primitives
+  wrapping bits-ui (Dialog, Sheet, Select, Tabs) plus pure-Tailwind
+  Card/Button/Badge/Input/Skeleton/Table parts. Vitest setup with
+  pointer-capture stubs + `resolve.conditions: ['browser']`. button
+  smoke test passes (2/2).
+- `f722987` — Slice 3: 9 domain components (status-chip, freshness-chip,
+  metric-card, data-table, failure-cause-card, reconcile-preview-card,
+  automation-status-card, plan-category-sheet, group-chart). DataTable
+  is a hand-rolled wrapper (no @tanstack/svelte-table). GroupChart is a
+  hand-rolled SVG bar chart (no recharts). svelte-sonner toasts.
+- `9ff1213` — Slice 4: routes + hooks. All 6 React pages ported to
+  SvelteKit file-based routing. AppShell in `+layout.svelte` with nav,
+  freshness chips, scheduled-refresh banner, QueryClientProvider.
+  `hooks.server.ts` injects HA ingress base path via `transformPageChunk`.
+  Reactive query options use the writable-store + $effect pattern since
+  this version of `@tanstack/svelte-query` only accepts `StoreOrVal`.
+  Page-level vitest cases deferred to a follow-up if needed.
+- `e46a8e9` — Slice 5: Flask reverse proxy. `frontend.py` rewritten to
+  forward non-API paths to `FINCLAIDE_FRONTEND_URL` via httpx. `config.py`
+  gains `frontend_url`. Two new pytest cases for proxy behavior.
+- `7f45601` — Slice 6: Docker + addon. New `Dockerfile.web` (SvelteKit
+  Node container). Trimmed root `Dockerfile` (Python only). Compose adds
+  `web` service. HA add-on bundles both runtimes; `run.sh` starts
+  `node build` alongside gunicorn before nginx.
 
 ## Build Status
 
-- Backend: `pytest` — 100/100 pass.
-- Frontend: `vitest run` — 19/19 pass.
-- Frontend: `tsc --noEmit -p tsconfig.app.json` — clean.
+- Backend: `pytest` — 101/101 pass.
+- Frontend: `svelte-check` — 0 errors, 0 warnings across 4233 files.
+- Frontend: `npm run build` (adapter-node) — verified after Slice 1.
+- Frontend: `npm test` — button smoke 2/2.
+- Docker: `docker compose up --build` — not run this session; manual
+  smoke is the merge gate.
 
 ## Active Milestone
 
-**Phase 2.5b — Versioning & rollback**. Brainstorm + spec required.
-Key open questions: revision granularity (per-save vs per-named-snapshot),
-retention policy, how to extend `plans.status` CHECK without ALTER
-(table rebuild).
+Awaiting **manual smoke** of the new Docker stack before merging the
+`svelte-migration` branch into `main`. Then resume Phase 2.5b
+(versioning & rollback) on the Svelte stack.
 
 ## Blockers
 
-- None.
+- None. Branch is review-ready pending the manual smoke.
