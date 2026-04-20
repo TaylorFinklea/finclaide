@@ -12,10 +12,4 @@ export default defineConfig({
       '/healthz': 'http://127.0.0.1:8050',
     },
   },
-  test: {
-    environment: 'jsdom',
-    setupFiles: ['./src/test/setup.ts'],
-    globals: true,
-    include: ['src/**/*.{test,spec}.{js,ts}'],
-  },
 })
