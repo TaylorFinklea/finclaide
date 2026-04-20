@@ -28,7 +28,9 @@ When `FINCLAIDE_BUDGET_SOURCE=remote_url`, budget import fetches the remote work
 
 When scheduled refresh is enabled, Finclaide records the outcome of each automatic `import -> sync -> reconcile` run in the same run history surfaced by `/api/status` and the dashboard Operations page.
 
-The React dashboard is available at `http://localhost:8050/`, the browser-safe UI API is available under `http://localhost:8050/ui-api/*`, and the private external API remains available under `http://localhost:8050/api/*`.
+The SvelteKit dashboard is available at `http://localhost:8050/`, the browser-safe UI API is available under `http://localhost:8050/ui-api/*`, and the private external API remains available under `http://localhost:8050/api/*`.
+
+Architecture: Flask runs in the `app` container and reverse-proxies non-API paths to the `web` container, which runs the SvelteKit Node server (`adapter-node`). Both services share the same browser-visible origin (port 8050), so the same-origin gate on `/ui-api/*` keeps working unchanged. The SvelteKit container is internal-only.
 
 ## Home Assistant Add-on
 
@@ -38,7 +40,7 @@ See [addons/finclaide/DOCS.md](addons/finclaide/DOCS.md) for setup details and [
 
 ## Frontend Development
 
-The production container serves a built Vite SPA from Flask. For local UI development, run the backend normally and start the frontend on the host:
+The production setup runs SvelteKit (`adapter-node`) as a separate Docker service that Flask reverse-proxies to. For local UI development, run the backend in Docker and start the SvelteKit dev server on the host:
 
 ```bash
 cd frontend
@@ -46,7 +48,15 @@ npm install
 npm run dev
 ```
 
-The Vite dev server proxies `/ui-api/*`, `/api/*`, and `/healthz` to `http://127.0.0.1:8050`.
+The Vite dev server proxies `/ui-api/*`, `/api/*`, and `/healthz` to `http://127.0.0.1:8050`. Open the dev UI directly at `http://localhost:5173`.
+
+For type-check / build / test:
+
+```bash
+npm run check    # svelte-check
+npm run build    # adapter-node output to build/
+npm test         # vitest
+```
 
 ## MCP Server
 

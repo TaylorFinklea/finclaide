@@ -22,21 +22,30 @@ ARG FINCLAIDE_REF
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PIP_NO_CACHE_DIR=1 \
-    FINCLAIDE_FRONTEND_DIST=/opt/finclaide/frontend/dist \
     FINCLAIDE_HOME_ASSISTANT_OPTIONS_PATH=/data/options.json \
     FINCLAIDE_DB_PATH=/data/finclaide.db \
     FINCLAIDE_HOST=127.0.0.1 \
-    FINCLAIDE_PORT=8050
+    FINCLAIDE_PORT=8050 \
+    FINCLAIDE_FRONTEND_URL=http://127.0.0.1:3000 \
+    NODE_ENV=production \
+    NODE_PORT=3000 \
+    NODE_HOST=127.0.0.1
 
+# Install Python, Node 22, plus the system tools the run script needs.
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends bash ca-certificates curl git jq nginx \
+    && apt-get install -y --no-install-recommends bash ca-certificates curl git jq nginx gnupg \
+    && curl -fsSL https://deb.nodesource.com/setup_22.x | bash - \
+    && apt-get install -y --no-install-recommends nodejs \
     && rm -rf /var/lib/apt/lists/*
 
 RUN git clone --depth 1 --branch "${FINCLAIDE_REF}" "${FINCLAIDE_REPO_URL}" /opt/finclaide
 
 WORKDIR /opt/finclaide
 
-COPY --from=frontend-builder /src/finclaide/frontend/dist /opt/finclaide/frontend/dist
+# SvelteKit adapter-node output + the Node modules it needs at runtime.
+COPY --from=frontend-builder /src/finclaide/frontend/build /opt/finclaide/frontend/build
+COPY --from=frontend-builder /src/finclaide/frontend/node_modules /opt/finclaide/frontend/node_modules
+COPY --from=frontend-builder /src/finclaide/frontend/package.json /opt/finclaide/frontend/package.json
 COPY run.sh /run.sh
 COPY nginx.ingress.conf.template /etc/finclaide/nginx.ingress.conf.template
 

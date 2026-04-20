@@ -16,12 +16,24 @@ services:
       FINCLAIDE_SCHEDULED_REFRESH_INTERVAL_MINUTES: ${FINCLAIDE_SCHEDULED_REFRESH_INTERVAL_MINUTES:-360}
       FINCLAIDE_HOST: ${FINCLAIDE_HOST:-0.0.0.0}
       FINCLAIDE_PORT: ${FINCLAIDE_PORT:-8050}
+      FINCLAIDE_FRONTEND_URL: ${FINCLAIDE_FRONTEND_URL:-http://web:3000}
     ports:
       - "${FINCLAIDE_PORT:-8050}:8050"
     volumes:
       - finclaide_data:/data
       - ${BUDGET_XLSX_HOST_PATH:-/Users/tfinklea/Downloads/Budget.xlsx}:/input/Budget.xlsx:ro
       - ${GOOGLE_SERVICE_ACCOUNT_HOST_PATH:-./docker/google-service-account.placeholder.json}:/run/secrets/google-service-account.json:ro
+    depends_on:
+      - web
+
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile.web
+    environment:
+      ORIGIN: ${FINCLAIDE_PUBLIC_ORIGIN:-http://localhost:8050}
+    expose:
+      - "3000"
 
 volumes:
   finclaide_data:

@@ -145,14 +145,23 @@ fi
 
 log "Starting Finclaide with budget source ${FINCLAIDE_BUDGET_SOURCE}."
 
+# SvelteKit Node server (adapter-node output). Flask reverse-proxies non-API
+# paths to this internal port via FINCLAIDE_FRONTEND_URL.
+PORT="${NODE_PORT:-3000}" HOST="${NODE_HOST:-127.0.0.1}" \
+  ORIGIN="${FINCLAIDE_PUBLIC_ORIGIN:-http://127.0.0.1:8099}" \
+  node /opt/finclaide/frontend/build &
+web_pid=$!
+
 gunicorn --bind 127.0.0.1:8050 finclaide.wsgi:server &
 app_pid=$!
 
 cleanup() {
-  if kill -0 "$app_pid" 2>/dev/null; then
-    kill "$app_pid"
-    wait "$app_pid" || true
-  fi
+  for pid in "$app_pid" "$web_pid"; do
+    if kill -0 "$pid" 2>/dev/null; then
+      kill "$pid"
+      wait "$pid" || true
+    fi
+  done
 }
 
 trap cleanup EXIT INT TERM

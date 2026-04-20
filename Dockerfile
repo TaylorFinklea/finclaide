@@ -1,18 +1,8 @@
-FROM node:22-slim AS frontend-builder
-
-WORKDIR /app/frontend
-
-COPY frontend/package.json frontend/package-lock.json /app/frontend/
-RUN npm ci
-COPY frontend /app/frontend
-RUN npm run build
-
 FROM python:3.12-slim
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
-    PIP_NO_CACHE_DIR=1 \
-    FINCLAIDE_FRONTEND_DIST=/app/frontend/dist
+    PIP_NO_CACHE_DIR=1
 
 WORKDIR /app
 
@@ -21,7 +11,6 @@ RUN useradd --create-home --shell /bin/bash appuser
 COPY pyproject.toml README.md LICENSE /app/
 COPY src /app/src
 COPY tests /app/tests
-COPY --from=frontend-builder /app/frontend/dist /app/frontend/dist
 
 RUN python -m pip install --upgrade pip && \
     python -m pip install ".[dev]"
