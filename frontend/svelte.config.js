@@ -11,9 +11,11 @@ const config = {
       '$lib': 'src/lib',
     },
   },
-  compilerOptions: {
-    runes: true,
-  },
+  // Note: runes mode is auto-detected per file. We intentionally do not set
+  // `compilerOptions.runes: true` here because that forces every .svelte file
+  // (including those in node_modules, e.g. @tanstack/svelte-query's
+  // HydrationBoundary) to use runes syntax. Our own files use $state/$props
+  // and Svelte detects them as runes mode automatically.
 }
 
 export default config
