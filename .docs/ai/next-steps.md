@@ -5,9 +5,10 @@
 ## Immediate
 
 - [ ] Manual smoke of the `svelte-migration` branch:
-  - `docker compose up --build -d`
-  - `curl http://127.0.0.1:8050/healthz` should hit Flask (not proxied).
-  - Browse `/`, `/categories`, `/transactions`, `/planning`,
+  - [x] `docker compose up --build -d`
+  - [x] `curl http://127.0.0.1:8050/healthz` hits Flask (not proxied).
+  - [x] Browse `/` — dashboard mounts after proxy/query-client fixes.
+  - [ ] Browse `/categories`, `/transactions`, `/planning`,
     `/operations`, `/operations/runs/N` — all should render with same
     layout/colors as the React version.
   - Edit a planned category and confirm Overview's chart updates.

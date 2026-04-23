@@ -41,11 +41,14 @@
     { to: '/operations', label: 'Operations', icon: FolderSync },
   ] as const
 
-  const statusQuery = createQuery({
-    queryKey: ['status'],
-    queryFn: getStatus,
-    enabled: browser,
-  })
+  const statusQuery = createQuery(
+    {
+      queryKey: ['status'],
+      queryFn: getStatus,
+      enabled: browser,
+    },
+    queryClient,
+  )
 
   let planLabel = $derived(($statusQuery.data?.plan_id) ?? 'Plan not configured')
 

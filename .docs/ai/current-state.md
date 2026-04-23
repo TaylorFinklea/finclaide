@@ -8,13 +8,25 @@
 
 ## Last Session Summary
 
-**Date**: 2026-04-20
+**Date**: 2026-04-23
 
-Shipped the React → Svelte 5 + SvelteKit (`adapter-node`) migration as
-6 commits on a feature branch. Approved plan:
-`/Users/tfinklea/.claude/plans/delightful-tinkering-boole.md`.
+Fixed the blank dashboard discovered during Docker smoke of the Svelte
+migration. Two issues were involved:
 
-Commit log on `svelte-migration`:
+- Flask reverse proxy forwarded browser `Accept-Encoding: ... zstd` to
+  SvelteKit and stripped `Content-Encoding`, so Chrome received compressed
+  asset bytes as JavaScript and failed with `SyntaxError: Invalid or
+  unexpected token`. `frontend.py` now forces upstream
+  `Accept-Encoding: identity`; regression assertion added.
+- `+layout.svelte` created the shell status query before the
+  `QueryClientProvider` context existed. The layout now passes its explicit
+  `queryClient` to `createQuery`.
+
+The Docker stack is currently running at `http://127.0.0.1:8050/`; a clean
+headless Chrome session confirmed the dashboard mounts, nav is present, and
+there are no runtime exceptions.
+
+Prior migration commit log on `svelte-migration`:
 
 - `69cc2e4` — Slice 1: SvelteKit project skeleton (svelte.config.js,
   vite.config.ts, app.html, app.css verbatim Tailwind tokens, placeholder
@@ -49,18 +61,21 @@ Commit log on `svelte-migration`:
 
 ## Build Status
 
-- Backend: `pytest` — 101/101 pass.
-- Frontend: `svelte-check` — 0 errors, 0 warnings across 4233 files.
-- Frontend: `npm run build` (adapter-node) — verified after Slice 1.
-- Frontend: `npm test` — button smoke 2/2.
-- Docker: `docker compose up --build` — not run this session; manual
-  smoke is the merge gate.
+- Backend targeted:
+  `.venv/bin/pytest tests/test_api.py::test_frontend_reverse_proxies_to_configured_url`
+  — pass.
+- Frontend: `npm run check` — `svelte-check` 0 errors, 0 warnings.
+- Docker: `docker compose up --build -d` — pass; `GET /healthz` returns
+  `{"status":"ok"}`.
+- Browser smoke: clean headless Chrome loaded `/`; nav text rendered and
+  runtime log was empty.
 
 ## Active Milestone
 
-Awaiting **manual smoke** of the new Docker stack before merging the
-`svelte-migration` branch into `main`. Then resume Phase 2.5b
-(versioning & rollback) on the Svelte stack.
+Docker root-page smoke is now passing after the fixes above. Finish the
+remaining route/edit/ingress manual smoke before merging `svelte-migration`
+to `main`. Then resume Phase 2.5b (versioning & rollback) on the Svelte
+stack.
 
 ## Blockers
 

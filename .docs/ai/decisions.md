@@ -143,3 +143,17 @@ applied.
 **Rationale**: Splits the work to deliver the diagnostic value immediately
 without coupling it to the harder problem of safe candidate ranking. Keeps
 the integrity rule that no fuzzy matching ever runs silently.
+
+## [2026-04-23] Flask frontend proxy requests identity-encoded assets
+
+**Context**: Docker smoke of the Svelte migration showed a blank page in
+Chrome. The browser requested `Accept-Encoding: gzip, deflate, br, zstd`;
+SvelteKit returned compressed JavaScript; the Flask proxy stripped
+`Content-Encoding` while returning bytes that were still compressed. Chrome
+then parsed compressed bytes as JavaScript and aborted module loading.
+**Decision**: The Flask reverse proxy forces `Accept-Encoding: identity`
+for upstream requests to the SvelteKit container.
+**Rationale**: The proxy returns `upstream_response.content` and filters
+encoding headers, so the safest contract is to avoid upstream compression at
+this hop. This keeps static assets usable for browsers without relying on
+optional httpx decoder support for every encoding Chrome advertises.

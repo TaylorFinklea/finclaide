@@ -984,6 +984,7 @@ def test_frontend_reverse_proxies_to_configured_url(app_factory):
         captured["method"] = request.method
         captured["path"] = request.url.path
         captured["x_ingress_path"] = request.headers.get("x-ingress-path")
+        captured["accept_encoding"] = request.headers.get("accept-encoding")
         return httpx.Response(
             200,
             headers={"Content-Type": "text/html"},
@@ -1017,6 +1018,7 @@ def test_frontend_reverse_proxies_to_configured_url(app_factory):
     assert captured["method"] == "GET"
     assert captured["path"] == "/categories"
     assert captured["x_ingress_path"] == "/finclaide"
+    assert captured["accept_encoding"] == "identity"
 
 
 def test_frontend_does_not_proxy_api_paths(app_factory):

@@ -63,6 +63,10 @@ def _proxy_to_frontend(target_base: str, path: str) -> Response:
         for key, value in request.headers.items()
         if key.lower() not in HOP_BY_HOP
     }
+    # Keep proxy responses byte-for-byte usable after Flask strips
+    # Content-Encoding. Browser requests can advertise zstd, which httpx does
+    # not always decode before we return upstream_response.content.
+    headers["Accept-Encoding"] = "identity"
     headers.setdefault("X-Forwarded-Host", request.host)
     headers.setdefault("X-Forwarded-Proto", request.scheme)
     if "X-Forwarded-For" not in headers and request.remote_addr:
