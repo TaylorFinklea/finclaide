@@ -10,13 +10,28 @@ identical to `main`; safe to delete once origin is pushed.
 
 ## Last Session Summary
 
-**Date**: 2026-04-24
+**Date**: 2026-04-24 (second pass, post-merge work)
 
-Merged `svelte-migration` → `main` via fast-forward (10 commits,
-`7278c94..b39b0ed`). Next up: close the two test holes the migration
-opened (Phase 1 = vitest for `hooks.server.ts`; Phase 2–3 = scaffolding
-+ porting 18 React page-level cases), then Phase 2.5b spec. See
-`.docs/ai/next-steps.md` for the sequence.
+Worked the full post-merge plan
+(`/Users/tfinklea/.claude/plans/what-comes-next-concurrent-noodle.md`):
+
+- **Phase 0** — fast-forwarded `svelte-migration` (`b39b0ed`) into
+  `main`. Commit `699ad52` updates handoff docs.
+- **Phase 1** — `frontend/src/hooks.server.test.ts` regression guard
+  with 8 cases (ingress + forwarded headers, precedence, normalizeBasePath
+  edges, explicit `</head>` vs `%sveltekit.head%` guard). Commit `406d68b`.
+- **Phase 2** — Svelte test scaffolding: `$app/*` mocks,
+  `QueryClientProvider` harness, fixtures ported from
+  `git show 69cc2e48~1:frontend/src/test/fixtures.ts`. Commit `c267a9a`.
+- **Phase 3** — 18 React page-level vitest cases ported to Svelte:
+  categories (1) `d325f7f`, operations (1, plus global `svelte-sonner`
+  mock) `56f8454`, overview (1) `aa6be2a`, transactions (3 — required
+  vitest 2 → 3.2.4 upgrade to align Vite versions; commits `9de0cc8` +
+  `581c96b`), planning (7) `4d68044`, a11y (5, via layout-harness)
+  `7992b0d`. Full suite 28/28; svelte-check 0/0.
+- **Phase 4** — wrote the Phase 2.5b (Versioning & rollback) spec at
+  `.docs/ai/phases/2.5b-versioning-rollback.md`. Design-only;
+  implementation follows as a separate phase.
 
 Previous session (2026-04-23):
 
@@ -100,16 +115,10 @@ Prior migration commit log on `svelte-migration`:
 
 ## Active Milestone
 
-Post-merge test floor reconstruction, per
-`/Users/tfinklea/.claude/plans/what-comes-next-concurrent-noodle.md`:
-
-- Phase 1 (in progress): vitest regression guard for `hooks.server.ts`.
-- Phase 2: `$app/*` mocks + `QueryClientProvider` render helper + ported
-  fixtures from `git show main~10:frontend/src/test/fixtures.ts`.
-- Phase 3: port 18 page-level vitest cases (was "19" — off by one;
-  actual inventory: categories 1, operations 1, overview 1, transactions
-  3, planning 7, a11y 5).
-- Phase 4: spec-only Phase 2.5b (versioning & rollback).
+Phases 0–4 of the post-merge plan are complete. Active forward surface:
+review + approve the Phase 2.5b spec
+(`.docs/ai/phases/2.5b-versioning-rollback.md`), then start Slice 1
+(schema + PlanService + tests — backend only, no UI yet).
 
 ## Blockers
 
