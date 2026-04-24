@@ -1,4 +1,60 @@
 import '@testing-library/jest-dom/vitest'
+import { readable, writable, type Writable } from 'svelte/store'
+import { vi } from 'vitest'
+
+type PageState = {
+  url: URL
+  params: Record<string, string>
+  route: { id: string | null }
+  status: number
+  error: Error | null
+  data: Record<string, unknown>
+  form: unknown
+}
+
+const defaultPageState: PageState = {
+  url: new URL('http://localhost/'),
+  params: {},
+  route: { id: null },
+  status: 200,
+  error: null,
+  data: {},
+  form: null,
+}
+
+const pageStore: Writable<PageState> = writable({ ...defaultPageState })
+
+export function setMockPage(patch: Partial<PageState>): void {
+  pageStore.update((current) => ({ ...current, ...patch }))
+}
+
+export function resetMockPage(): void {
+  pageStore.set({ ...defaultPageState })
+}
+
+vi.mock('$app/environment', () => ({
+  browser: true,
+  dev: true,
+  building: false,
+  version: 'test',
+}))
+
+vi.mock('$app/stores', () => ({
+  page: { subscribe: pageStore.subscribe },
+  navigating: readable(null),
+  updated: readable(false),
+}))
+
+vi.mock('$app/navigation', () => ({
+  goto: vi.fn().mockResolvedValue(undefined),
+  invalidate: vi.fn().mockResolvedValue(undefined),
+  invalidateAll: vi.fn().mockResolvedValue(undefined),
+  beforeNavigate: vi.fn(),
+  afterNavigate: vi.fn(),
+  onNavigate: vi.fn(),
+  preloadData: vi.fn().mockResolvedValue(undefined),
+  preloadCode: vi.fn().mockResolvedValue(undefined),
+}))
 
 if (typeof Element !== 'undefined') {
   if (!Element.prototype.hasPointerCapture) {
