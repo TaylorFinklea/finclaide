@@ -5,7 +5,7 @@ import { defineConfig } from 'vitest/config'
 export default defineConfig({
   plugins: [tailwindcss(), sveltekit()],
   resolve: {
-    conditions: ['browser'],
+    conditions: ['browser', 'svelte'],
   },
   test: {
     environment: 'jsdom',
