@@ -4,34 +4,29 @@
 
 ## Immediate
 
-- [x] Manual smoke of the `svelte-migration` branch:
-  - [x] `docker compose up --build -d`
-  - [x] `curl http://127.0.0.1:8050/healthz` hits Flask (not proxied).
-  - [x] Browse `/` — dashboard mounts after proxy/query-client fixes.
-  - [x] Browse `/categories`, `/transactions`, `/planning`,
-    `/operations`, `/operations/runs/148` — all render with the same
-    layout as the React version, 0 console errors.
-  - [x] Edit a planned category and confirm Overview's chart updates
-    (verified via summary payload delta; baseline restored after).
-  - [x] Send a request with `X-Ingress-Path: /finclaide` and confirm the
-    `<base href="/finclaide/">` tag appears. Required a hook fix:
-    `transformPageChunk` now matches `</head>` instead of the (already-
-    substituted) `%sveltekit.head%` placeholder.
-- [ ] Commit the hook fix (`frontend/src/hooks.server.ts`) and the
-      handoff doc updates, then merge `svelte-migration` → `main`.
+- [x] Manual smoke of the `svelte-migration` branch (2026-04-23).
+- [x] Fix ingress base-href regression (`hooks.server.ts` matches
+      `</head>` instead of the already-substituted `%sveltekit.head%`).
+- [x] Merge `svelte-migration` → `main` (fast-forward, 2026-04-24).
+- [~] Phase 1: vitest regression guard for `hooks.server.ts`. File
+      `frontend/src/hooks.server.test.ts`, 5–7 cases including an
+      explicit guard that the match target is `</head>` not
+      `%sveltekit.head%`.
 
 ## Soon
 
-- [ ] Add a vitest case for `hooks.server.ts` that asserts the injection
-      under and without `X-Ingress-Path`. Keeps us from shipping a silent
-      no-op replace again.
-- [ ] Port the 19 React vitest page-level cases to Svelte
-      (`+page.test.ts`) to restore the test floor before resuming Phase
-      2.5b. Test infra is already in place (button.test.ts proves the
-      pipeline works); needs proper mocking of `getStatus`/`getSummary`
-      etc. plus a `QueryClientProvider` wrapper.
-- [ ] Brainstorm + spec Phase 2.5b (Versioning & rollback) on the
-      Svelte stack.
+- [ ] Phase 2: Svelte test scaffolding — extend `frontend/src/test/
+      setup.ts` with `$app/*` mocks, add `frontend/src/test/render-
+      page.ts` (`QueryClientProvider` wrapper), port fixtures from
+      `git show main~10:frontend/src/test/fixtures.ts`.
+- [ ] Phase 3: port 18 React page-level vitest cases to Svelte
+      `+page.test.ts`. Order: categories (1) → operations (1) →
+      overview (1) → transactions (3) → planning (7) → a11y (5). One
+      commit per file.
+- [ ] Phase 4: write Phase 2.5b spec at
+      `.docs/ai/phases/2.5b-versioning-rollback.md` — `plan_revisions`
+      schema, retention, `plans.status` CHECK rebuild, UI surface,
+      race-window fix, test strategy. No code.
 
 ## Deferred
 
@@ -40,4 +35,4 @@
   configurable thresholds).
 - Phase 7 (iOS / household visibility) — no movement planned.
 - React-era Sonnet backlog items — re-frame against the new Svelte file
-  paths after the migration merges.
+  paths now that the migration has merged.

@@ -4,11 +4,21 @@
 
 ## Active Branch
 
-`svelte-migration` — not merged to `main` yet.
+`main` — `svelte-migration` fast-forwarded in on 2026-04-24 (tip
+`b39b0ed`). Branch `svelte-migration` still exists locally and is
+identical to `main`; safe to delete once origin is pushed.
 
 ## Last Session Summary
 
-**Date**: 2026-04-23
+**Date**: 2026-04-24
+
+Merged `svelte-migration` → `main` via fast-forward (10 commits,
+`7278c94..b39b0ed`). Next up: close the two test holes the migration
+opened (Phase 1 = vitest for `hooks.server.ts`; Phase 2–3 = scaffolding
++ porting 18 React page-level cases), then Phase 2.5b spec. See
+`.docs/ai/next-steps.md` for the sequence.
+
+Previous session (2026-04-23):
 
 Ran the full manual smoke of `svelte-migration` through Playwright MCP +
 `curl`. Four routes (`/categories`, `/transactions`, `/planning`,
@@ -90,10 +100,17 @@ Prior migration commit log on `svelte-migration`:
 
 ## Active Milestone
 
-Manual smoke is complete and the ingress regression is fixed. Branch is
-ready to merge into `main`. After merge, port the 19 React vitest page
-cases to Svelte, then resume Phase 2.5b (versioning & rollback).
+Post-merge test floor reconstruction, per
+`/Users/tfinklea/.claude/plans/what-comes-next-concurrent-noodle.md`:
+
+- Phase 1 (in progress): vitest regression guard for `hooks.server.ts`.
+- Phase 2: `$app/*` mocks + `QueryClientProvider` render helper + ported
+  fixtures from `git show main~10:frontend/src/test/fixtures.ts`.
+- Phase 3: port 18 page-level vitest cases (was "19" — off by one;
+  actual inventory: categories 1, operations 1, overview 1, transactions
+  3, planning 7, a11y 5).
+- Phase 4: spec-only Phase 2.5b (versioning & rollback).
 
 ## Blockers
 
-- None. Commit the hook fix, then merge when you're ready.
+- None.
