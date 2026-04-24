@@ -10,8 +10,30 @@
 
 **Date**: 2026-04-23
 
-Fixed the blank dashboard discovered during Docker smoke of the Svelte
-migration. Two issues were involved:
+Ran the full manual smoke of `svelte-migration` through Playwright MCP +
+`curl`. Four routes (`/categories`, `/transactions`, `/planning`,
+`/operations`) and the run-detail view (`/operations/runs/148`) all render
+with zero console errors. Plan-edit round-trip verified: bumping
+`Bills › 22nd - Claude` from $200 to $201 moved the summary payload's
+`groups[Bills].planned_milliunits` from 7,116,040 → 7,117,040; revert
+restored baseline. GroupChart SVG (aria-label "Plan vs actual by group")
+re-renders from the updated summary.
+
+Fixed a real regression in `frontend/src/hooks.server.ts`: the ingress
+base-href injection never actually fired. `transformPageChunk` was calling
+`html.replace('%sveltekit.head%', …)`, but SvelteKit substitutes that
+placeholder in the template before streaming, so the replace was a no-op.
+Switched the marker to `</head>`. Verified with curl:
+- `X-Ingress-Path: /finclaide` → emits `<base href="/finclaide/">` plus the
+  `window.__FINCLAIDE_BASE_PATH__` / `__FINCLAIDE_BASE_HREF__` globals.
+- No header → falls back to `<base href="/">` (basePath normalises to ``).
+
+The prior session's pytest case only verified that the header was
+forwarded through the Flask proxy — it never asserted the rewrite. Now
+that the rewrite actually happens, a Node-side vitest case for
+`hooks.server.ts` is queued in next-steps.
+
+Prior migration fixes still in place:
 
 - Flask reverse proxy forwarded browser `Accept-Encoding: ... zstd` to
   SvelteKit and stripped `Content-Encoding`, so Chrome received compressed
@@ -21,10 +43,6 @@ migration. Two issues were involved:
 - `+layout.svelte` created the shell status query before the
   `QueryClientProvider` context existed. The layout now passes its explicit
   `queryClient` to `createQuery`.
-
-The Docker stack is currently running at `http://127.0.0.1:8050/`; a clean
-headless Chrome session confirmed the dashboard mounts, nav is present, and
-there are no runtime exceptions.
 
 Prior migration commit log on `svelte-migration`:
 
@@ -61,22 +79,21 @@ Prior migration commit log on `svelte-migration`:
 
 ## Build Status
 
-- Backend targeted:
-  `.venv/bin/pytest tests/test_api.py::test_frontend_reverse_proxies_to_configured_url`
-  — pass.
+- Backend targeted: `pytest tests/test_api.py -k frontend` — 2/2 pass.
 - Frontend: `npm run check` — `svelte-check` 0 errors, 0 warnings.
-- Docker: `docker compose up --build -d` — pass; `GET /healthz` returns
-  `{"status":"ok"}`.
-- Browser smoke: clean headless Chrome loaded `/`; nav text rendered and
-  runtime log was empty.
+- Docker: `docker compose up -d --build web` — web container rebuilt after
+  hook change; healthy.
+- Browser smoke: Playwright MCP walked `/`, `/categories`, `/transactions`,
+  `/planning`, `/operations`, `/operations/runs/148` — all render with zero
+  console errors.
+- Ingress smoke: curl-verified in both directions.
 
 ## Active Milestone
 
-Docker root-page smoke is now passing after the fixes above. Finish the
-remaining route/edit/ingress manual smoke before merging `svelte-migration`
-to `main`. Then resume Phase 2.5b (versioning & rollback) on the Svelte
-stack.
+Manual smoke is complete and the ingress regression is fixed. Branch is
+ready to merge into `main`. After merge, port the 19 React vitest page
+cases to Svelte, then resume Phase 2.5b (versioning & rollback).
 
 ## Blockers
 
-- None. Branch is review-ready pending the manual smoke.
+- None. Commit the hook fix, then merge when you're ready.

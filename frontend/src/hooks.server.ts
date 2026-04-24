@@ -21,6 +21,6 @@ export const handle: Handle = async ({ event, resolve }) => {
     `<base href="${baseHref}">`
 
   return resolve(event, {
-    transformPageChunk: ({ html }) => html.replace('%sveltekit.head%', `${injection}\n%sveltekit.head%`),
+    transformPageChunk: ({ html }) => html.replace('</head>', `${injection}\n</head>`),
   })
 }
