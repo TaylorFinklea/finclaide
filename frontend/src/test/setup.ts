@@ -45,6 +45,19 @@ vi.mock('$app/stores', () => ({
   updated: readable(false),
 }))
 
+vi.mock('svelte-sonner', () => ({
+  toast: {
+    success: vi.fn(),
+    error: vi.fn(),
+    info: vi.fn(),
+    warning: vi.fn(),
+    message: vi.fn(),
+    loading: vi.fn(),
+    dismiss: vi.fn(),
+  },
+  Toaster: { $$typeof: Symbol.for('svelte.test.stub') },
+}))
+
 vi.mock('$app/navigation', () => ({
   goto: vi.fn().mockResolvedValue(undefined),
   invalidate: vi.fn().mockResolvedValue(undefined),
