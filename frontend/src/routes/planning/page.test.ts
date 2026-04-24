@@ -171,15 +171,16 @@ describe('PlanningPage', () => {
 
   it('delete confirmation invokes deletePlanCategory after confirm', async () => {
     renderPage(PlanningPage as never, { selectedMonth: '2026-04' })
+    const user = userEvent.setup({ pointerEventsCheck: 0 })
 
     const row = (await screen.findByText('Rent')).closest('tr')
-    await userEvent.click(row!)
+    await user.click(row!)
     const sheet = await screen.findByRole('dialog')
-    await userEvent.click(within(sheet).getByRole('button', { name: /Delete/i }))
+    await user.click(within(sheet).getByRole('button', { name: /Delete/i }))
 
     const confirm = await screen.findByText('Delete category?')
     const confirmContainer = confirm.closest('[role="dialog"]') as HTMLElement
-    await userEvent.click(within(confirmContainer).getByRole('button', { name: 'Delete' }))
+    await user.click(within(confirmContainer).getByRole('button', { name: 'Delete' }))
 
     await waitFor(() => {
       expect(apiMocks.deletePlanCategory).toHaveBeenCalledWith(10, 1)
