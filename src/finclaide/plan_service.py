@@ -504,11 +504,18 @@ def _prune_revisions(connection, plan_id: int) -> None:
 
 
 def _summary_for_update(before, updates: dict[str, Any]) -> str:
-    """Render a short, human-readable summary for ui_update revisions."""
+    """Render a short, human-readable summary for ui_update revisions.
+
+    Only fields whose value actually changed are included. The frontend's
+    PATCH always sends the full editable set, so without this filter the
+    summary lists "annual $200 → $200, notes updated, due_month None → None"
+    even when only `planned_milliunits` moved."""
     label = f"{before['block']} › {before['group_name']} / {before['category_name']}"
     parts: list[str] = []
     for key, new_value in updates.items():
         old_value = before[key]
+        if old_value == new_value:
+            continue
         if key in {"planned_milliunits", "annual_target_milliunits"}:
             old_dollars = (old_value or 0) / 1000
             new_dollars = (new_value or 0) / 1000
@@ -519,7 +526,7 @@ def _summary_for_update(before, updates: dict[str, Any]) -> str:
         elif key == "notes":
             parts.append("notes updated")
     if not parts:
-        return f"Updated {label}"
+        return f"Updated {label} (no field-level diff)"
     return f"{label}: {', '.join(parts)}"
 
 

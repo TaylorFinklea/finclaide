@@ -238,6 +238,33 @@ def test_update_category_records_ui_update_revision_with_dollar_summary(tmp_path
     assert rent_in_snapshot["planned_milliunits"] == 1300500
 
 
+def test_update_summary_omits_fields_that_did_not_change(tmp_path: Path):
+    """The frontend's PATCH always sends the full editable set, so the
+    summary needs to filter to only the fields whose value actually moved.
+    Otherwise the History list reads "annual $200 → $200, notes updated,
+    due_month None → None" on a planned-only edit."""
+    db = Database(tmp_path / "f.db")
+    service, plan_id, rent_id, _ = _seeded_plan(db)
+
+    # Submit every field, but only planned_milliunits changes.
+    service.update_category(
+        plan_id,
+        rent_id,
+        {
+            "planned_milliunits": 1300500,
+            "annual_target_milliunits": 0,  # unchanged
+            "due_month": None,  # unchanged
+            "notes": None,  # unchanged
+        },
+    )
+
+    rev = _all_revisions(db, plan_id)[0]
+    assert "planned $1,200.00 → $1,300.50" in rev["summary"]
+    assert "annual" not in rev["summary"]
+    assert "due_month" not in rev["summary"]
+    assert "notes updated" not in rev["summary"]
+
+
 def test_delete_category_records_ui_delete_revision(tmp_path: Path):
     db = Database(tmp_path / "f.db")
     service, plan_id, rent_id, _ = _seeded_plan(db)
