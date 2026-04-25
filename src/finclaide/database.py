@@ -288,9 +288,14 @@ class Database:
             if "'draft'" in sql_row["sql"] and "'scenario'" in sql_row["sql"]:
                 return
             connection.execute("PRAGMA foreign_keys = OFF")
+            # Drop the view that references plans before the rebuild —
+            # SQLite refuses to DROP TABLE plans while a view depends on
+            # it. SCHEMA_SQL recreates the view after this migration on
+            # the executescript pass.
             connection.executescript(
                 """
                 BEGIN;
+                DROP VIEW IF EXISTS v_latest_planned_categories;
                 CREATE TABLE plans_new (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     plan_year INTEGER NOT NULL,

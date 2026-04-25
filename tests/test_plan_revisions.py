@@ -89,7 +89,10 @@ def test_plans_status_check_admits_draft_and_scenario(tmp_path: Path):
 def test_migration_widens_status_check_on_legacy_install(tmp_path: Path):
     """Simulate a pre-2.5b database where plans.status only allows
     ('active', 'archived'). Re-running initialize() should rebuild the
-    table to include 'draft' and 'scenario' without losing rows."""
+    table to include 'draft' and 'scenario' without losing rows. The
+    legacy fixture includes the v_latest_planned_categories view to
+    catch the SQLite "view depends on table" error that surfaces in
+    real upgrades but not on fresh test DBs."""
     db_path = tmp_path / "legacy.db"
     legacy = sqlite3.connect(db_path)
     try:
@@ -116,9 +119,31 @@ def test_migration_widens_status_check_on_legacy_install(tmp_path: Path):
                 source_import_id INTEGER,
                 FOREIGN KEY (source_import_id) REFERENCES budget_imports(id) ON DELETE SET NULL
             );
+            CREATE TABLE plan_categories (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                plan_id INTEGER NOT NULL,
+                group_name TEXT NOT NULL,
+                category_name TEXT NOT NULL,
+                block TEXT NOT NULL,
+                planned_milliunits INTEGER NOT NULL DEFAULT 0,
+                annual_target_milliunits INTEGER NOT NULL DEFAULT 0,
+                due_month INTEGER,
+                notes TEXT,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL,
+                FOREIGN KEY (plan_id) REFERENCES plans(id) ON DELETE CASCADE
+            );
             CREATE UNIQUE INDEX idx_plans_active_per_year
                 ON plans(plan_year)
                 WHERE status = 'active';
+            CREATE VIEW v_latest_planned_categories AS
+                SELECT pc.id, pc.plan_id AS import_id, pc.group_name,
+                       pc.category_name, pc.block, pc.planned_milliunits,
+                       pc.annual_target_milliunits, pc.due_month
+                FROM plan_categories pc
+                JOIN plans p ON p.id = pc.plan_id
+                WHERE p.status = 'active'
+                ORDER BY pc.id;
             INSERT INTO plans(plan_year, name, status, source, created_at, updated_at)
             VALUES (2027, 'Legacy', 'active', 'edited',
                     '2026-01-01T00:00:00+00:00', '2026-01-01T00:00:00+00:00');
