@@ -9,3 +9,4 @@ dist/
 build/
 .local/
 .playwright-mcp/
+.superpowers/
