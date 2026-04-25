@@ -10,10 +10,38 @@ identical to `main`; safe to delete once origin is pushed.
 
 ## Last Session Summary
 
-**Date**: 2026-04-24 (second pass, post-merge work)
+**Date**: 2026-04-25 (Phase 2.5b — Versioning & rollback shipped end-to-end)
 
-Worked the full post-merge plan
-(`/Users/tfinklea/.claude/plans/what-comes-next-concurrent-noodle.md`):
+Built all three slices of Phase 2.5b on top of the spec at
+`.docs/ai/phases/2.5b-versioning-rollback.md`:
+
+- **Slice 1** (commit `4ea952c`) — `plan_revisions` table + index,
+  widened `plans.status` CHECK to admit `'draft'/'scenario'` (with shadow-
+  table migration for existing installs, run before SCHEMA_SQL so the
+  view recreates against the migrated table), PlanService instrumentation
+  on every write path (post-change snapshot stored as JSON, summary
+  composed from the diff), `restore_revision` / `list_revisions` /
+  `get_revision`, retention prune (last 50 OR last 7 days). 14 new
+  pytest cases.
+- **Slice 2** (commit `39cccd1`) — three endpoints on `/api/*` and
+  `/ui-api/*` (list, detail, restore). Restore wraps
+  `operation_lock.guard("plan_restore")` so it 409s during import/sync.
+  Importer hook: `BudgetImporter._mirror_into_plan_model` now snapshots
+  the about-to-be-archived plan as `source='importer'` tagged with the
+  new plan_id, closing the lost-edit window. 9 new pytest cases.
+  Restore re-inserts categories with fresh ids (the snapshot's original
+  ids may already exist on archived plans whose `plan_categories` rows
+  linger after archive).
+- **Slice 3** (this commit) — `$lib/api.ts` gains revision schemas +
+  `listPlanRevisions` / `getPlanRevision` / `restorePlanRevision`. New
+  `frontend/src/components/plan-history-sheet.svelte` renders a right-
+  side sheet with revision list, source badges, diff preview (snapshot
+  vs current), and a confirm-then-restore flow that invalidates `['plan']`
+  + `['summary']`. `/planning` grows a **History** button next to **Add
+  row**, disabled while a budget import is busy. 3 new vitest cases at
+  `frontend/src/routes/planning/history.test.ts`.
+
+Earlier session (2026-04-24, post-merge test work):
 
 - **Phase 0** — fast-forwarded `svelte-migration` (`b39b0ed`) into
   `main`. Commit `699ad52` updates handoff docs.
@@ -104,21 +132,21 @@ Prior migration commit log on `svelte-migration`:
 
 ## Build Status
 
-- Backend targeted: `pytest tests/test_api.py -k frontend` — 2/2 pass.
-- Frontend: `npm run check` — `svelte-check` 0 errors, 0 warnings.
-- Docker: `docker compose up -d --build web` — web container rebuilt after
-  hook change; healthy.
-- Browser smoke: Playwright MCP walked `/`, `/categories`, `/transactions`,
-  `/planning`, `/operations`, `/operations/runs/148` — all render with zero
-  console errors.
-- Ingress smoke: curl-verified in both directions.
+- Backend: `pytest` — 124/124 pass (was 101 pre-Phase-2.5b; +23 new
+  cases across `test_plan_revisions`, `test_api`, `test_budget_import`).
+- Frontend: `npm run check` — `svelte-check` 0/0; `npx vitest run` —
+  31/31 (was 28 pre-history-sheet; +3 new in
+  `routes/planning/history.test.ts`).
+- Docker / browser smoke not re-run for 2.5b — Slice 3 UI verified
+  through vitest only. Worth doing a manual `docker compose` smoke
+  before relying on the History flow in production.
 
 ## Active Milestone
 
-Phases 0–4 of the post-merge plan are complete. Active forward surface:
-review + approve the Phase 2.5b spec
-(`.docs/ai/phases/2.5b-versioning-rollback.md`), then start Slice 1
-(schema + PlanService + tests — backend only, no UI yet).
+Phase 2.5b (Versioning & rollback) is shipped end-to-end. Suggested
+next: spec / brainstorm Phase 2.5c (what-if scenarios) — the
+`'draft'/'scenario'` CHECK widening + `plan_revisions` schema we just
+landed are the foundation for branching.
 
 ## Blockers
 

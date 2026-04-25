@@ -2,10 +2,11 @@
   import { browser } from '$app/environment'
   import { Tabs as TabsPrimitive } from 'bits-ui'
   import { createQuery } from '@tanstack/svelte-query'
-  import { AlertTriangle, Plus } from 'lucide-svelte'
+  import { AlertTriangle, History, Plus } from 'lucide-svelte'
 
   import DataTable, { type DataTableColumn } from '$components/data-table.svelte'
   import PlanCategorySheet, { type EditorSelection } from '$components/plan-category-sheet.svelte'
+  import PlanHistorySheet from '$components/plan-history-sheet.svelte'
   import Button from '$components/ui/button.svelte'
   import Card from '$components/ui/card.svelte'
   import CardContent from '$components/ui/card-content.svelte'
@@ -58,6 +59,7 @@
 
   let activeBlock: BlockKey = $state('monthly')
   let selection: EditorSelection = $state(null)
+  let historyOpen = $state(false)
 
   let importBusy = $derived(
     $statusQuery.data?.busy === true && $statusQuery.data?.current_operation === 'budget_import',
@@ -115,13 +117,24 @@
                 <TabsTrigger value={key}>{BLOCK_LABELS[key]}</TabsTrigger>
               {/each}
             </TabsList>
-            <Button
-              size="sm"
-              onclick={() => (selection = { mode: 'create', planId: data.plan.id, block: activeBlock })}
-            >
-              <Plus class="h-4 w-4" />
-              Add row
-            </Button>
+            <div class="flex items-center gap-2">
+              <Button
+                size="sm"
+                variant="outline"
+                onclick={() => (historyOpen = true)}
+                disabled={importBusy}
+              >
+                <History class="h-4 w-4" />
+                History
+              </Button>
+              <Button
+                size="sm"
+                onclick={() => (selection = { mode: 'create', planId: data.plan.id, block: activeBlock })}
+              >
+                <Plus class="h-4 w-4" />
+                Add row
+              </Button>
+            </div>
           </div>
 
           {#each BLOCK_ORDER as key (key)}
@@ -134,6 +147,12 @@
     </Card>
 
     <PlanCategorySheet {selection} onClose={() => (selection = null)} />
+    <PlanHistorySheet
+      open={historyOpen}
+      planId={data.plan.id}
+      currentBlocks={data.blocks}
+      onClose={() => (historyOpen = false)}
+    />
   </div>
 {/if}
 

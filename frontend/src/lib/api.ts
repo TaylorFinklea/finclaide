@@ -239,6 +239,37 @@ export const ActivePlanResponseSchema = z.object({
   totals: z.record(z.string(), z.number()),
 })
 
+export const PlanRevisionSourceSchema = z.enum([
+  'ui_create',
+  'ui_update',
+  'ui_delete',
+  'ui_rename',
+  'importer',
+  'migration',
+  'restore',
+])
+
+export const PlanRevisionSummarySchema = z.object({
+  id: z.number(),
+  plan_id: z.number(),
+  created_at: z.string(),
+  source: PlanRevisionSourceSchema,
+  summary: NullableString,
+  change_count: z.number(),
+})
+
+export const PlanRevisionDetailSchema = PlanRevisionSummarySchema.extend({
+  snapshot: z.array(PlanCategorySchema),
+})
+
+export const PlanRevisionListResponseSchema = z.object({
+  revisions: z.array(PlanRevisionSummarySchema),
+})
+
+export const PlanRevisionRestoreResponseSchema = z.object({
+  plan: ActivePlanResponseSchema,
+})
+
 export type StatusResponse = z.infer<typeof StatusSchema>
 export type SummaryResponse = z.infer<typeof SummarySchema>
 export type SummaryGroup = z.infer<typeof SummaryGroupSchema>
@@ -256,6 +287,9 @@ export type PlanCategory = z.infer<typeof PlanCategorySchema>
 export type Plan = z.infer<typeof PlanSchema>
 export type ActivePlanResponse = z.infer<typeof ActivePlanResponseSchema>
 export type BlockKey = PlanCategory['block']
+export type PlanRevisionSource = z.infer<typeof PlanRevisionSourceSchema>
+export type PlanRevisionSummary = z.infer<typeof PlanRevisionSummarySchema>
+export type PlanRevisionDetail = z.infer<typeof PlanRevisionDetailSchema>
 
 export const BLOCK_LABELS: Record<BlockKey, string> = {
   monthly: 'Monthly',
@@ -444,6 +478,36 @@ export async function deletePlanCategory(category_id: number, plan_id: number): 
     const body = await response.json().catch(() => null)
     throw new ApiError('Delete failed', response.status, body)
   }
+}
+
+export async function listPlanRevisions(plan_id: number, limit = 50) {
+  const search = new URLSearchParams({ plan_id: String(plan_id), limit: String(limit) })
+  return requestJson(
+    withBasePath(`/ui-api/plan/revisions?${search.toString()}`),
+    PlanRevisionListResponseSchema,
+  )
+}
+
+export async function getPlanRevision(revision_id: number) {
+  return requestJson(
+    withBasePath(`/ui-api/plan/revisions/${revision_id}`),
+    PlanRevisionDetailSchema,
+  )
+}
+
+export async function restorePlanRevision(revision_id: number) {
+  return requestJson(
+    withBasePath(`/ui-api/plan/revisions/${revision_id}/restore`),
+    PlanRevisionRestoreResponseSchema,
+    {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Finclaide-UI': '1',
+      },
+      body: JSON.stringify({}),
+    },
+  )
 }
 
 export function getErrorMessage(error: unknown): string {
