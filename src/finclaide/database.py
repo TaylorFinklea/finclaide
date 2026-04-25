@@ -147,7 +147,7 @@ CREATE TABLE IF NOT EXISTS plans (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     plan_year INTEGER NOT NULL,
     name TEXT NOT NULL,
-    status TEXT NOT NULL CHECK (status IN ('active', 'archived')),
+    status TEXT NOT NULL CHECK (status IN ('active', 'archived', 'draft', 'scenario')),
     source TEXT NOT NULL CHECK (source IN ('imported', 'edited')),
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL,
@@ -178,6 +178,23 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_plans_active_per_year
 
 CREATE INDEX IF NOT EXISTS idx_plan_categories_plan_id
     ON plan_categories(plan_id);
+
+CREATE TABLE IF NOT EXISTS plan_revisions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    plan_id INTEGER NOT NULL,
+    created_at TEXT NOT NULL,
+    source TEXT NOT NULL CHECK (source IN (
+        'ui_create', 'ui_update', 'ui_delete', 'ui_rename',
+        'importer', 'migration', 'restore'
+    )),
+    summary TEXT,
+    change_count INTEGER NOT NULL,
+    snapshot_json TEXT NOT NULL,
+    FOREIGN KEY (plan_id) REFERENCES plans(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_plan_revisions_plan_created
+    ON plan_revisions(plan_id, created_at DESC);
 
 DROP VIEW IF EXISTS v_latest_planned_categories;
 
@@ -236,6 +253,12 @@ class Database:
             connection.close()
 
     def initialize(self) -> None:
+        # Run the plans.status CHECK widening BEFORE SCHEMA_SQL so the
+        # `v_latest_planned_categories` view (which references plans) is
+        # recreated against the migrated table on the executescript pass.
+        # The migration is a no-op on fresh installs and on already-migrated
+        # installs.
+        self._migrate_plans_status_widen()
         with self.connect() as connection:
             connection.executescript(SCHEMA_SQL)
             connection.execute(
@@ -247,6 +270,57 @@ class Database:
                 (utc_now(),),
             )
         self._hydrate_plan_from_latest_import_if_empty()
+
+    def _migrate_plans_status_widen(self) -> None:
+        """Widen plans.status CHECK to include 'draft' and 'scenario' on
+        existing installs created before Phase 2.5b. Idempotent — fresh
+        installs already get the new shape from SCHEMA_SQL, and re-runs
+        against the new shape detect 'draft' in the stored DDL and exit."""
+        self.db_path.parent.mkdir(parents=True, exist_ok=True)
+        connection = sqlite3.connect(self.db_path)
+        try:
+            connection.row_factory = sqlite3.Row
+            sql_row = connection.execute(
+                "SELECT sql FROM sqlite_master WHERE type='table' AND name='plans'"
+            ).fetchone()
+            if sql_row is None:
+                return
+            if "'draft'" in sql_row["sql"] and "'scenario'" in sql_row["sql"]:
+                return
+            connection.execute("PRAGMA foreign_keys = OFF")
+            connection.executescript(
+                """
+                BEGIN;
+                CREATE TABLE plans_new (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    plan_year INTEGER NOT NULL,
+                    name TEXT NOT NULL,
+                    status TEXT NOT NULL CHECK (status IN ('active', 'archived', 'draft', 'scenario')),
+                    source TEXT NOT NULL CHECK (source IN ('imported', 'edited')),
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL,
+                    archived_at TEXT,
+                    source_import_id INTEGER,
+                    FOREIGN KEY (source_import_id) REFERENCES budget_imports(id) ON DELETE SET NULL
+                );
+                INSERT INTO plans_new (
+                    id, plan_year, name, status, source,
+                    created_at, updated_at, archived_at, source_import_id
+                )
+                SELECT id, plan_year, name, status, source,
+                       created_at, updated_at, archived_at, source_import_id
+                FROM plans;
+                DROP TABLE plans;
+                ALTER TABLE plans_new RENAME TO plans;
+                CREATE UNIQUE INDEX IF NOT EXISTS idx_plans_active_per_year
+                    ON plans(plan_year)
+                    WHERE status = 'active';
+                COMMIT;
+                """
+            )
+            connection.execute("PRAGMA foreign_keys = ON")
+        finally:
+            connection.close()
 
     def _hydrate_plan_from_latest_import_if_empty(self) -> None:
         """If the new plans table is empty but the legacy budget_imports has
