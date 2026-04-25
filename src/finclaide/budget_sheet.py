@@ -11,6 +11,10 @@ from openpyxl import load_workbook
 from openpyxl.utils import get_column_letter
 
 from finclaide.database import Database, utc_now
+from finclaide.plan_service import (
+    insert_plan_revision,
+    read_plan_categories_snapshot,
+)
 from finclaide.errors import DataIntegrityError
 from finclaide.money import to_milliunits
 from finclaide.months import parse_due_month
@@ -151,6 +155,19 @@ class BudgetImporter:
         source_import_id: int,
     ) -> int:
         now = utc_now()
+        # Capture the about-to-be-archived plan's categories so an operator
+        # who had in-flight edits can restore them after the import. Tagged
+        # with the new plan_id below so the restore replaces the new plan's
+        # categories (the active plan) — closes the lost-edit window.
+        old_active_row = connection.execute(
+            "SELECT id FROM plans WHERE plan_year = ? AND status = 'active'",
+            (plan_year,),
+        ).fetchone()
+        pre_archive_snapshot: list[dict[str, Any]] = []
+        if old_active_row is not None:
+            pre_archive_snapshot = read_plan_categories_snapshot(
+                connection, int(old_active_row["id"])
+            )
         connection.execute(
             """
             UPDATE plans
@@ -170,6 +187,19 @@ class BudgetImporter:
             (plan_year, plan_name, now, now, source_import_id),
         )
         new_plan_id = int(plan_cursor.lastrowid)
+        if pre_archive_snapshot:
+            insert_plan_revision(
+                connection,
+                plan_id=new_plan_id,
+                source="importer",
+                summary=(
+                    f"Importer overwrote plan ({len(pre_archive_snapshot)} "
+                    f"categories saved for restore)"
+                ),
+                change_count=len(pre_archive_snapshot),
+                snapshot=pre_archive_snapshot,
+                when=now,
+            )
         for row in rows:
             connection.execute(
                 """

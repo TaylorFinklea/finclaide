@@ -120,3 +120,67 @@ def test_import_budget_requires_expected_layout(tmp_path: Path):
 
     with pytest.raises(DataIntegrityError, match="Expected 'Stipends' header"):
         BudgetImporter(database).import_budget(workbook, "2026 Budget")
+
+
+def test_import_first_run_records_no_revisions(tmp_path: Path):
+    """No prior active plan, so the importer has nothing to snapshot."""
+    workbook = build_budget_workbook(tmp_path / "Budget.xlsx")
+    database = Database(tmp_path / "test.db")
+    database.initialize()
+    BudgetImporter(database).import_budget(workbook, "2026 Budget")
+    with database.connect() as connection:
+        count = connection.execute(
+            "SELECT COUNT(*) AS n FROM plan_revisions"
+        ).fetchone()["n"]
+    assert count == 0
+
+
+def test_reimport_snapshots_pre_archive_plan_for_restore(tmp_path: Path):
+    """Edits made between two imports should survive as an importer
+    revision tagged with the new plan_id, so the operator can restore
+    them after a re-import overwrites the active plan."""
+    from finclaide.plan_service import PlanService
+
+    workbook = build_budget_workbook(tmp_path / "Budget.xlsx")
+    database = Database(tmp_path / "test.db")
+    database.initialize()
+    importer = BudgetImporter(database)
+
+    importer.import_budget(workbook, "2026 Budget")
+    plan_service = PlanService(database=database)
+
+    plan = plan_service.get_active_plan()
+    rent = next(
+        c for c in plan["blocks"]["monthly"] if c["category_name"] == "Rent"
+    )
+    plan_service.update_category(
+        plan["plan"]["id"], rent["id"], {"planned_milliunits": 1234567}
+    )
+
+    # Re-import: should snapshot the edited plan before archiving it.
+    importer.import_budget(workbook, "2026 Budget")
+
+    new_plan = plan_service.get_active_plan()
+    new_plan_id = new_plan["plan"]["id"]
+    revisions = plan_service.list_revisions(new_plan_id)
+    importer_revs = [r for r in revisions if r["source"] == "importer"]
+    assert len(importer_revs) == 1
+    importer_rev = importer_revs[0]
+    detail = plan_service.get_revision(importer_rev["id"])
+    edited_in_snapshot = next(
+        c for c in detail["snapshot"] if c["category_name"] == "Rent"
+    )
+    assert edited_in_snapshot["planned_milliunits"] == 1234567
+
+    # The new active plan reflects the workbook (not the edit).
+    new_rent = next(
+        c for c in new_plan["blocks"]["monthly"] if c["category_name"] == "Rent"
+    )
+    assert new_rent["planned_milliunits"] != 1234567
+
+    # Restore brings the edit back onto the new active plan.
+    restored = plan_service.restore_revision(importer_rev["id"])
+    restored_rent = next(
+        c for c in restored["blocks"]["monthly"] if c["category_name"] == "Rent"
+    )
+    assert restored_rent["planned_milliunits"] == 1234567

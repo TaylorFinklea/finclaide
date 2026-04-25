@@ -331,18 +331,22 @@ class PlanService:
             connection.execute(
                 "DELETE FROM plan_categories WHERE plan_id = ?", (plan_id,)
             )
+            # Insert fresh ids — the snapshot's original ids may already
+            # exist on archived plans (which still keep their plan_categories
+            # rows after the importer archives), and we'd hit UNIQUE on
+            # plan_categories.id. The snapshot_json still carries the old
+            # ids for diff/display purposes; only the live rows get new ones.
             for category in snapshot:
                 connection.execute(
                     """
                     INSERT INTO plan_categories(
-                        id, plan_id, group_name, category_name, block,
+                        plan_id, group_name, category_name, block,
                         planned_milliunits, annual_target_milliunits, due_month,
                         notes, created_at, updated_at
                     )
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
-                        category["id"],
                         plan_id,
                         category["group_name"],
                         category["category_name"],
@@ -408,40 +412,72 @@ class PlanService:
         change_count: int,
         when: str,
     ) -> None:
-        if source not in VALID_REVISION_SOURCES:
-            raise DataIntegrityError(
-                f"Invalid revision source '{source}'. "
-                f"Must be one of: {sorted(VALID_REVISION_SOURCES)}."
-            )
-        snapshot_rows = connection.execute(
-            """
-            SELECT id, plan_id, group_name, category_name, block,
-                   planned_milliunits, annual_target_milliunits,
-                   due_month, notes, created_at, updated_at
-            FROM plan_categories
-            WHERE plan_id = ?
-            ORDER BY id
-            """,
-            (plan_id,),
-        ).fetchall()
-        snapshot = [_row_to_dict(row) for row in snapshot_rows]
-        connection.execute(
-            """
-            INSERT INTO plan_revisions(
-                plan_id, created_at, source, summary, change_count, snapshot_json
-            )
-            VALUES (?, ?, ?, ?, ?, ?)
-            """,
-            (
-                plan_id,
-                when,
-                source,
-                summary,
-                change_count,
-                json.dumps(snapshot, sort_keys=True),
-            ),
+        snapshot = read_plan_categories_snapshot(connection, plan_id)
+        insert_plan_revision(
+            connection,
+            plan_id=plan_id,
+            source=source,
+            summary=summary,
+            change_count=change_count,
+            snapshot=snapshot,
+            when=when,
         )
-        _prune_revisions(connection, plan_id)
+
+
+def read_plan_categories_snapshot(connection, plan_id: int) -> list[dict[str, Any]]:
+    """Read all plan_categories rows for a plan in a stable order, shaped
+    for `plan_revisions.snapshot_json`. Module-level so non-PlanService
+    callers (e.g. BudgetImporter) can produce snapshots in their own
+    transactions without round-tripping through PlanService."""
+    rows = connection.execute(
+        """
+        SELECT id, plan_id, group_name, category_name, block,
+               planned_milliunits, annual_target_milliunits,
+               due_month, notes, created_at, updated_at
+        FROM plan_categories
+        WHERE plan_id = ?
+        ORDER BY id
+        """,
+        (plan_id,),
+    ).fetchall()
+    return [_row_to_dict(row) for row in rows]
+
+
+def insert_plan_revision(
+    connection,
+    *,
+    plan_id: int,
+    source: str,
+    summary: str | None,
+    change_count: int,
+    snapshot: list[dict[str, Any]],
+    when: str,
+) -> None:
+    """Insert a plan_revisions row from a pre-built snapshot and prune any
+    excess history. Caller is responsible for ensuring the surrounding
+    transaction is appropriate."""
+    if source not in VALID_REVISION_SOURCES:
+        raise DataIntegrityError(
+            f"Invalid revision source '{source}'. "
+            f"Must be one of: {sorted(VALID_REVISION_SOURCES)}."
+        )
+    connection.execute(
+        """
+        INSERT INTO plan_revisions(
+            plan_id, created_at, source, summary, change_count, snapshot_json
+        )
+        VALUES (?, ?, ?, ?, ?, ?)
+        """,
+        (
+            plan_id,
+            when,
+            source,
+            summary,
+            change_count,
+            json.dumps(snapshot, sort_keys=True),
+        ),
+    )
+    _prune_revisions(connection, plan_id)
 
 
 def _prune_revisions(connection, plan_id: int) -> None:

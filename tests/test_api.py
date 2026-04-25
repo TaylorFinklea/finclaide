@@ -965,6 +965,146 @@ def test_ui_api_plan_delete_works_without_body(app_factory, auth_header, tmp_pat
     assert delete.status_code == 204
 
 
+# --- plan revisions API ---------------------------------------------------
+
+
+def _edit_first_monthly_planned(client, auth_header, *, planned: int) -> tuple[int, int]:
+    payload = client.get("/api/plan/active", headers=auth_header).get_json()
+    plan_id = payload["plan"]["id"]
+    target = next(
+        c for c in payload["blocks"]["monthly"] if c["category_name"] == "Rent"
+    )
+    response = client.patch(
+        f"/api/plan/categories/{target['id']}",
+        headers=auth_header,
+        json={"plan_id": plan_id, "planned_milliunits": planned},
+    )
+    assert response.status_code == 200
+    return plan_id, target["id"]
+
+
+def test_api_plan_revisions_list_after_edit(app_factory, auth_header, tmp_path: Path):
+    _, client = _setup_planning_app(app_factory, auth_header, tmp_path)
+    plan_id, _ = _edit_first_monthly_planned(client, auth_header, planned=1300000)
+
+    response = client.get(
+        f"/api/plan/revisions?plan_id={plan_id}", headers=auth_header
+    )
+    assert response.status_code == 200
+    revisions = response.get_json()["revisions"]
+    assert len(revisions) == 1
+    rev = revisions[0]
+    assert rev["source"] == "ui_update"
+    assert rev["change_count"] == 1
+    assert "Rent" in rev["summary"]
+    # List endpoint omits the heavy snapshot blob.
+    assert "snapshot" not in rev
+
+
+def test_api_plan_revisions_list_requires_plan_id(app_factory, auth_header, tmp_path: Path):
+    _, client = _setup_planning_app(app_factory, auth_header, tmp_path)
+    response = client.get("/api/plan/revisions", headers=auth_header)
+    assert response.status_code == 400
+
+
+def test_api_plan_revision_detail_returns_full_snapshot(
+    app_factory, auth_header, tmp_path: Path
+):
+    _, client = _setup_planning_app(app_factory, auth_header, tmp_path)
+    plan_id, _ = _edit_first_monthly_planned(client, auth_header, planned=1234567)
+    rev_id = (
+        client.get(f"/api/plan/revisions?plan_id={plan_id}", headers=auth_header)
+        .get_json()["revisions"][0]["id"]
+    )
+
+    response = client.get(f"/api/plan/revisions/{rev_id}", headers=auth_header)
+    assert response.status_code == 200
+    body = response.get_json()
+    assert body["source"] == "ui_update"
+    assert any(
+        c["category_name"] == "Rent" and c["planned_milliunits"] == 1234567
+        for c in body["snapshot"]
+    )
+
+
+def test_api_plan_revision_detail_404_for_unknown_id(
+    app_factory, auth_header, tmp_path: Path
+):
+    _, client = _setup_planning_app(app_factory, auth_header, tmp_path)
+    response = client.get("/api/plan/revisions/999999", headers=auth_header)
+    assert response.status_code == 404
+
+
+def test_api_plan_revision_restore_round_trips(app_factory, auth_header, tmp_path: Path):
+    _, client = _setup_planning_app(app_factory, auth_header, tmp_path)
+    plan_id, rent_id = _edit_first_monthly_planned(
+        client, auth_header, planned=1300000
+    )
+    _edit_first_monthly_planned(client, auth_header, planned=1500000)
+
+    revisions = client.get(
+        f"/api/plan/revisions?plan_id={plan_id}", headers=auth_header
+    ).get_json()["revisions"]
+    # list is newest-first; the older edit (1300000) is at index 1.
+    older_rev_id = revisions[1]["id"]
+
+    restore = client.post(
+        f"/api/plan/revisions/{older_rev_id}/restore", headers=auth_header
+    )
+    assert restore.status_code == 200
+    plan_payload = restore.get_json()["plan"]
+    # Restore re-inserts categories with fresh ids, so look up by name.
+    rent = next(
+        c for c in plan_payload["blocks"]["monthly"] if c["category_name"] == "Rent"
+    )
+    assert rent["planned_milliunits"] == 1300000
+    # The original rent_id no longer exists after the restore-with-fresh-ids.
+    assert rent["id"] != rent_id
+
+    # Restore creates a new 'restore' revision so the timeline keeps moving forward.
+    after = client.get(
+        f"/api/plan/revisions?plan_id={plan_id}", headers=auth_header
+    ).get_json()["revisions"]
+    assert after[0]["source"] == "restore"
+
+
+def test_ui_api_plan_revisions_mirror(app_factory, auth_header, tmp_path: Path):
+    _, client = _setup_planning_app(app_factory, auth_header, tmp_path)
+    _edit_first_monthly_planned(client, auth_header, planned=1300000)
+    plan_id = client.get("/ui-api/plan/active").get_json()["plan"]["id"]
+
+    listing = client.get(f"/ui-api/plan/revisions?plan_id={plan_id}")
+    assert listing.status_code == 200
+    rev_id = listing.get_json()["revisions"][0]["id"]
+
+    detail = client.get(f"/ui-api/plan/revisions/{rev_id}")
+    assert detail.status_code == 200
+    assert detail.get_json()["source"] == "ui_update"
+
+
+def test_ui_api_plan_revision_restore_requires_ui_header(
+    app_factory, auth_header, tmp_path: Path
+):
+    _, client = _setup_planning_app(app_factory, auth_header, tmp_path)
+    plan_id, _ = _edit_first_monthly_planned(client, auth_header, planned=1300000)
+    rev_id = (
+        client.get(f"/ui-api/plan/revisions?plan_id={plan_id}").get_json()[
+            "revisions"
+        ][0]["id"]
+    )
+
+    no_header = client.post(f"/ui-api/plan/revisions/{rev_id}/restore", json={})
+    assert no_header.status_code == 403
+    assert no_header.get_json()["error"] == "missing_ui_header"
+
+    with_header = client.post(
+        f"/ui-api/plan/revisions/{rev_id}/restore",
+        headers={"X-Finclaide-UI": "1"},
+        json={},
+    )
+    assert with_header.status_code == 200
+
+
 def test_healthcheck_and_dashboard_fallback(app_factory):
     app = app_factory()
     client = app.test_client()

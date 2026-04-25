@@ -136,6 +136,32 @@ def plan_delete_category(category_id: int):
     return ("", 204)
 
 
+@api.get("/plan/revisions")
+@require_bearer_token
+def plan_revisions_list():
+    plan_id_arg = request.args.get("plan_id")
+    if plan_id_arg is None:
+        return jsonify({"error": "plan_id is required"}), 400
+    plan_id = int(plan_id_arg)
+    limit = min(max(int(request.args.get("limit", "50")), 1), 200)
+    return jsonify({"revisions": _container().plan.list_revisions(plan_id, limit=limit)})
+
+
+@api.get("/plan/revisions/<int:revision_id>")
+@require_bearer_token
+def plan_revision_detail(revision_id: int):
+    return jsonify(_container().plan.get_revision(revision_id))
+
+
+@api.post("/plan/revisions/<int:revision_id>/restore")
+@require_bearer_token
+def plan_revision_restore(revision_id: int):
+    container = _container()
+    with container.operation_lock.guard("plan_restore"):
+        result = container.plan.restore_revision(revision_id)
+    return jsonify({"plan": result})
+
+
 @api.get("/transactions")
 @require_bearer_token
 def transactions():
