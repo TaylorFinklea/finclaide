@@ -17,10 +17,26 @@
 
 ## Soon
 
-- [ ] Phase 2.5c — What-if scenarios. Foundation now in place
-      (`plans.status` admits `'scenario'`; `plan_revisions` already
-      tracks per-plan history). Spec needs: branch-from-active flow,
-      compare-projection vs current actuals, commit/discard semantics.
+- [x] Phase 2.5c — Brainstorm + spec (this session, mockup-driven).
+      Spec at `docs/superpowers/specs/2026-04-26-phase-2.5c-scenarios-design.md`.
+- [x] Phase 2.5c Slice 1 — Sandbox in place. DB migration + PlanService
+      scenario methods + `/ui-api/scenarios/...` routes + Sandbox mode
+      on `/planning` + 21 pytest cases.
+- [ ] Manual smoke of 2.5c Slice 1: `docker compose up`, click "Try a
+      what-if", edit a category in Sandbox, Commit, verify the active
+      plan shows the edit and History on the (now-archived) prior plan
+      has a `migration`-source revision summarized "Replaced by sandbox".
+- [ ] Phase 2.5c Slice 2 — Saved scenarios + `/scenarios` route.
+      `POST /ui-api/scenarios/{id}/save`, `/fork`. New route lists
+      Saved with Open/Compare placeholders. Sandbox banner gains Save
+      button → name modal. Edit-on-Saved forks into a new Sandbox.
+- [ ] Phase 2.5c Slice 3 — Comparison view. `POST /ui-api/scenarios/compare`
+      returns per-category rows with planned (active vs scenario),
+      6-month actuals avg, variance, sparkline. Drawer shared by Sandbox
+      + Saved. Sortable.
+- [ ] Phase 2.5c Slice 4 — Pure projection panel on `/scenarios`
+      (per-category sliders + add-line). `POST .../projection/apply-to-sandbox`
+      materializes axis state into Sandbox edits.
 - [ ] Phase 2.5d — Publish-to-Sheets export. Round-trip the active
       plan back into the configured Google Sheet using the importer-
       compatible 4-block layout. `.xlsx` download path for offline

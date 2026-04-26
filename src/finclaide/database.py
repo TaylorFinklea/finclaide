@@ -147,6 +147,7 @@ CREATE TABLE IF NOT EXISTS plans (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     plan_year INTEGER NOT NULL,
     name TEXT NOT NULL,
+    label TEXT,
     status TEXT NOT NULL CHECK (status IN ('active', 'archived', 'draft', 'scenario')),
     source TEXT NOT NULL CHECK (source IN ('imported', 'edited')),
     created_at TEXT NOT NULL,
@@ -175,6 +176,18 @@ CREATE TABLE IF NOT EXISTS plan_categories (
 CREATE UNIQUE INDEX IF NOT EXISTS idx_plans_active_per_year
     ON plans(plan_year)
     WHERE status = 'active';
+
+-- At most one Sandbox at a time. A Sandbox is a scenario row with no
+-- user-facing label. Indexing the constant `status` value forces
+-- uniqueness among matching rows, so only one row can satisfy.
+CREATE UNIQUE INDEX IF NOT EXISTS idx_plans_one_sandbox
+    ON plans(status)
+    WHERE status = 'scenario' AND label IS NULL;
+
+-- Saved scenario labels are unique among scenarios.
+CREATE UNIQUE INDEX IF NOT EXISTS idx_plans_saved_label_unique
+    ON plans(label)
+    WHERE status = 'scenario' AND label IS NOT NULL;
 
 CREATE INDEX IF NOT EXISTS idx_plan_categories_plan_id
     ON plan_categories(plan_id);
@@ -259,6 +272,10 @@ class Database:
         # The migration is a no-op on fresh installs and on already-migrated
         # installs.
         self._migrate_plans_status_widen()
+        # Add the `label` column for scenario naming. Idempotent — fresh
+        # installs already have it from SCHEMA_SQL; pre-2.5c installs get
+        # the ALTER TABLE here.
+        self._migrate_plans_add_label_column()
         with self.connect() as connection:
             connection.executescript(SCHEMA_SQL)
             connection.execute(
@@ -324,6 +341,24 @@ class Database:
                 """
             )
             connection.execute("PRAGMA foreign_keys = ON")
+        finally:
+            connection.close()
+
+    def _migrate_plans_add_label_column(self) -> None:
+        """Add `label TEXT` to plans for scenario naming. Idempotent — exits
+        if the column already exists, or if the plans table doesn't exist
+        yet (fresh install; SCHEMA_SQL will create it with the column)."""
+        self.db_path.parent.mkdir(parents=True, exist_ok=True)
+        connection = sqlite3.connect(self.db_path)
+        try:
+            connection.row_factory = sqlite3.Row
+            cols = connection.execute("PRAGMA table_info(plans)").fetchall()
+            if not cols:
+                return
+            if any(col["name"] == "label" for col in cols):
+                return
+            connection.execute("ALTER TABLE plans ADD COLUMN label TEXT")
+            connection.commit()
         finally:
             connection.close()
 

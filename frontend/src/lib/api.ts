@@ -219,6 +219,7 @@ export const PlanSchema = z.object({
   id: z.number(),
   plan_year: z.number(),
   name: z.string(),
+  label: NullableString.optional(),
   status: z.string(),
   source: z.string(),
   created_at: z.string(),
@@ -508,6 +509,79 @@ export async function restorePlanRevision(revision_id: number) {
       body: JSON.stringify({}),
     },
   )
+}
+
+export const ScenarioSummarySchema = z.object({
+  id: z.number(),
+  plan_year: z.number(),
+  name: z.string(),
+  label: NullableString,
+  status: z.string(),
+  source: z.string(),
+  created_at: z.string(),
+  updated_at: z.string(),
+  category_count: z.number(),
+})
+
+export const ScenarioListResponseSchema = z.object({
+  scenarios: z.array(ScenarioSummarySchema),
+})
+
+export const ScenarioCommitResponseSchema = z.object({
+  plan: ActivePlanResponseSchema,
+})
+
+export type ScenarioSummary = z.infer<typeof ScenarioSummarySchema>
+
+export async function listScenarios() {
+  return requestJson(withBasePath('/ui-api/scenarios'), ScenarioListResponseSchema)
+}
+
+export async function getScenario(scenario_id: number) {
+  return requestJson(
+    withBasePath(`/ui-api/scenarios/${scenario_id}`),
+    ActivePlanResponseSchema,
+  )
+}
+
+export async function createScenario(input: {
+  from_plan_id: number
+  label?: string | null
+}) {
+  return requestJson(withBasePath('/ui-api/scenarios'), ActivePlanResponseSchema, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'X-Finclaide-UI': '1',
+    },
+    body: JSON.stringify(input),
+  })
+}
+
+export async function commitScenario(scenario_id: number) {
+  return requestJson(
+    withBasePath(`/ui-api/scenarios/${scenario_id}/commit`),
+    ScenarioCommitResponseSchema,
+    {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Finclaide-UI': '1',
+      },
+      body: JSON.stringify({}),
+    },
+  )
+}
+
+export async function discardScenario(scenario_id: number): Promise<void> {
+  const response = await fetch(withBasePath(`/ui-api/scenarios/${scenario_id}`), {
+    method: 'DELETE',
+    headers: { 'X-Finclaide-UI': '1' },
+  })
+  if (!response.ok) {
+    const body = await response.json().catch(() => null)
+    throw new ApiError('Discard failed', response.status, body)
+  }
 }
 
 export function getErrorMessage(error: unknown): string {

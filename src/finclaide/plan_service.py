@@ -373,6 +373,186 @@ class PlanService:
             )
         return self.get_active_plan_by_id(plan_id)
 
+    def create_scenario(
+        self, from_plan_id: int, label: str | None = None
+    ) -> dict[str, Any]:
+        """Deep-copy a plan into a new `status='scenario'` row. `label=None`
+        creates a Sandbox; setting `label` creates a Saved scenario. Inherits
+        `plan_year`, `name` (sheet/source title), and `source` from the
+        source plan. Categories are copied with fresh ids."""
+        normalized_label = None
+        if label is not None:
+            normalized_label = _strip_required(label, "label")
+        now = utc_now()
+        try:
+            with self.database.connect() as connection:
+                source_plan = connection.execute(
+                    "SELECT * FROM plans WHERE id = ?", (from_plan_id,)
+                ).fetchone()
+                if source_plan is None:
+                    raise NotFoundError(f"Plan {from_plan_id} not found.")
+                cursor = connection.execute(
+                    """
+                    INSERT INTO plans(
+                        plan_year, name, label, status, source,
+                        created_at, updated_at, source_import_id
+                    )
+                    VALUES (?, ?, ?, 'scenario', 'edited', ?, ?, ?)
+                    """,
+                    (
+                        int(source_plan["plan_year"]),
+                        source_plan["name"],
+                        normalized_label,
+                        now,
+                        now,
+                        source_plan["source_import_id"],
+                    ),
+                )
+                scenario_id = int(cursor.lastrowid)
+                connection.execute(
+                    """
+                    INSERT INTO plan_categories(
+                        plan_id, group_name, category_name, block,
+                        planned_milliunits, annual_target_milliunits, due_month,
+                        notes, created_at, updated_at
+                    )
+                    SELECT
+                        ?, group_name, category_name, block,
+                        planned_milliunits, annual_target_milliunits, due_month,
+                        notes, ?, ?
+                    FROM plan_categories
+                    WHERE plan_id = ?
+                    ORDER BY id
+                    """,
+                    (scenario_id, now, now, from_plan_id),
+                )
+        except sqlite3.IntegrityError as error:
+            message = str(error)
+            # SQLite reports unique-constraint failures as "plans.<col>" using
+            # the column name rather than the index name.
+            if "plans.status" in message:
+                raise DataIntegrityError(
+                    "A sandbox already exists. Save it as a scenario or "
+                    "discard it before starting a new sandbox."
+                ) from error
+            if "plans.label" in message:
+                raise DataIntegrityError(
+                    f"A saved scenario named {normalized_label!r} already exists."
+                ) from error
+            raise DataIntegrityError(message) from error
+        return self.get_active_plan_by_id(scenario_id)
+
+    def list_scenarios(self) -> list[dict[str, Any]]:
+        """Return all scenario rows (Sandbox + Saved), newest first."""
+        with self.database.connect() as connection:
+            rows = connection.execute(
+                """
+                SELECT id, plan_year, name, label, status, source,
+                       created_at, updated_at,
+                       (SELECT COUNT(*) FROM plan_categories pc
+                          WHERE pc.plan_id = p.id) AS category_count
+                FROM plans p
+                WHERE status = 'scenario'
+                ORDER BY id DESC
+                """
+            ).fetchall()
+        return [
+            {
+                "id": row["id"],
+                "plan_year": row["plan_year"],
+                "name": row["name"],
+                "label": row["label"],
+                "status": row["status"],
+                "source": row["source"],
+                "created_at": row["created_at"],
+                "updated_at": row["updated_at"],
+                "category_count": int(row["category_count"]),
+            }
+            for row in rows
+        ]
+
+    def commit_scenario(self, scenario_id: int) -> dict[str, Any]:
+        """Flip a scenario plan to `status='active'` and archive whatever was
+        active for the same plan_year. Records a `migration` revision on the
+        new-active plan_id capturing the post-commit snapshot. The prior
+        active plan keeps its existing plan_revisions trail. Caller is
+        responsible for wrapping in operation_lock.guard()."""
+        now = utc_now()
+        with self.database.connect() as connection:
+            scenario = connection.execute(
+                "SELECT * FROM plans WHERE id = ? AND status = 'scenario'",
+                (scenario_id,),
+            ).fetchone()
+            if scenario is None:
+                raise NotFoundError(f"Scenario {scenario_id} not found.")
+            plan_year = int(scenario["plan_year"])
+            prior_active = connection.execute(
+                "SELECT id FROM plans WHERE status = 'active' AND plan_year = ?",
+                (plan_year,),
+            ).fetchone()
+            label = scenario["label"]
+            attribution = (
+                f"Replaced by scenario: {label}" if label else "Replaced by sandbox"
+            )
+            if prior_active is not None:
+                connection.execute(
+                    """
+                    UPDATE plans
+                    SET status = 'archived', archived_at = ?, updated_at = ?
+                    WHERE id = ?
+                    """,
+                    (now, now, int(prior_active["id"])),
+                )
+                snapshot = read_plan_categories_snapshot(
+                    connection, int(prior_active["id"])
+                )
+                insert_plan_revision(
+                    connection,
+                    plan_id=int(prior_active["id"]),
+                    source="migration",
+                    summary=attribution,
+                    change_count=len(snapshot),
+                    snapshot=snapshot,
+                    when=now,
+                )
+            connection.execute(
+                """
+                UPDATE plans
+                SET status = 'active', label = NULL, archived_at = NULL,
+                    updated_at = ?
+                WHERE id = ?
+                """,
+                (now, scenario_id),
+            )
+            new_snapshot = read_plan_categories_snapshot(connection, scenario_id)
+            insert_plan_revision(
+                connection,
+                plan_id=scenario_id,
+                source="migration",
+                summary=(
+                    f"Committed sandbox to active"
+                    if not label
+                    else f"Committed scenario {label!r} to active"
+                ),
+                change_count=len(new_snapshot),
+                snapshot=new_snapshot,
+                when=now,
+            )
+        return self.get_active_plan_by_id(scenario_id)
+
+    def discard_scenario(self, scenario_id: int) -> None:
+        """Hard delete a scenario plan. Cascades to plan_categories and
+        plan_revisions. There is no recovery — the user must Save before
+        discarding to keep the work."""
+        with self.database.connect() as connection:
+            scenario = connection.execute(
+                "SELECT id FROM plans WHERE id = ? AND status = 'scenario'",
+                (scenario_id,),
+            ).fetchone()
+            if scenario is None:
+                raise NotFoundError(f"Scenario {scenario_id} not found.")
+            connection.execute("DELETE FROM plans WHERE id = ?", (scenario_id,))
+
     def get_active_plan_by_id(self, plan_id: int) -> dict[str, Any]:
         with self.database.connect() as connection:
             plan_row = connection.execute(
@@ -540,11 +720,13 @@ def _shape_plan_payload(plan_row, category_rows) -> dict[str, Any]:
         totals[f"{payload['block']}_milliunits"] += int(payload["planned_milliunits"])
         grand_total += int(payload["planned_milliunits"])
     totals["grand_total_milliunits"] = grand_total
+    plan_keys = plan_row.keys() if hasattr(plan_row, "keys") else []
     return {
         "plan": {
             "id": plan_row["id"],
             "plan_year": plan_row["plan_year"],
             "name": plan_row["name"],
+            "label": plan_row["label"] if "label" in plan_keys else None,
             "status": plan_row["status"],
             "source": plan_row["source"],
             "created_at": plan_row["created_at"],

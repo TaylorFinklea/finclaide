@@ -1,8 +1,11 @@
 <script lang="ts">
   import { browser } from '$app/environment'
   import { Tabs as TabsPrimitive } from 'bits-ui'
-  import { createQuery } from '@tanstack/svelte-query'
-  import { AlertTriangle, History, Plus } from 'lucide-svelte'
+  import { createMutation, createQuery, useQueryClient } from '@tanstack/svelte-query'
+  import { Dialog as DialogPrimitive } from 'bits-ui'
+  import { AlertTriangle, Beaker, Check, History, Plus, Trash2 } from 'lucide-svelte'
+  import { toast } from 'svelte-sonner'
+  import { writable } from 'svelte/store'
 
   import DataTable, { type DataTableColumn } from '$components/data-table.svelte'
   import PlanCategorySheet, { type EditorSelection } from '$components/plan-category-sheet.svelte'
@@ -12,11 +15,29 @@
   import CardContent from '$components/ui/card-content.svelte'
   import CardHeader from '$components/ui/card-header.svelte'
   import CardTitle from '$components/ui/card-title.svelte'
+  import DialogContent from '$components/ui/dialog-content.svelte'
+  import DialogDescription from '$components/ui/dialog-description.svelte'
+  import DialogFooter from '$components/ui/dialog-footer.svelte'
+  import DialogHeader from '$components/ui/dialog-header.svelte'
+  import DialogTitle from '$components/ui/dialog-title.svelte'
   import Skeleton from '$components/ui/skeleton.svelte'
   import TabsContent from '$components/ui/tabs-content.svelte'
   import TabsList from '$components/ui/tabs-list.svelte'
   import TabsTrigger from '$components/ui/tabs-trigger.svelte'
-  import { BLOCK_LABELS, type BlockKey, type PlanCategory, getActivePlan, getStatus } from '$lib/api'
+  import {
+    BLOCK_LABELS,
+    type ActivePlanResponse,
+    type BlockKey,
+    type PlanCategory,
+    commitScenario,
+    createScenario,
+    discardScenario,
+    getActivePlan,
+    getErrorMessage,
+    getScenario,
+    getStatus,
+    listScenarios,
+  } from '$lib/api'
   import { formatMoney } from '$lib/format'
 
   const BLOCK_ORDER: BlockKey[] = ['monthly', 'annual', 'one_time', 'stipends', 'savings']
@@ -56,28 +77,148 @@
     enabled: browser,
   })
   const statusQuery = createQuery({ queryKey: ['status'], queryFn: getStatus, enabled: browser })
+  const scenariosQuery = createQuery({
+    queryKey: ['scenarios'],
+    queryFn: listScenarios,
+    enabled: browser,
+  })
+
+  let viewedScenarioId: number | null = $state(null)
+
+  type ScenarioOpts = {
+    queryKey: readonly unknown[]
+    queryFn: () => Promise<ActivePlanResponse>
+    enabled: boolean
+  }
+  const scenarioOpts = writable<ScenarioOpts>({
+    queryKey: ['plan', 'scenario', null],
+    queryFn: () => Promise.reject(new Error('disabled')) as Promise<ActivePlanResponse>,
+    enabled: false,
+  })
+  $effect(() => {
+    if (viewedScenarioId === null) {
+      scenarioOpts.set({
+        queryKey: ['plan', 'scenario', null],
+        queryFn: () => Promise.reject(new Error('disabled')) as Promise<ActivePlanResponse>,
+        enabled: false,
+      })
+    } else {
+      const id = viewedScenarioId
+      scenarioOpts.set({
+        queryKey: ['plan', 'scenario', id],
+        queryFn: () => getScenario(id),
+        enabled: browser,
+      })
+    }
+  })
+  const scenarioPlanQuery = createQuery(scenarioOpts)
+
+  let inSandboxMode = $derived(viewedScenarioId !== null)
+  let displayedPlan = $derived(
+    viewedScenarioId === null ? $planQuery.data : $scenarioPlanQuery.data,
+  )
+  let displayedQueryLoading = $derived(
+    viewedScenarioId === null ? $planQuery.isLoading : $scenarioPlanQuery.isLoading,
+  )
+  let displayedQueryError = $derived(
+    viewedScenarioId === null ? $planQuery.error : $scenarioPlanQuery.error,
+  )
+  let existingSandbox = $derived(
+    $scenariosQuery.data?.scenarios.find((s) => s.label === null) ?? null,
+  )
 
   let activeBlock: BlockKey = $state('monthly')
   let selection: EditorSelection = $state(null)
   let historyOpen = $state(false)
+  let confirmingDiscard = $state(false)
+  let confirmingCommit = $state(false)
 
   let importBusy = $derived(
     $statusQuery.data?.busy === true && $statusQuery.data?.current_operation === 'budget_import',
   )
+
+  const queryClient = useQueryClient()
+
+  async function invalidatePlanState() {
+    await Promise.all([
+      queryClient.invalidateQueries({ queryKey: ['plan'] }),
+      queryClient.invalidateQueries({ queryKey: ['scenarios'] }),
+      queryClient.invalidateQueries({ queryKey: ['summary'] }),
+    ])
+  }
+
+  const startSandboxMutation = createMutation({
+    mutationFn: () => {
+      if (existingSandbox !== null) {
+        return Promise.resolve({ plan: { id: existingSandbox.id } } as ActivePlanResponse)
+      }
+      const activeId = $planQuery.data?.plan.id
+      if (activeId === undefined) {
+        return Promise.reject(new Error('Active plan not loaded'))
+      }
+      return createScenario({ from_plan_id: activeId })
+    },
+    onSuccess: async (response) => {
+      viewedScenarioId = response.plan.id
+      await invalidatePlanState()
+      toast.success(existingSandbox ? 'Resumed sandbox' : 'Sandbox created — try edits freely.')
+    },
+    onError: (error) => toast.error(getErrorMessage(error)),
+  })
+
+  const discardMutation = createMutation({
+    mutationFn: (id: number) => discardScenario(id),
+    onSuccess: async () => {
+      viewedScenarioId = null
+      confirmingDiscard = false
+      await invalidatePlanState()
+      toast.success('Sandbox discarded.')
+    },
+    onError: (error) => {
+      confirmingDiscard = false
+      toast.error(getErrorMessage(error))
+    },
+  })
+
+  const commitMutation = createMutation({
+    mutationFn: (id: number) => commitScenario(id),
+    onSuccess: async (response) => {
+      viewedScenarioId = null
+      confirmingCommit = false
+      await invalidatePlanState()
+      toast.success(`Sandbox committed — active plan now reflects your changes.`)
+    },
+    onError: (error) => {
+      confirmingCommit = false
+      toast.error(getErrorMessage(error))
+    },
+  })
+
+  let scenarioBusy = $derived(
+    $startSandboxMutation.isPending ||
+      $discardMutation.isPending ||
+      $commitMutation.isPending,
+  )
+
+  function whatIfButtonLabel() {
+    if ($startSandboxMutation.isPending) return 'Working…'
+    if (existingSandbox !== null && !inSandboxMode) return 'Continue sandbox'
+    return 'Try a what-if'
+  }
 </script>
 
-{#if $planQuery.isLoading}
+{#if displayedQueryLoading}
   <Skeleton class="h-[640px] rounded-2xl" />
-{:else if $planQuery.isError}
+{:else if displayedQueryError}
   <Card class="border-border/40 bg-card">
     <CardHeader><CardTitle>Planning is unavailable</CardTitle></CardHeader>
     <CardContent class="text-sm text-muted-foreground">
-      {$planQuery.error instanceof Error ? $planQuery.error.message : 'Could not load the active plan.'}
+      {displayedQueryError instanceof Error ? displayedQueryError.message : 'Could not load the plan.'}
       <p class="mt-3">If you have not imported a budget yet, run an import from the Operations page first.</p>
     </CardContent>
   </Card>
-{:else if $planQuery.data}
-  {@const data = $planQuery.data}
+{:else if displayedPlan}
+  {@const data = displayedPlan}
   <div class="space-y-6">
     {#if importBusy}
       <Card class="border-amber-500/30 bg-amber-500/[0.06]" role="status" aria-live="polite">
@@ -93,14 +234,55 @@
       </Card>
     {/if}
 
+    {#if inSandboxMode}
+      <Card class="border-amber-500/40 bg-amber-500/[0.08]" role="status" aria-live="polite">
+        <CardHeader class="space-y-2">
+          <div class="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+            <div class="flex items-start gap-2">
+              <Beaker class="mt-0.5 h-4 w-4 text-amber-100" />
+              <div>
+                <CardTitle class="text-amber-100">Sandbox mode</CardTitle>
+                <p class="text-sm text-amber-100/80">
+                  Edits go to a scenario, not the active plan. Commit to make it live, or discard to throw it away.
+                </p>
+              </div>
+            </div>
+            <div class="flex gap-2">
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={scenarioBusy}
+                onclick={() => (confirmingDiscard = true)}
+              >
+                <Trash2 class="h-4 w-4" />
+                Discard
+              </Button>
+              <Button
+                size="sm"
+                disabled={scenarioBusy || importBusy}
+                onclick={() => (confirmingCommit = true)}
+              >
+                <Check class="h-4 w-4" />
+                Commit
+              </Button>
+            </div>
+          </div>
+        </CardHeader>
+      </Card>
+    {/if}
+
     <Card class="border-border/40 bg-card">
       <CardHeader class="space-y-3">
         <div class="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
           <div>
-            <CardTitle>Planning — {data.plan.name}</CardTitle>
+            <CardTitle>
+              Planning — {data.plan.name}
+              {#if inSandboxMode}<span class="text-amber-200"> (sandbox)</span>{/if}
+            </CardTitle>
             <p class="mt-2 text-sm text-muted-foreground">
-              Active plan for {data.plan.plan_year}. Click any row to edit; use Add row to create a new
-              category in the current block.
+              {inSandboxMode
+                ? 'Sandboxed edits will not affect your active plan until you commit.'
+                : `Active plan for ${data.plan.plan_year}. Click any row to edit; use Add row to create a new category in the current block.`}
             </p>
           </div>
           <div class="text-right text-sm text-muted-foreground">
@@ -118,6 +300,17 @@
               {/each}
             </TabsList>
             <div class="flex items-center gap-2">
+              {#if !inSandboxMode}
+                <Button
+                  size="sm"
+                  variant="outline"
+                  disabled={scenarioBusy || importBusy}
+                  onclick={() => $startSandboxMutation.mutate()}
+                >
+                  <Beaker class="h-4 w-4" />
+                  {whatIfButtonLabel()}
+                </Button>
+              {/if}
               <Button
                 size="sm"
                 variant="outline"
@@ -173,3 +366,57 @@
     />
   </div>
 {/snippet}
+
+<DialogPrimitive.Root bind:open={() => confirmingDiscard, (next) => { if (!next) confirmingDiscard = false }}>
+  <DialogContent>
+    <DialogHeader>
+      <DialogTitle>Discard sandbox?</DialogTitle>
+      <DialogDescription>
+        Throws away all edits made in this sandbox. There is no undo. Use Save (in a future slice)
+        if you want to keep these changes as a named scenario.
+      </DialogDescription>
+    </DialogHeader>
+    <DialogFooter class="gap-2">
+      <Button variant="outline" disabled={$discardMutation.isPending} onclick={() => (confirmingDiscard = false)}>
+        Cancel
+      </Button>
+      <Button
+        variant="outline"
+        class="border-rose-500/40 text-rose-100 hover:bg-rose-500/10"
+        disabled={$discardMutation.isPending}
+        onclick={() => {
+          if (viewedScenarioId !== null) $discardMutation.mutate(viewedScenarioId)
+        }}
+      >
+        {$discardMutation.isPending ? 'Discarding…' : 'Discard sandbox'}
+      </Button>
+    </DialogFooter>
+  </DialogContent>
+</DialogPrimitive.Root>
+
+<DialogPrimitive.Root bind:open={() => confirmingCommit, (next) => { if (!next) confirmingCommit = false }}>
+  <DialogContent>
+    <DialogHeader>
+      <DialogTitle>Commit sandbox to active plan?</DialogTitle>
+      <DialogDescription>
+        Replaces your active plan with the sandbox's contents. The previous active plan is archived
+        and stays accessible from the database (it will appear in History once Phase 2.5c slice 2
+        ships per-plan history navigation). You can confirm before applying.
+      </DialogDescription>
+    </DialogHeader>
+    <DialogFooter class="gap-2">
+      <Button variant="outline" disabled={$commitMutation.isPending} onclick={() => (confirmingCommit = false)}>
+        Cancel
+      </Button>
+      <Button
+        disabled={$commitMutation.isPending}
+        onclick={() => {
+          if (viewedScenarioId !== null) $commitMutation.mutate(viewedScenarioId)
+        }}
+      >
+        {$commitMutation.isPending ? 'Committing…' : 'Commit to active'}
+      </Button>
+    </DialogFooter>
+  </DialogContent>
+</DialogPrimitive.Root>
+

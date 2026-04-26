@@ -157,3 +157,28 @@ for upstream requests to the SvelteKit container.
 encoding headers, so the safest contract is to avoid upstream compression at
 this hop. This keeps static assets usable for browsers without relying on
 optional httpx decoder support for every encoding Chrome advertises.
+
+## [2026-04-26] Scenario naming uses a separate `plans.label` column
+
+**Context**: Phase 2.5c needed to attach a user-facing name to Saved
+scenarios while leaving Sandboxes unnamed. The `plans` table already had a
+`name TEXT NOT NULL` column carrying the sheet/budget title for active and
+archived plans (e.g. `"2026 Budget"`). Reusing `name` for scenario naming
+would have either required relaxing the `NOT NULL` constraint (a shadow
+table rebuild) or overloading the column with placeholder strings for
+unnamed Sandboxes.
+**Decision**: Add a separate `label TEXT` (nullable) column. `label IS NULL`
+for Active / Archived rows and unnamed Sandboxes; `label` is set to the
+user-provided string for Saved scenarios. Two partial unique indexes:
+`idx_plans_one_sandbox` on `(status)` where `status='scenario' AND label IS
+NULL` (forcing at most one Sandbox), and `idx_plans_saved_label_unique` on
+`(label)` where `status='scenario' AND label IS NOT NULL`. Existing `name`
+keeps its current semantics — scenarios inherit it from the source plan so
+year/source context stays attached.
+**Rationale**: A nullable additive column dodges another shadow-table
+rebuild (Phase 2.5b just did one to widen `plans.status`). The two partial
+unique indexes encode the "Sandbox is one row, Saved is N named rows"
+invariant at the database level so the API can rely on `IntegrityError`
+for race-safe enforcement without app-side checks. Frontend sends
+`UNIQUE constraint failed: plans.status` and `plans.label` errors as
+human-readable `DataIntegrityError` messages from PlanService.

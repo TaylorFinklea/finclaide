@@ -166,6 +166,49 @@ def plan_revision_restore(revision_id: int):
     return jsonify({"plan": result})
 
 
+@ui_api.get("/scenarios")
+@require_same_origin
+def scenarios_list():
+    return jsonify({"scenarios": _container().plan.list_scenarios()})
+
+
+@ui_api.get("/scenarios/<int:scenario_id>")
+@require_same_origin
+def scenario_detail(scenario_id: int):
+    return jsonify(_container().plan.get_active_plan_by_id(scenario_id))
+
+
+@ui_api.post("/scenarios")
+@require_ui_write_request
+def scenario_create():
+    body = request.get_json(silent=True) or {}
+    if "from_plan_id" not in body:
+        return jsonify({"error": "from_plan_id is required"}), 400
+    from_plan_id = int(body["from_plan_id"])
+    label = body.get("label")
+    return jsonify(
+        _container().plan.create_scenario(from_plan_id, label=label)
+    ), 201
+
+
+@ui_api.post("/scenarios/<int:scenario_id>/commit")
+@require_ui_write_request
+def scenario_commit(scenario_id: int):
+    container = _container()
+    with container.operation_lock.guard("plan_commit"):
+        result = container.plan.commit_scenario(scenario_id)
+    return jsonify({"plan": result})
+
+
+@ui_api.delete("/scenarios/<int:scenario_id>")
+@require_same_origin
+def scenario_delete(scenario_id: int):
+    if request.headers.get("X-Finclaide-UI") != "1":
+        return jsonify({"error": "missing_ui_header"}), 403
+    _container().plan.discard_scenario(scenario_id)
+    return ("", 204)
+
+
 @ui_api.get("/transactions")
 @require_same_origin
 def transactions():

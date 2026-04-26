@@ -10,7 +10,67 @@ identical to `main`; safe to delete once origin is pushed.
 
 ## Last Session Summary
 
-**Date**: 2026-04-25 (Phase 2.5b — Versioning & rollback shipped end-to-end)
+**Date**: 2026-04-26 (Phase 2.5c Slice 1 — Sandbox in place)
+
+Brainstormed Phase 2.5c (what-if scenarios) end-to-end through the
+visual-companion mockups + Q&A. Locked the four-state cycle (Active /
+Sandbox / Saved / Projection) with explicit transitions, and shipped
+Slice 1 — Sandbox in place — in this session.
+
+- **Schema** — added nullable `plans.label` column (the existing
+  `plans.name` is `NOT NULL` and holds the sheet/budget title, so a
+  separate column carries the user-facing scenario name). Two partial
+  unique indexes enforce invariants: `idx_plans_one_sandbox` on
+  `(status)` where `status='scenario' AND label IS NULL` (at most one
+  Sandbox), and `idx_plans_saved_label_unique` on `(label)` where
+  `status='scenario' AND label IS NOT NULL` (no duplicate Saved
+  names). New `_migrate_plans_add_label_column` migration runs
+  between `_migrate_plans_status_widen` and `executescript(SCHEMA_SQL)`,
+  idempotent on fresh and already-migrated installs.
+- **PlanService** — new `create_scenario(from_plan_id, label=None)`
+  deep-copies plan + categories with fresh ids; passes label
+  through. `commit_scenario(scenario_id)` archives the prior-active
+  for the same year, snapshots both the prior-active and the new-
+  active states into `plan_revisions` with `source='migration'`, and
+  flips the scenario row to `status='active'` clearing the label.
+  `discard_scenario(scenario_id)` is a hard delete (CASCADE handles
+  categories + revisions). `list_scenarios()` returns scenario rows
+  newest-first with category counts.
+- **API** — five new `/ui-api/scenarios/...` routes: list, detail,
+  create (POST with `from_plan_id` + optional `label`), commit
+  (`operation_lock.guard("plan_commit")`), delete. Editing scenario
+  categories reuses the existing `PATCH /ui-api/plan/categories/{id}`
+  handler — scenarios are just plans with `status='scenario'`.
+- **Frontend** — `/planning` gains a "Try a what-if" / "Continue
+  sandbox" button next to History. Clicking creates (or resumes) a
+  sandbox; the page enters Sandbox mode in place via a viewedScenarioId
+  state + dynamic scenario plan query (writable opts pattern from the
+  History sheet). Sandbox banner with Discard / Commit confirmation
+  modals. Mutations invalidate `['plan']`, `['scenarios']`, and
+  `['summary']`.
+- **Tests** — 21 new pytest cases in `tests/test_scenarios.py` cover
+  schema migration (idempotent against a 2.5b-shape legacy fixture),
+  create lifecycle (sandbox vs saved, uniqueness rejections), list,
+  commit (archives prior active, records both attribution and
+  post-commit revisions, allows new sandbox after commit), and
+  discard. Full backend suite: 146/146.
+
+**Slice 1 commits this session:**
+- (this commit) Schema migration + PlanService scenario methods +
+  `/ui-api/scenarios/...` routes + `/planning` Sandbox mode UI +
+  21 pytest cases.
+- Spec at `docs/superpowers/specs/2026-04-26-phase-2.5c-scenarios-design.md`
+  (mirrors the brainstormed plan; covers slices 2–4 framework but no
+  implementation past slice 1).
+
+**Slice 1 status:** all unit tests pass; `npm run check` 0/0; `npx
+vitest run` 31/31 (no new vitest cases this slice — sandbox toggle
+test deferred to slice 2 alongside the Saved-scenarios surface).
+Manual smoke against `docker compose up` not yet performed for
+slice 1; the backend test covers migration + lifecycle, and the
+frontend renders cleanly under svelte-check.
+
+Earlier session (2026-04-25, Phase 2.5b shipped end-to-end):
 
 Built all three slices of Phase 2.5b on top of the spec at
 `.docs/ai/phases/2.5b-versioning-rollback.md`:
@@ -132,21 +192,26 @@ Prior migration commit log on `svelte-migration`:
 
 ## Build Status
 
-- Backend: `pytest` — 124/124 pass (was 101 pre-Phase-2.5b; +23 new
-  cases across `test_plan_revisions`, `test_api`, `test_budget_import`).
+- Backend: `pytest` — 146/146 pass (was 124 pre-Phase-2.5c-slice-1;
+  +21 in `test_scenarios.py` plus the moved file count for the
+  earlier label-migration regression case).
 - Frontend: `npm run check` — `svelte-check` 0/0; `npx vitest run` —
-  31/31 (was 28 pre-history-sheet; +3 new in
-  `routes/planning/history.test.ts`).
-- Docker / browser smoke not re-run for 2.5b — Slice 3 UI verified
-  through vitest only. Worth doing a manual `docker compose` smoke
-  before relying on the History flow in production.
+  31/31 (no new vitest in slice 1; planning page still 7/7 after
+  the Sandbox-mode rewrite).
+- Docker / browser smoke for 2.5c slice 1 not yet performed — covered
+  by unit tests + svelte-check. Worth a manual smoke before slice 2.
 
 ## Active Milestone
 
-Phase 2.5b (Versioning & rollback) is shipped end-to-end. Suggested
-next: spec / brainstorm Phase 2.5c (what-if scenarios) — the
-`'draft'/'scenario'` CHECK widening + `plan_revisions` schema we just
-landed are the foundation for branching.
+Phase 2.5c (What-if scenarios) — Slice 1 (Sandbox in place) shipped.
+Remaining slices per
+`docs/superpowers/specs/2026-04-26-phase-2.5c-scenarios-design.md`:
+
+- Slice 2 — Saved scenarios + `/scenarios` route (POST .../save,
+  POST .../fork, list page, name modal, fork-on-edit).
+- Slice 3 — Comparison view (per-category drilldown + 6mo sparklines;
+  `POST /ui-api/scenarios/compare`).
+- Slice 4 — Pure projection panel + projection→sandbox apply.
 
 ## Blockers
 
