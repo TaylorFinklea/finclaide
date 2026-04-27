@@ -22,10 +22,11 @@
 - [x] Phase 2.5c Slice 1 — Sandbox in place. DB migration + PlanService
       scenario methods + `/ui-api/scenarios/...` routes + Sandbox mode
       on `/planning` + 21 pytest cases.
-- [ ] Manual smoke of 2.5c Slice 1: `docker compose up`, click "Try a
-      what-if", edit a category in Sandbox, Commit, verify the active
-      plan shows the edit and History on the (now-archived) prior plan
-      has a `migration`-source revision summarized "Replaced by sandbox".
+- [x] Manual smoke of 2.5c Slice 1 — green via chrome-devtools.
+      Sandbox → edit Claude $200 → $250 → Commit. Active plan now
+      reflects the edit; prior active is archived with attribution
+      revision "Replaced by sandbox"; new active has the post-commit
+      "Committed sandbox to active" revision. Zero console errors.
 - [ ] Phase 2.5c Slice 2 — Saved scenarios + `/scenarios` route.
       `POST /ui-api/scenarios/{id}/save`, `/fork`. New route lists
       Saved with Open/Compare placeholders. Sandbox banner gains Save

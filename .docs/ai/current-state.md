@@ -66,9 +66,23 @@ Slice 1 — Sandbox in place — in this session.
 **Slice 1 status:** all unit tests pass; `npm run check` 0/0; `npx
 vitest run` 31/31 (no new vitest cases this slice — sandbox toggle
 test deferred to slice 2 alongside the Saved-scenarios surface).
-Manual smoke against `docker compose up` not yet performed for
-slice 1; the backend test covers migration + lifecycle, and the
-frontend renders cleanly under svelte-check.
+Manual smoke through chrome-devtools against `docker compose up`
+green end-to-end:
+- Created sandbox from active (plan 4 from plan 3); banner appeared
+  with Discard / Commit, page entered Sandbox mode in place, "Try a
+  what-if" hidden.
+- Edited Bills › 22nd - Claude $200 → $250 in sandbox; toast
+  "Category saved"; sandbox total bumped $10,688.13 → $10,738.13;
+  active plan unchanged.
+- Committed sandbox; confirmation modal asked first; on confirm the
+  banner disappeared, active plan now shows Claude $250, total
+  $10,738.13, source flipped to "edited".
+- DB inspection confirmed both attribution revisions: prior-active
+  (plan 3, now archived) got `migration` / "Replaced by sandbox";
+  new-active (plan 4) got `migration` / "Committed sandbox to active"
+  plus the pre-commit `ui_update` for the $200 → $250 edit.
+- History sheet on the new active shows both revisions newest-first.
+- Zero console errors, zero warnings throughout.
 
 Earlier session (2026-04-25, Phase 2.5b shipped end-to-end):
 
@@ -198,8 +212,9 @@ Prior migration commit log on `svelte-migration`:
 - Frontend: `npm run check` — `svelte-check` 0/0; `npx vitest run` —
   31/31 (no new vitest in slice 1; planning page still 7/7 after
   the Sandbox-mode rewrite).
-- Docker / browser smoke for 2.5c slice 1 not yet performed — covered
-  by unit tests + svelte-check. Worth a manual smoke before slice 2.
+- Docker / browser smoke for 2.5c slice 1: green end-to-end via
+  chrome-devtools — sandbox create, edit, commit verified; both
+  attribution revisions present in DB; zero console errors.
 
 ## Active Milestone
 
