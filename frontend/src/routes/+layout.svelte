@@ -11,6 +11,7 @@
     LayoutGrid,
     Pencil,
     ReceiptText,
+    Settings,
     TriangleAlert,
   } from 'lucide-svelte'
 
@@ -44,6 +45,7 @@
     { to: '/transactions', label: 'Transactions', icon: ReceiptText },
     { to: '/planning', label: 'Planning', icon: Pencil },
     { to: '/operations', label: 'Operations', icon: FolderSync },
+    { to: '/settings', label: 'Settings', icon: Settings },
   ] as const
 
   const statusQuery = createQuery(

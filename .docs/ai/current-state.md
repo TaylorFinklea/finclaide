@@ -10,7 +10,51 @@ identical to `main`; safe to delete once origin is pushed.
 
 ## Last Session Summary
 
-**Date**: 2026-04-28 (Theming Slice 1 — Tokyo Night default + theme infrastructure)
+**Date**: 2026-04-28 (Theming Slices 1 + 2 — full 12-theme catalogue + /settings)
+
+Slice 2 (settings page + 11 more themes + accent picker) shipped on
+top of Slice 1. The full 12-theme catalogue is now live, the
+`/settings` route hosts theme + accent UI, and the sidebar gained a
+Settings nav item.
+
+- `themes.ts` — added 11 more theme objects (Tokyo Night Storm,
+  Catppuccin Mocha + Latte, Nord, Dracula, One Dark, Rosé Pine,
+  Gruvbox Dark + Light, Kanagawa, Solarized Light). Each fills all
+  8 accent slots; where a source palette doesn't ship a slot
+  (Dracula's blue, Rosé Pine's green, Solarized's teal) the closest
+  authored hue is mapped in with a comment noting the choice.
+- `themes.css` — 12 hand-authored `[data-theme='...']` blocks
+  matching themes.ts exactly. The drift-check vitest grew from 25
+  cases to 300 (24 assertions × 12 themes + parity).
+- `app.html` — pre-hydrate THEMES map updated with all 12 ids and
+  their dark/light modes so the right class lands on first paint
+  before any JS hydrates.
+- `frontend/src/routes/settings/+page.svelte` — new route. Sections:
+  Theme grid (4×3 responsive cards with mini-swatch + name + ringed
+  current marker), All/Dark/Light filter chips, 8 accent swatches
+  using the *current theme's* native palette (clicking persists to
+  localStorage and rewrites --primary/--ring/--chart-1 instantly),
+  Preview card (primary button, outline button, accent link, body
+  text sample, 7-bar chart sample using --chart-1).
+- `+layout.svelte` — sidebar gains Settings nav item with the
+  Settings icon, after Operations.
+- `frontend/src/routes/settings/page.test.ts` — 5 vitest cases
+  (renders all 12, mode chip filters to light, theme card click
+  sets data-theme + writes localStorage, accent swatch click sets
+  --primary + persists, accent slot carries across theme switch).
+
+**Slices 1 + 2 status:** vitest 336/336 (was 31 pre-theming, +25
+slice 1 drift-check, +275 slice 2 drift expansion = 300, +5 slice 2
+page tests, +0 net for the rest). svelte-check 0/0. pytest 146/146
+untouched.
+
+Smoke (curl against docker stack): served HTML carries
+`data-theme="tokyo-night"` on `<html>`; production CSS bundle at
+`/_app/immutable/assets/0.RWfTfNqB.css` contains all 12
+`[data-theme='...']` blocks; `/settings` route returns 200.
+
+Earlier today (2026-04-28, Theming Slice 1 — Tokyo Night default +
+theme infrastructure)
 
 Brainstormed theming end-to-end via mockups + Q&A. Locked the design:
 mix of dark + light themes (12 total), `/settings` page hosts the

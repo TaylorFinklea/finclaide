@@ -15,7 +15,20 @@
       // applied on hydrate by theme-service.ts.
       ;(function () {
         try {
-          var THEMES = { 'tokyo-night': 'dark' }
+          var THEMES = {
+            'tokyo-night': 'dark',
+            'tokyo-night-storm': 'dark',
+            'catppuccin-mocha': 'dark',
+            'nord': 'dark',
+            'dracula': 'dark',
+            'one-dark': 'dark',
+            'rose-pine': 'dark',
+            'gruvbox-dark': 'dark',
+            'kanagawa': 'dark',
+            'catppuccin-latte': 'light',
+            'solarized-light': 'light',
+            'gruvbox-light': 'light',
+          }
           var t = localStorage.getItem('finclaide.theme')
           if (!t || !THEMES[t]) t = 'tokyo-night'
           var root = document.documentElement
