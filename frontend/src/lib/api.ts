@@ -618,6 +618,53 @@ export async function forkScenario(saved_id: number) {
   )
 }
 
+export const CompareRowSchema = z.object({
+  category_id: z.number(),
+  name: z.string(),
+  group: z.string(),
+  block: z.string(),
+  planned_active_milliunits: z.number(),
+  planned_scenario_milliunits: z.number(),
+  actuals_avg_6mo_milliunits: z.number(),
+  vs_actuals_milliunits: z.number(),
+  vs_active_milliunits: z.number(),
+  sparkline: z.array(z.number()).length(6),
+})
+
+export const CompareResponseSchema = z.object({
+  scenario_id: z.number(),
+  active_id: z.number(),
+  window: z.object({
+    since: z.string(),
+    through: z.string(),
+    months: z.array(z.string()).length(6),
+  }),
+  rows: z.array(CompareRowSchema),
+  totals: z.object({
+    planned_active_milliunits: z.number(),
+    planned_scenario_milliunits: z.number(),
+    vs_active_milliunits: z.number(),
+  }),
+})
+
+export type CompareRow = z.infer<typeof CompareRowSchema>
+export type CompareResponse = z.infer<typeof CompareResponseSchema>
+
+export async function compareScenario(scenario_id: number) {
+  return requestJson(
+    withBasePath('/ui-api/scenarios/compare'),
+    CompareResponseSchema,
+    {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Finclaide-UI': '1',
+      },
+      body: JSON.stringify({ scenario_id }),
+    },
+  )
+}
+
 export function getErrorMessage(error: unknown): string {
   if (error instanceof ApiError) {
     if (

@@ -3,10 +3,11 @@
   import { Tabs as TabsPrimitive } from 'bits-ui'
   import { createMutation, createQuery, useQueryClient } from '@tanstack/svelte-query'
   import { Dialog as DialogPrimitive } from 'bits-ui'
-  import { AlertTriangle, Beaker, Bookmark, Check, History, Plus, Trash2 } from 'lucide-svelte'
+  import { AlertTriangle, Beaker, Bookmark, Check, Columns2, History, Plus, Trash2 } from 'lucide-svelte'
   import { toast } from 'svelte-sonner'
   import { writable } from 'svelte/store'
 
+  import CompareDrawer from '$components/compare-drawer.svelte'
   import DataTable, { type DataTableColumn } from '$components/data-table.svelte'
   import PlanCategorySheet, { type EditorSelection } from '$components/plan-category-sheet.svelte'
   import PlanHistorySheet from '$components/plan-history-sheet.svelte'
@@ -137,6 +138,7 @@
   let confirmingSave = $state(false)
   let saveLabel: string = $state('')
   let saveError: string | null = $state(null)
+  let compareOpen = $state(false)
 
   function defaultSaveLabel(): string {
     const now = new Date()
@@ -288,6 +290,15 @@
                 size="sm"
                 variant="outline"
                 disabled={scenarioBusy}
+                onclick={() => (compareOpen = true)}
+              >
+                <Columns2 class="h-4 w-4" />
+                Compare
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={scenarioBusy}
                 onclick={() => {
                   saveLabel = displayedPlan?.plan.label ?? defaultSaveLabel()
                   saveError = null
@@ -385,6 +396,11 @@
       planId={data.plan.id}
       currentBlocks={data.blocks}
       onClose={() => (historyOpen = false)}
+    />
+    <CompareDrawer
+      open={compareOpen && inSandboxMode}
+      scenarioId={inSandboxMode ? data.plan.id : null}
+      onClose={() => (compareOpen = false)}
     />
   </div>
 {/if}

@@ -408,3 +408,177 @@ def test_fork_scenario_unknown_id_raises_not_found(tmp_path: Path):
     service, _ = _seeded_active(Database(tmp_path / "f.db"))
     with pytest.raises(NotFoundError):
         service.fork_scenario(99999)
+
+
+# --- compare_scenario -----------------------------------------------------
+
+
+def _seed_transaction(
+    database: Database,
+    *,
+    date: str,
+    group_name: str,
+    category_name: str,
+    amount_milliunits: int,
+) -> None:
+    """Insert a transaction tagged with a free-form group/category. Uses the
+    transactions table directly because the test fixtures don't go through
+    YNAB sync. Outflows should pass negative amount_milliunits."""
+    with database.connect() as connection:
+        connection.execute(
+            """
+            INSERT INTO transactions(
+                id, plan_id, account_id, date, payee_name, memo,
+                cleared, approved, category_id, category_name, group_name,
+                amount_milliunits, deleted, raw_json, updated_at
+            )
+            VALUES (?, 'plan-test', NULL, ?, 'Test', NULL,
+                    'cleared', 1, NULL, ?, ?, ?, 0, '{}', ?)
+            """,
+            (
+                f"txn-{date}-{category_name}",
+                date,
+                category_name,
+                group_name,
+                amount_milliunits,
+                "2026-04-01T00:00:00+00:00",
+            ),
+        )
+
+
+def test_compare_scenario_returns_six_month_window(tmp_path: Path):
+    service, plan_id = _seeded_active(Database(tmp_path / "f.db"))
+    sandbox = service.create_scenario(plan_id)
+    response = service.compare_scenario(sandbox["plan"]["id"])
+    assert len(response["window"]["months"]) == 6
+    assert response["scenario_id"] == sandbox["plan"]["id"]
+    assert response["active_id"] == plan_id
+
+
+def test_compare_scenario_aligns_planned_with_active(tmp_path: Path):
+    service, plan_id = _seeded_active(Database(tmp_path / "f.db"))
+    sandbox = service.create_scenario(plan_id)
+    sandbox_id = sandbox["plan"]["id"]
+    rent = next(c for c in sandbox["blocks"]["monthly"] if c["category_name"] == "Rent")
+    service.update_category(sandbox_id, rent["id"], {"planned_milliunits": 1500000})
+    response = service.compare_scenario(sandbox_id)
+    rent_row = next(
+        r for r in response["rows"] if r["name"].endswith("Rent")
+    )
+    assert rent_row["planned_active_milliunits"] == 1200000
+    assert rent_row["planned_scenario_milliunits"] == 1500000
+    assert rent_row["vs_active_milliunits"] == 300000
+
+
+def test_compare_scenario_includes_added_in_scenario_only(tmp_path: Path):
+    service, plan_id = _seeded_active(Database(tmp_path / "f.db"))
+    sandbox = service.create_scenario(plan_id)
+    sandbox_id = sandbox["plan"]["id"]
+    service.create_category(
+        sandbox_id,
+        {
+            "group_name": "Bills",
+            "category_name": "Internet",
+            "block": "monthly",
+            "planned_milliunits": 75000,
+        },
+    )
+    response = service.compare_scenario(sandbox_id)
+    new_row = next(r for r in response["rows"] if r["name"].endswith("Internet"))
+    assert new_row["planned_active_milliunits"] == 0
+    assert new_row["planned_scenario_milliunits"] == 75000
+
+
+def test_compare_scenario_includes_deleted_in_scenario_only(tmp_path: Path):
+    service, plan_id = _seeded_active(Database(tmp_path / "f.db"))
+    sandbox = service.create_scenario(plan_id)
+    sandbox_id = sandbox["plan"]["id"]
+    utilities = next(
+        c for c in sandbox["blocks"]["monthly"] if c["category_name"] == "Utilities"
+    )
+    service.delete_category(sandbox_id, utilities["id"])
+    response = service.compare_scenario(sandbox_id)
+    util_row = next(r for r in response["rows"] if r["name"].endswith("Utilities"))
+    assert util_row["planned_active_milliunits"] == 200000
+    assert util_row["planned_scenario_milliunits"] == 0
+
+
+def test_compare_scenario_handles_no_transactions(tmp_path: Path):
+    service, plan_id = _seeded_active(Database(tmp_path / "f.db"))
+    sandbox = service.create_scenario(plan_id)
+    response = service.compare_scenario(sandbox["plan"]["id"])
+    for row in response["rows"]:
+        assert row["sparkline"] == [0, 0, 0, 0, 0, 0]
+        assert row["actuals_avg_6mo_milliunits"] == 0
+
+
+def test_compare_scenario_sparkline_aggregates_transactions(tmp_path: Path):
+    db = Database(tmp_path / "f.db")
+    service, plan_id = _seeded_active(db)
+    sandbox = service.create_scenario(plan_id)
+
+    # Compute the 6 in-window months from today and seed one outflow per
+    # month, varying the magnitude so we can assert order. We feed the
+    # _n_months_ago helper directly to mirror compare_scenario's window.
+    from finclaide.analytics import _month_reference, _n_months_ago
+
+    reference = _month_reference(None)
+    months = [_n_months_ago(i, reference) for i in range(6, 0, -1)]
+    for index, month in enumerate(months):
+        # 100, 200, 300, 400, 500, 600 thousand milliunits respectively.
+        amount = -1 * (index + 1) * 100000
+        _seed_transaction(
+            db,
+            date=f"{month}-15",
+            group_name="Bills",
+            category_name="Rent",
+            amount_milliunits=amount,
+        )
+
+    response = service.compare_scenario(sandbox["plan"]["id"])
+    rent_row = next(r for r in response["rows"] if r["name"].endswith("Rent"))
+    assert rent_row["sparkline"] == [100000, 200000, 300000, 400000, 500000, 600000]
+    assert rent_row["actuals_avg_6mo_milliunits"] == sum(rent_row["sparkline"]) // 6
+
+
+def test_compare_scenario_no_active_for_year_raises_data_integrity(tmp_path: Path):
+    service, plan_id = _seeded_active(Database(tmp_path / "f.db"))
+    sandbox = service.create_scenario(plan_id)
+    sandbox_id = sandbox["plan"]["id"]
+    # Archive the active so there's no same-year active.
+    with service.database.connect() as connection:
+        connection.execute(
+            "UPDATE plans SET status = 'archived' WHERE id = ?", (plan_id,)
+        )
+    with pytest.raises(DataIntegrityError, match="No active plan"):
+        service.compare_scenario(sandbox_id)
+
+
+def test_compare_scenario_unknown_id_raises_not_found(tmp_path: Path):
+    service, _ = _seeded_active(Database(tmp_path / "f.db"))
+    with pytest.raises(NotFoundError):
+        service.compare_scenario(99999)
+
+
+def test_compare_scenario_active_plan_id_raises_not_found(tmp_path: Path):
+    service, plan_id = _seeded_active(Database(tmp_path / "f.db"))
+    with pytest.raises(NotFoundError):
+        service.compare_scenario(plan_id)
+
+
+def test_compare_scenario_totals_match_row_sums(tmp_path: Path):
+    service, plan_id = _seeded_active(Database(tmp_path / "f.db"))
+    sandbox = service.create_scenario(plan_id)
+    sandbox_id = sandbox["plan"]["id"]
+    rent = next(c for c in sandbox["blocks"]["monthly"] if c["category_name"] == "Rent")
+    service.update_category(sandbox_id, rent["id"], {"planned_milliunits": 1500000})
+    response = service.compare_scenario(sandbox_id)
+    assert response["totals"]["planned_active_milliunits"] == sum(
+        r["planned_active_milliunits"] for r in response["rows"]
+    )
+    assert response["totals"]["planned_scenario_milliunits"] == sum(
+        r["planned_scenario_milliunits"] for r in response["rows"]
+    )
+    assert response["totals"]["vs_active_milliunits"] == sum(
+        r["vs_active_milliunits"] for r in response["rows"]
+    )

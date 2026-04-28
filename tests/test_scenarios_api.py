@@ -148,3 +148,41 @@ def test_fork_endpoint_404_when_not_saved(app_factory, ui_headers):
         headers=ui_headers,
     )
     assert response.status_code == 404
+
+
+def test_compare_endpoint_returns_payload(app_factory, ui_headers):
+    app = app_factory()
+    client = _seed_active_plan(app)
+    active_id = _active_plan_id(client, ui_headers)
+    sandbox_id = _create_sandbox(client, ui_headers, active_id)
+
+    response = client.post(
+        "/ui-api/scenarios/compare",
+        json={"scenario_id": sandbox_id},
+        headers=ui_headers,
+    )
+    assert response.status_code == 200, response.get_json()
+    payload = response.get_json()
+    assert payload["scenario_id"] == sandbox_id
+    assert payload["active_id"] == active_id
+    assert len(payload["window"]["months"]) == 6
+    assert "rows" in payload
+    assert "totals" in payload
+
+
+def test_compare_endpoint_400_for_missing_scenario_id(app_factory, ui_headers):
+    app = app_factory()
+    client = _seed_active_plan(app)
+    response = client.post("/ui-api/scenarios/compare", json={}, headers=ui_headers)
+    assert response.status_code == 400
+
+
+def test_compare_endpoint_404_for_unknown_scenario(app_factory, ui_headers):
+    app = app_factory()
+    client = _seed_active_plan(app)
+    response = client.post(
+        "/ui-api/scenarios/compare",
+        json={"scenario_id": 99999},
+        headers=ui_headers,
+    )
+    assert response.status_code == 404

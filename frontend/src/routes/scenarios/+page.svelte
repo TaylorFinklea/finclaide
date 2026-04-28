@@ -11,6 +11,7 @@
   import CardContent from '$components/ui/card-content.svelte'
   import CardHeader from '$components/ui/card-header.svelte'
   import CardTitle from '$components/ui/card-title.svelte'
+  import CompareDrawer from '$components/compare-drawer.svelte'
   import DialogContent from '$components/ui/dialog-content.svelte'
   import DialogDescription from '$components/ui/dialog-description.svelte'
   import DialogFooter from '$components/ui/dialog-footer.svelte'
@@ -96,6 +97,7 @@
 
   let confirmingCommitFor: Target | null = $state(null)
   let confirmingDeleteFor: Target | null = $state(null)
+  let compareTargetId: number | null = $state(null)
 
   // Auto-park modal: opens when the user clicks Open on a saved row while
   // a Sandbox already exists. parkLabel defaults to today's untitled name.
@@ -240,8 +242,7 @@
               <Button
                 size="sm"
                 variant="outline"
-                disabled
-                title="Comparison drawer ships in slice 3"
+                onclick={() => (compareTargetId = s.id)}
               >
                 Compare
               </Button>
@@ -373,6 +374,12 @@
     </DialogFooter>
   </DialogContent>
 </DialogPrimitive.Root>
+
+<CompareDrawer
+  open={compareTargetId !== null}
+  scenarioId={compareTargetId}
+  onClose={() => (compareTargetId = null)}
+/>
 
 <!-- Delete confirm -->
 <DialogPrimitive.Root

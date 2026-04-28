@@ -221,6 +221,16 @@ def scenario_fork(scenario_id: int):
     return jsonify(result), 201
 
 
+@ui_api.post("/scenarios/compare")
+@require_ui_write_request
+def scenario_compare():
+    body = request.get_json(silent=True) or {}
+    if "scenario_id" not in body:
+        return jsonify({"error": "scenario_id is required"}), 400
+    scenario_id = int(body["scenario_id"])
+    return jsonify(_container().plan.compare_scenario(scenario_id))
+
+
 @ui_api.delete("/scenarios/<int:scenario_id>")
 @require_same_origin
 def scenario_delete(scenario_id: int):

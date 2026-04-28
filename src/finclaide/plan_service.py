@@ -611,6 +611,76 @@ class PlanService:
                 )
         return self.create_scenario(from_plan_id=saved_id, label=None)
 
+    def compare_scenario(self, scenario_id: int) -> dict[str, Any]:
+        """Per-category comparison of a scenario vs the same plan_year's
+        active plan, with a 6-month actuals window (oldest first).
+
+        The window is six fully-closed months ending the month before
+        today (UTC), so partial-month current data does not skew the
+        comparison. Returns rows for every category present in either
+        plan; a category in scenario only has planned_active=0, and
+        vice versa."""
+        from finclaide.analytics import _month_reference, _n_months_ago
+
+        with self.database.connect() as connection:
+            scenario = connection.execute(
+                "SELECT id, plan_year, status FROM plans WHERE id = ? AND status = 'scenario'",
+                (scenario_id,),
+            ).fetchone()
+            if scenario is None:
+                raise NotFoundError(f"Scenario {scenario_id} not found.")
+            plan_year = int(scenario["plan_year"])
+            active_row = connection.execute(
+                "SELECT id FROM plans WHERE status = 'active' AND plan_year = ?",
+                (plan_year,),
+            ).fetchone()
+            if active_row is None:
+                raise DataIntegrityError(
+                    f"No active plan for plan_year {plan_year}; cannot compare."
+                )
+            active_id = int(active_row["id"])
+
+            # Window: six fully-closed months ending the month before today.
+            reference = _month_reference(None)  # first day of current month
+            since_label = _n_months_ago(6, reference)
+            since_iso = f"{since_label}-01"
+            through_iso = reference.isoformat()  # exclusive upper bound
+            months_list = [
+                _n_months_ago(i, reference) for i in range(6, 0, -1)
+            ]  # ['YYYY-MM' x 6, oldest first]
+
+            active_snapshot = read_plan_categories_snapshot(connection, active_id)
+            scenario_snapshot = read_plan_categories_snapshot(connection, scenario_id)
+            actuals = _category_monthly_spend(connection, since_iso, through_iso)
+
+        rows = _build_compare_rows(
+            active_snapshot=active_snapshot,
+            scenario_snapshot=scenario_snapshot,
+            actuals=actuals,
+            months_list=months_list,
+        )
+
+        totals = {
+            "planned_active_milliunits": sum(
+                r["planned_active_milliunits"] for r in rows
+            ),
+            "planned_scenario_milliunits": sum(
+                r["planned_scenario_milliunits"] for r in rows
+            ),
+            "vs_active_milliunits": sum(r["vs_active_milliunits"] for r in rows),
+        }
+        return {
+            "scenario_id": scenario_id,
+            "active_id": active_id,
+            "window": {
+                "since": since_label,
+                "through": reference.strftime("%Y-%m"),
+                "months": months_list,
+            },
+            "rows": rows,
+            "totals": totals,
+        }
+
     def get_active_plan_by_id(self, plan_id: int) -> dict[str, Any]:
         with self.database.connect() as connection:
             plan_row = connection.execute(
@@ -660,6 +730,113 @@ class PlanService:
             snapshot=snapshot,
             when=when,
         )
+
+
+def _category_monthly_spend(
+    connection,
+    since_iso: str,
+    through_iso: str,
+) -> dict[tuple[str, str], dict[str, int]]:
+    """Returns {(group, category): {YYYY-MM: spend_milliunits}} for
+    transactions in [since_iso, through_iso). Spend = sum of negative
+    amount magnitudes (i.e. outflows). The COALESCE on c.group_name and
+    c.name handles transactions whose category was renamed or deleted."""
+    rows = connection.execute(
+        """
+        SELECT
+          COALESCE(c.group_name, t.group_name) AS group_name,
+          COALESCE(c.name, t.category_name)    AS category_name,
+          substr(t.date, 1, 7)                  AS month,
+          SUM(CASE WHEN t.amount_milliunits < 0
+                   THEN -1 * t.amount_milliunits ELSE 0 END) AS spend_milliunits
+        FROM transactions t
+        LEFT JOIN categories c ON c.id = t.category_id
+        WHERE t.deleted = 0 AND t.date >= ? AND t.date < ?
+        GROUP BY 1, 2, 3
+        """,
+        (since_iso, through_iso),
+    ).fetchall()
+    out: dict[tuple[str, str], dict[str, int]] = {}
+    for row in rows:
+        key = (row["group_name"] or "", row["category_name"] or "")
+        out.setdefault(key, {})[row["month"]] = int(row["spend_milliunits"])
+    return out
+
+
+def _build_compare_rows(
+    *,
+    active_snapshot: list[dict[str, Any]],
+    scenario_snapshot: list[dict[str, Any]],
+    actuals: dict[tuple[str, str], dict[str, int]],
+    months_list: list[str],
+) -> list[dict[str, Any]]:
+    """Align active + scenario plans on (group_name, category_name) and
+    produce one comparison row per category that appears in either plan.
+
+    Each output row is a dict with these exact keys:
+
+      category_id: int
+        scenario row id if the category exists in scenario, otherwise the
+        active row id. Drives stable selection in the frontend table.
+      name: str
+        f"{group_name} / {category_name}" — display label.
+      group: str
+      block: str
+        block name from whichever plan has the category. Prefer scenario's
+        block when both have it (a category's block can change in a
+        scenario edit).
+      planned_active_milliunits: int   (0 if absent in active)
+      planned_scenario_milliunits: int (0 if absent in scenario)
+      actuals_avg_6mo_milliunits: int  (sum of monthly buckets / 6)
+      vs_actuals_milliunits: int       (planned_scenario - actuals_avg)
+      vs_active_milliunits: int        (planned_scenario - planned_active)
+      sparkline: list[int]             (6 monthly buckets, oldest first;
+                                        zero where actuals missing)
+
+    Rows are sorted by (block, group_name, category_name) for a stable
+    backend order; the frontend re-sorts client-side.
+
+    Indexing tip: build (group_name, category_name) -> row maps for the
+    two snapshots, take the union of keys, and iterate.
+    """
+    active_by_key: dict[tuple[str, str], dict[str, Any]] = {
+        (row["group_name"], row["category_name"]): row for row in active_snapshot
+    }
+    scenario_by_key: dict[tuple[str, str], dict[str, Any]] = {
+        (row["group_name"], row["category_name"]): row for row in scenario_snapshot
+    }
+    keys = set(active_by_key) | set(scenario_by_key)
+
+    rows: list[dict[str, Any]] = []
+    for key in keys:
+        active_row = active_by_key.get(key)
+        scenario_row = scenario_by_key.get(key)
+        # Prefer scenario's row id + block when both exist; fall back to active.
+        chosen = scenario_row or active_row
+        assert chosen is not None  # at least one is non-None by union construction
+        sparkline = [actuals.get(key, {}).get(month, 0) for month in months_list]
+        actuals_avg = sum(sparkline) // 6
+        planned_active = (
+            int(active_row["planned_milliunits"]) if active_row else 0
+        )
+        planned_scenario = (
+            int(scenario_row["planned_milliunits"]) if scenario_row else 0
+        )
+        rows.append({
+            "category_id": int(chosen["id"]),
+            "name": f"{chosen['group_name']} / {chosen['category_name']}",
+            "group": chosen["group_name"],
+            "block": chosen["block"],
+            "planned_active_milliunits": planned_active,
+            "planned_scenario_milliunits": planned_scenario,
+            "actuals_avg_6mo_milliunits": actuals_avg,
+            "vs_actuals_milliunits": planned_scenario - actuals_avg,
+            "vs_active_milliunits": planned_scenario - planned_active,
+            "sparkline": sparkline,
+        })
+
+    rows.sort(key=lambda r: (r["block"], r["group"], r["name"]))
+    return rows
 
 
 def read_plan_categories_snapshot(connection, plan_id: int) -> list[dict[str, Any]]:
