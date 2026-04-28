@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" data-theme="tokyo-night" class="dark">
   <head>
     <meta charset="utf-8" />
     <link rel="icon" type="image/svg+xml" href="%sveltekit.assets%/favicon.svg" />
@@ -8,6 +8,28 @@
       name="description"
       content="Finclaide financial command dashboard for budget imports, YNAB sync, and reconciliation."
     />
+    <script>
+      // Pre-hydrate theme application. Runs before SvelteKit hydrates so the
+      // first paint matches the user's stored preference (no flash). The
+      // accent slot only affects --primary / --ring / --chart-1 which are
+      // applied on hydrate by theme-service.ts.
+      ;(function () {
+        try {
+          var THEMES = { 'tokyo-night': 'dark' }
+          var t = localStorage.getItem('finclaide.theme')
+          if (!t || !THEMES[t]) t = 'tokyo-night'
+          var root = document.documentElement
+          root.setAttribute('data-theme', t)
+          var mode = THEMES[t]
+          root.classList.toggle('dark', mode === 'dark')
+          root.classList.toggle('light', mode === 'light')
+          root.style.colorScheme = mode
+        } catch (e) {
+          // Storage blocked or unavailable — the hardcoded data-theme on <html>
+          // means the default still renders.
+        }
+      })()
+    </script>
     %sveltekit.head%
   </head>
   <body data-sveltekit-preload-data="hover">

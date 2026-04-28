@@ -17,7 +17,22 @@
 
 ## Soon
 
-- [x] Phase 2.5c — Brainstorm + spec (this session, mockup-driven).
+- [x] Theming — Brainstorm + spec at
+      `docs/superpowers/specs/2026-04-28-theming-design.md`.
+- [x] Theming Slice 1 — Tokyo Night default + theme infrastructure
+      (types, themes.ts, theme-service, themes.css, app.html
+      pre-hydrate script, app.css tokenization, drift-check vitest).
+- [ ] Theming Slice 2 — `/settings` page + 11 more themes + accent
+      picker. Theme grid (4×3 cards with mini swatches), mode filter
+      chips, 8 accent swatches per theme, live preview card. Sidebar
+      gains "Settings" link. theme-service exposes `setTheme()` +
+      `setAccent()` (already implemented in slice 1; just wire UI).
+      Vitest cases for click-to-apply + theme list parity.
+- [ ] Theming Slice 3 — polish: per-theme `--card-elevated` /
+      `--surface-inset` tuning; per-theme body gradient (currently
+      single hardcoded); WCAG AA contrast vitest case across every
+      theme × every fg-on-bg combo; manual smoke of all 12 themes.
+- [x] Phase 2.5c — Brainstorm + spec (earlier session, mockup-driven).
       Spec at `docs/superpowers/specs/2026-04-26-phase-2.5c-scenarios-design.md`.
 - [x] Phase 2.5c Slice 1 — Sandbox in place. DB migration + PlanService
       scenario methods + `/ui-api/scenarios/...` routes + Sandbox mode

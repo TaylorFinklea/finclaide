@@ -10,7 +10,46 @@ identical to `main`; safe to delete once origin is pushed.
 
 ## Last Session Summary
 
-**Date**: 2026-04-26 (Phase 2.5c Slice 1 — Sandbox in place)
+**Date**: 2026-04-28 (Theming Slice 1 — Tokyo Night default + theme infrastructure)
+
+Brainstormed theming end-to-end via mockups + Q&A. Locked the design:
+mix of dark + light themes (12 total), `/settings` page hosts the
+selector, accent picker uses each theme's native 8-slot palette
+(slot name carried across theme switches), CSS-var runtime swap with
+localStorage persistence. Spec at
+`docs/superpowers/specs/2026-04-28-theming-design.md`.
+
+Shipped Slice 1 (infrastructure + Tokyo Night default):
+
+- `frontend/src/lib/theme/{types.ts, themes.ts, theme-service.ts,
+  themes.test.ts}` — Theme/ThemeTokens/AccentSlot types, Tokyo Night
+  TS object, `setTheme()/setAccent()/initThemeOnHydrate()` Svelte
+  store, drift-check vitest with 25 cases asserting themes.ts ↔
+  themes.css parity.
+- `frontend/src/themes.css` — `[data-theme='tokyo-night']` block.
+- `frontend/src/app.html` — `<html data-theme="tokyo-night"
+  class="dark">`; inline pre-hydrate `<script>` reads
+  `localStorage.finclaide.theme` and applies the right `data-theme`
+  + `dark`/`light` class before SvelteKit hydrates.
+- `frontend/src/app.css` — dropped the inline `:root` token block
+  (now lives per-theme in themes.css), tokenized body gradient via
+  `--body-gradient`, imports `./themes.css`.
+- `frontend/src/routes/+layout.svelte` — calls
+  `initThemeOnHydrate()` on mount so accent slot from localStorage
+  applies (only matters once Slice 2 ships the picker).
+- Old custom palette retired. Tokyo Night is now the default.
+
+**Slice 1 status:** vitest 56/56 (was 31, +25 from drift-check);
+`npm run check` 0/0; backend untouched (pytest stays 146/146).
+Smoke via curl + production-bundle inspection: served HTML has
+`data-theme="tokyo-night"` on `<html>`, bundle CSS at
+`/_app/immutable/assets/0.*.css` contains the full Tokyo Night
+block with all expected tokens (#1a1b26 bg, #c0caf5 fg,
+--body-gradient wired). Browser visual smoke deferred — chrome-
+devtools MCP disconnected mid-session, will visual-verify on
+slice 2 build.
+
+Earlier session (2026-04-26, Phase 2.5c Slice 1 — Sandbox in place)
 
 Brainstormed Phase 2.5c (what-if scenarios) end-to-end through the
 visual-companion mockups + Q&A. Locked the four-state cycle (Active /

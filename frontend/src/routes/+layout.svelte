@@ -20,9 +20,14 @@
   import { formatMonthLabel, formatRunAt } from '$lib/format'
   import { withBasePath } from '$lib/runtime'
   import { monthStore } from '$lib/stores/month.svelte'
+  import { initThemeOnHydrate } from '$lib/theme/theme-service'
   import { cn } from '$lib/utils'
 
   let { children } = $props()
+
+  $effect(() => {
+    if (browser) initThemeOnHydrate()
+  })
 
   const queryClient = new QueryClient({
     defaultOptions: {

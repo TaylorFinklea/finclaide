@@ -5,6 +5,7 @@
 @import '@fontsource/ibm-plex-mono/latin-500.css';
 @import 'tailwindcss';
 @import 'tw-animate-css';
+@import './themes.css';
 
 @custom-variant dark (&:is(.dark *));
 
@@ -43,31 +44,9 @@
 }
 
 :root {
-  --background: oklch(0.14 0.015 250);
-  --foreground: oklch(0.94 0.01 95);
-  --card: oklch(0.16 0.015 250);
-  --card-foreground: oklch(0.94 0.01 95);
-  --popover: oklch(0.17 0.018 250);
-  --popover-foreground: oklch(0.94 0.01 95);
-  --primary: oklch(0.74 0.14 145);
-  --primary-foreground: oklch(0.15 0.02 250);
-  --secondary: oklch(0.26 0.02 250);
-  --secondary-foreground: oklch(0.94 0.01 95);
-  --muted: oklch(0.20 0.015 250);
-  --muted-foreground: oklch(0.72 0.02 250);
-  --accent: oklch(0.23 0.024 245);
-  --accent-foreground: oklch(0.94 0.01 95);
-  --destructive: oklch(0.64 0.18 28);
-  --border: oklch(0.25 0.015 250);
-  --input: oklch(0.23 0.02 250);
-  --ring: oklch(0.74 0.14 145);
-  --chart-1: oklch(0.68 0.12 245);
-  --chart-2: oklch(0.72 0.14 160);
-  --chart-3: oklch(0.72 0.10 85);
-  --chart-4: oklch(0.66 0.14 28);
-  --chart-5: oklch(0.74 0.14 145);
-  --card-elevated: oklch(0.19 0.018 250);
-  --surface-inset: oklch(0.13 0.012 250);
+  /* card-foreground inherits foreground unless a theme overrides it; the
+     existing dashboard relies on a single foreground color across surfaces. */
+  --card-foreground: var(--foreground);
   --radius: 0.75rem;
 }
 
@@ -75,15 +54,9 @@
   border-color: var(--border);
 }
 
-html {
-  color-scheme: dark;
-}
-
 body {
   min-height: 100vh;
-  background:
-    radial-gradient(ellipse at top left, oklch(0.20 0.04 160 / 0.5), transparent 40%),
-    linear-gradient(180deg, oklch(0.13 0.015 250), oklch(0.11 0.01 250));
+  background: var(--body-gradient);
   color: var(--foreground);
   font-family: var(--font-sans);
   text-rendering: optimizeLegibility;
