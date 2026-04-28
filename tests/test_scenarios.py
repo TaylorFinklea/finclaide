@@ -312,3 +312,99 @@ def test_editing_sandbox_creates_revision_tagged_with_sandbox_id(tmp_path: Path)
     active_revisions = service.list_revisions(plan_id)
     assert any(rev["source"] == "ui_update" for rev in sandbox_revisions)
     assert all(rev["source"] != "ui_update" for rev in active_revisions)
+
+
+# --- save_scenario --------------------------------------------------------
+
+
+def test_save_scenario_promotes_sandbox_with_label(tmp_path: Path):
+    service, plan_id = _seeded_active(Database(tmp_path / "f.db"))
+    sandbox = service.create_scenario(plan_id)
+    sandbox_id = sandbox["plan"]["id"]
+    saved = service.save_scenario(sandbox_id, "Summer budget")
+    assert saved["plan"]["id"] == sandbox_id
+    assert saved["plan"]["label"] == "Summer budget"
+    listed = service.list_scenarios()
+    assert any(s["id"] == sandbox_id and s["label"] == "Summer budget" for s in listed)
+
+
+def test_save_scenario_rejects_blank_label(tmp_path: Path):
+    service, plan_id = _seeded_active(Database(tmp_path / "f.db"))
+    sandbox = service.create_scenario(plan_id)
+    with pytest.raises(DataIntegrityError):
+        service.save_scenario(sandbox["plan"]["id"], "   ")
+
+
+def test_save_scenario_rejects_duplicate_label(tmp_path: Path):
+    service, plan_id = _seeded_active(Database(tmp_path / "f.db"))
+    service.create_scenario(plan_id, label="Summer budget")
+    sandbox = service.create_scenario(plan_id)
+    with pytest.raises(DataIntegrityError, match="Summer budget"):
+        service.save_scenario(sandbox["plan"]["id"], "Summer budget")
+
+
+def test_save_scenario_idempotent_with_same_label_on_same_id(tmp_path: Path):
+    service, plan_id = _seeded_active(Database(tmp_path / "f.db"))
+    sandbox = service.create_scenario(plan_id)
+    service.save_scenario(sandbox["plan"]["id"], "Summer budget")
+    again = service.save_scenario(sandbox["plan"]["id"], "Summer budget")
+    assert again["plan"]["label"] == "Summer budget"
+
+
+def test_save_scenario_unknown_id_raises_not_found(tmp_path: Path):
+    service, _ = _seeded_active(Database(tmp_path / "f.db"))
+    with pytest.raises(NotFoundError):
+        service.save_scenario(99999, "Summer budget")
+
+
+def test_save_scenario_active_plan_id_raises_not_found(tmp_path: Path):
+    service, plan_id = _seeded_active(Database(tmp_path / "f.db"))
+    with pytest.raises(NotFoundError):
+        service.save_scenario(plan_id, "Summer budget")
+
+
+# --- fork_scenario --------------------------------------------------------
+
+
+def test_fork_scenario_returns_new_sandbox(tmp_path: Path):
+    service, plan_id = _seeded_active(Database(tmp_path / "f.db"))
+    saved = service.create_scenario(plan_id, label="Summer budget")
+    forked = service.fork_scenario(saved["plan"]["id"])
+    assert forked["plan"]["id"] != saved["plan"]["id"]
+    assert forked["plan"]["status"] == "scenario"
+    assert forked["plan"]["label"] is None
+    assert forked["plan"]["plan_year"] == saved["plan"]["plan_year"]
+    # Categories deep-copied with fresh ids
+    forked_cats = forked["blocks"]["monthly"]
+    saved_cats = saved["blocks"]["monthly"]
+    assert {(c["group_name"], c["category_name"]) for c in forked_cats} == {
+        (c["group_name"], c["category_name"]) for c in saved_cats
+    }
+    assert {c["id"] for c in forked_cats}.isdisjoint({c["id"] for c in saved_cats})
+
+
+def test_fork_scenario_when_sandbox_exists_raises_data_integrity(tmp_path: Path):
+    service, plan_id = _seeded_active(Database(tmp_path / "f.db"))
+    saved = service.create_scenario(plan_id, label="Summer budget")
+    service.create_scenario(plan_id)  # existing sandbox
+    with pytest.raises(DataIntegrityError, match="sandbox already exists"):
+        service.fork_scenario(saved["plan"]["id"])
+
+
+def test_fork_scenario_rejects_active_plan(tmp_path: Path):
+    service, plan_id = _seeded_active(Database(tmp_path / "f.db"))
+    with pytest.raises(NotFoundError):
+        service.fork_scenario(plan_id)
+
+
+def test_fork_scenario_rejects_unsaved_sandbox(tmp_path: Path):
+    service, plan_id = _seeded_active(Database(tmp_path / "f.db"))
+    sandbox = service.create_scenario(plan_id)
+    with pytest.raises(NotFoundError):
+        service.fork_scenario(sandbox["plan"]["id"])
+
+
+def test_fork_scenario_unknown_id_raises_not_found(tmp_path: Path):
+    service, _ = _seeded_active(Database(tmp_path / "f.db"))
+    with pytest.raises(NotFoundError):
+        service.fork_scenario(99999)

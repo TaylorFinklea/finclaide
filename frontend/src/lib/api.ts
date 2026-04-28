@@ -584,6 +584,40 @@ export async function discardScenario(scenario_id: number): Promise<void> {
   }
 }
 
+export const ScenarioSaveResponseSchema = z.object({
+  plan: ActivePlanResponseSchema,
+})
+
+export async function saveScenario(scenario_id: number, label: string) {
+  return requestJson(
+    withBasePath(`/ui-api/scenarios/${scenario_id}/save`),
+    ScenarioSaveResponseSchema,
+    {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Finclaide-UI': '1',
+      },
+      body: JSON.stringify({ label }),
+    },
+  )
+}
+
+export async function forkScenario(saved_id: number) {
+  return requestJson(
+    withBasePath(`/ui-api/scenarios/${saved_id}/fork`),
+    ActivePlanResponseSchema,
+    {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Finclaide-UI': '1',
+      },
+      body: JSON.stringify({}),
+    },
+  )
+}
+
 export function getErrorMessage(error: unknown): string {
   if (error instanceof ApiError) {
     if (

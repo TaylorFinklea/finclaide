@@ -553,6 +553,64 @@ class PlanService:
                 raise NotFoundError(f"Scenario {scenario_id} not found.")
             connection.execute("DELETE FROM plans WHERE id = ?", (scenario_id,))
 
+    def save_scenario(self, scenario_id: int, label: str) -> dict[str, Any]:
+        """Promote a Sandbox to a Saved scenario by setting `plans.label`.
+
+        Idempotent: re-saving the same scenario with its existing label is a
+        no-op write. The unique partial index `idx_plans_saved_label_unique`
+        provides race safety; we pre-check for collisions to surface a
+        friendly DataIntegrityError instead of a raw SQLite error."""
+        normalized = _strip_required(label, "label")
+        now = utc_now()
+        try:
+            with self.database.connect() as connection:
+                scenario = connection.execute(
+                    "SELECT id, label FROM plans WHERE id = ? AND status = 'scenario'",
+                    (scenario_id,),
+                ).fetchone()
+                if scenario is None:
+                    raise NotFoundError(f"Scenario {scenario_id} not found.")
+                collision = connection.execute(
+                    """
+                    SELECT 1 FROM plans
+                    WHERE status = 'scenario' AND label = ? AND id != ?
+                    """,
+                    (normalized, scenario_id),
+                ).fetchone()
+                if collision is not None:
+                    raise DataIntegrityError(
+                        f"A saved scenario named {normalized!r} already exists."
+                    )
+                connection.execute(
+                    "UPDATE plans SET label = ?, updated_at = ? WHERE id = ?",
+                    (normalized, now, scenario_id),
+                )
+        except sqlite3.IntegrityError as error:
+            message = str(error)
+            if "plans.label" in message:
+                raise DataIntegrityError(
+                    f"A saved scenario named {normalized!r} already exists."
+                ) from error
+            raise DataIntegrityError(message) from error
+        return self.get_active_plan_by_id(scenario_id)
+
+    def fork_scenario(self, saved_id: int) -> dict[str, Any]:
+        """Create a new Sandbox seeded from a Saved scenario.
+
+        Validates the source is a Saved scenario (status='scenario' AND
+        label IS NOT NULL). Inherits create_scenario's
+        DataIntegrityError when a Sandbox already exists."""
+        with self.database.connect() as connection:
+            row = connection.execute(
+                "SELECT status, label FROM plans WHERE id = ?",
+                (saved_id,),
+            ).fetchone()
+            if row is None or row["status"] != "scenario" or row["label"] is None:
+                raise NotFoundError(
+                    f"Scenario {saved_id} is not a Saved scenario."
+                )
+        return self.create_scenario(from_plan_id=saved_id, label=None)
+
     def get_active_plan_by_id(self, plan_id: int) -> dict[str, Any]:
         with self.database.connect() as connection:
             plan_row = connection.execute(

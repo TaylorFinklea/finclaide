@@ -14,6 +14,12 @@ const apiMocks = vi.hoisted(() => ({
   createPlanCategory: vi.fn(),
   updatePlanCategory: vi.fn(),
   deletePlanCategory: vi.fn(),
+  listScenarios: vi.fn(),
+  createScenario: vi.fn(),
+  getScenario: vi.fn(),
+  saveScenario: vi.fn(),
+  commitScenario: vi.fn(),
+  discardScenario: vi.fn(),
 }))
 
 vi.mock('$lib/api', async () => {
@@ -91,6 +97,9 @@ describe('PlanningPage', () => {
     apiMocks.updatePlanCategory.mockResolvedValue(planFixture.blocks.monthly[0])
     apiMocks.createPlanCategory.mockResolvedValue(planFixture.blocks.monthly[0])
     apiMocks.deletePlanCategory.mockResolvedValue(undefined)
+    apiMocks.listScenarios.mockResolvedValue({ scenarios: [] })
+    apiMocks.commitScenario.mockResolvedValue({ plan: planFixture })
+    apiMocks.discardScenario.mockResolvedValue(undefined)
   })
 
   it('renders the five block tabs and defaults to Monthly', async () => {
@@ -193,5 +202,106 @@ describe('PlanningPage', () => {
     await screen.findByText('Rent')
     await userEvent.click(screen.getByRole('tab', { name: 'One-time' }))
     expect(await screen.findByText(/No One-time categories yet/i)).toBeInTheDocument()
+  })
+})
+
+describe('PlanningPage sandbox Save flow', () => {
+  const sandboxPlan: ActivePlanResponse = {
+    plan: {
+      id: 200,
+      plan_year: 2026,
+      name: '2026 Budget',
+      label: null,
+      status: 'scenario',
+      source: 'edited',
+      created_at: '2026-04-28T00:00:00+00:00',
+      updated_at: '2026-04-28T00:00:00+00:00',
+      archived_at: null,
+      source_import_id: null,
+    } as ActivePlanResponse['plan'],
+    blocks: {
+      monthly: [planFixture.blocks.monthly[0]],
+      annual: [],
+      one_time: [],
+      stipends: [],
+      savings: [],
+    },
+    totals: { grand_total_milliunits: 1200000 },
+  }
+
+  beforeEach(() => {
+    for (const mock of Object.values(apiMocks)) mock.mockReset()
+    apiMocks.getStatus.mockResolvedValue(statusFixture)
+    apiMocks.getActivePlan.mockResolvedValue(planFixture)
+    apiMocks.listScenarios.mockResolvedValue({ scenarios: [] })
+    apiMocks.createScenario.mockResolvedValue(sandboxPlan)
+    apiMocks.getScenario.mockResolvedValue(sandboxPlan)
+    apiMocks.saveScenario.mockResolvedValue({ plan: sandboxPlan })
+    apiMocks.discardScenario.mockResolvedValue(undefined)
+  })
+
+  it('Save button on the sandbox banner opens a modal with a default label', async () => {
+    const user = userEvent.setup({ pointerEventsCheck: 0 })
+    renderPage(PlanningPage as never, { selectedMonth: '2026-04' })
+    await screen.findByText('Rent')
+
+    await user.click(screen.getByRole('button', { name: /Try a what-if/i }))
+    await screen.findByText(/Sandbox mode/i)
+
+    await user.click(screen.getByRole('button', { name: /^Save$/ }))
+
+    const dialog = (await screen.findByText(/Name this sandbox to keep its edits/i)).closest(
+      '[role="dialog"]',
+    ) as HTMLElement
+    const input = within(dialog).getByLabelText(/Name/i) as HTMLInputElement
+    expect(input.value).toMatch(/Untitled scenario/)
+  })
+
+  it('submitting Save scenario calls saveScenario with trimmed label', async () => {
+    const user = userEvent.setup({ pointerEventsCheck: 0 })
+    renderPage(PlanningPage as never, { selectedMonth: '2026-04' })
+    await screen.findByText('Rent')
+
+    await user.click(screen.getByRole('button', { name: /Try a what-if/i }))
+    await screen.findByText(/Sandbox mode/i)
+    await user.click(screen.getByRole('button', { name: /^Save$/ }))
+
+    const dialog = (await screen.findByText(/Name this sandbox to keep its edits/i)).closest(
+      '[role="dialog"]',
+    ) as HTMLElement
+    const input = within(dialog).getByLabelText(/Name/i) as HTMLInputElement
+    await user.clear(input)
+    await user.type(input, '  Summer budget  ')
+    await user.click(within(dialog).getByRole('button', { name: /Save scenario/i }))
+
+    await waitFor(() => {
+      expect(apiMocks.saveScenario).toHaveBeenCalledWith(200, 'Summer budget')
+    })
+  })
+
+  it('shows inline error and stays open when saveScenario rejects', async () => {
+    apiMocks.saveScenario.mockRejectedValueOnce(
+      Object.assign(new Error('A saved scenario named such-and-such already exists.'), {
+        name: 'ApiError',
+      }),
+    )
+    const user = userEvent.setup({ pointerEventsCheck: 0 })
+    renderPage(PlanningPage as never, { selectedMonth: '2026-04' })
+    await screen.findByText('Rent')
+
+    await user.click(screen.getByRole('button', { name: /Try a what-if/i }))
+    await screen.findByText(/Sandbox mode/i)
+    await user.click(screen.getByRole('button', { name: /^Save$/ }))
+
+    const dialog = (await screen.findByText(/Name this sandbox to keep its edits/i)).closest(
+      '[role="dialog"]',
+    ) as HTMLElement
+    await user.click(within(dialog).getByRole('button', { name: /Save scenario/i }))
+
+    await waitFor(() => {
+      expect(within(dialog).getByText(/such-and-such already exists/i)).toBeInTheDocument()
+    })
+    // Modal still rendered (description text is unique to the Save modal).
+    expect(screen.getByText(/Name this sandbox to keep its edits/i)).toBeInTheDocument()
   })
 })

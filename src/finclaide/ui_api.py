@@ -200,6 +200,27 @@ def scenario_commit(scenario_id: int):
     return jsonify({"plan": result})
 
 
+@ui_api.post("/scenarios/<int:scenario_id>/save")
+@require_ui_write_request
+def scenario_save(scenario_id: int):
+    body = request.get_json(silent=True) or {}
+    if "label" not in body:
+        return jsonify({"error": "label is required"}), 400
+    container = _container()
+    with container.operation_lock.guard("plan_save"):
+        result = container.plan.save_scenario(scenario_id, body["label"])
+    return jsonify({"plan": result})
+
+
+@ui_api.post("/scenarios/<int:scenario_id>/fork")
+@require_ui_write_request
+def scenario_fork(scenario_id: int):
+    container = _container()
+    with container.operation_lock.guard("plan_fork"):
+        result = container.plan.fork_scenario(scenario_id)
+    return jsonify(result), 201
+
+
 @ui_api.delete("/scenarios/<int:scenario_id>")
 @require_same_origin
 def scenario_delete(scenario_id: int):

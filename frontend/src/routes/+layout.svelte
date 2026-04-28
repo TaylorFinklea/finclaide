@@ -8,6 +8,7 @@
     AlertCircle,
     BarChart3,
     FolderSync,
+    Layers,
     LayoutGrid,
     Pencil,
     ReceiptText,
@@ -44,6 +45,7 @@
     { to: '/categories', label: 'Categories', icon: BarChart3 },
     { to: '/transactions', label: 'Transactions', icon: ReceiptText },
     { to: '/planning', label: 'Planning', icon: Pencil },
+    { to: '/scenarios', label: 'Scenarios', icon: Layers },
     { to: '/operations', label: 'Operations', icon: FolderSync },
     { to: '/settings', label: 'Settings', icon: Settings },
   ] as const

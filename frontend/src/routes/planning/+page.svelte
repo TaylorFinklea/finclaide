@@ -3,7 +3,7 @@
   import { Tabs as TabsPrimitive } from 'bits-ui'
   import { createMutation, createQuery, useQueryClient } from '@tanstack/svelte-query'
   import { Dialog as DialogPrimitive } from 'bits-ui'
-  import { AlertTriangle, Beaker, Check, History, Plus, Trash2 } from 'lucide-svelte'
+  import { AlertTriangle, Beaker, Bookmark, Check, History, Plus, Trash2 } from 'lucide-svelte'
   import { toast } from 'svelte-sonner'
   import { writable } from 'svelte/store'
 
@@ -20,6 +20,7 @@
   import DialogFooter from '$components/ui/dialog-footer.svelte'
   import DialogHeader from '$components/ui/dialog-header.svelte'
   import DialogTitle from '$components/ui/dialog-title.svelte'
+  import Input from '$components/ui/input.svelte'
   import Skeleton from '$components/ui/skeleton.svelte'
   import TabsContent from '$components/ui/tabs-content.svelte'
   import TabsList from '$components/ui/tabs-list.svelte'
@@ -37,6 +38,7 @@
     getScenario,
     getStatus,
     listScenarios,
+    saveScenario,
   } from '$lib/api'
   import { formatMoney } from '$lib/format'
 
@@ -132,6 +134,15 @@
   let historyOpen = $state(false)
   let confirmingDiscard = $state(false)
   let confirmingCommit = $state(false)
+  let confirmingSave = $state(false)
+  let saveLabel: string = $state('')
+  let saveError: string | null = $state(null)
+
+  function defaultSaveLabel(): string {
+    const now = new Date()
+    const month = now.toLocaleString('en-US', { month: 'short' })
+    return `Untitled scenario, ${month} ${now.getDate()}, ${now.getFullYear()}`
+  }
 
   let importBusy = $derived(
     $statusQuery.data?.busy === true && $statusQuery.data?.current_operation === 'budget_import',
@@ -194,10 +205,26 @@
     },
   })
 
+  const saveMutation = createMutation({
+    mutationFn: ({ id, label }: { id: number; label: string }) => saveScenario(id, label),
+    onSuccess: async (response) => {
+      // Saved scenario is no longer the open Sandbox; user can fork it later.
+      viewedScenarioId = null
+      confirmingSave = false
+      saveError = null
+      await invalidatePlanState()
+      toast.success(`Saved as '${response.plan.plan.label}'.`)
+    },
+    onError: (error) => {
+      saveError = getErrorMessage(error)
+    },
+  })
+
   let scenarioBusy = $derived(
     $startSandboxMutation.isPending ||
       $discardMutation.isPending ||
-      $commitMutation.isPending,
+      $commitMutation.isPending ||
+      $saveMutation.isPending,
   )
 
   function whatIfButtonLabel() {
@@ -256,6 +283,19 @@
               >
                 <Trash2 class="h-4 w-4" />
                 Discard
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={scenarioBusy}
+                onclick={() => {
+                  saveLabel = displayedPlan?.plan.label ?? defaultSaveLabel()
+                  saveError = null
+                  confirmingSave = true
+                }}
+              >
+                <Bookmark class="h-4 w-4" />
+                Save
               </Button>
               <Button
                 size="sm"
@@ -372,8 +412,8 @@
     <DialogHeader>
       <DialogTitle>Discard sandbox?</DialogTitle>
       <DialogDescription>
-        Throws away all edits made in this sandbox. There is no undo. Use Save (in a future slice)
-        if you want to keep these changes as a named scenario.
+        Throws away all edits made in this sandbox. There is no undo.
+        Use Save to keep these changes as a named scenario.
       </DialogDescription>
     </DialogHeader>
     <DialogFooter class="gap-2">
@@ -389,6 +429,66 @@
         }}
       >
         {$discardMutation.isPending ? 'Discarding…' : 'Discard sandbox'}
+      </Button>
+    </DialogFooter>
+  </DialogContent>
+</DialogPrimitive.Root>
+
+<DialogPrimitive.Root
+  bind:open={() => confirmingSave, (next) => {
+    if (!next && !$saveMutation.isPending) {
+      confirmingSave = false
+      saveError = null
+    }
+  }}
+>
+  <DialogContent>
+    <DialogHeader>
+      <DialogTitle>Save scenario</DialogTitle>
+      <DialogDescription>
+        Name this sandbox to keep its edits as a saved scenario. You can
+        fork it back into a sandbox later from /scenarios.
+      </DialogDescription>
+    </DialogHeader>
+    <div class="space-y-2">
+      <label for="save-label" class="text-label">Name</label>
+      <Input
+        id="save-label"
+        type="text"
+        bind:value={saveLabel}
+        disabled={$saveMutation.isPending}
+        placeholder="Untitled scenario"
+      />
+      {#if saveError}
+        <div class="text-sm text-rose-300">{saveError}</div>
+      {/if}
+    </div>
+    <DialogFooter class="gap-2">
+      <Button
+        variant="outline"
+        disabled={$saveMutation.isPending}
+        onclick={() => {
+          confirmingSave = false
+          saveError = null
+        }}
+      >
+        Cancel
+      </Button>
+      <Button
+        disabled={$saveMutation.isPending}
+        onclick={() => {
+          const trimmed = saveLabel.trim()
+          if (!trimmed) {
+            saveError = 'Name cannot be empty.'
+            return
+          }
+          if (viewedScenarioId !== null) {
+            $saveMutation.mutate({ id: viewedScenarioId, label: trimmed })
+          }
+        }}
+      >
+        <Bookmark class="h-4 w-4" />
+        {$saveMutation.isPending ? 'Saving…' : 'Save scenario'}
       </Button>
     </DialogFooter>
   </DialogContent>
