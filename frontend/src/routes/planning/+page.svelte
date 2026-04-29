@@ -1,5 +1,6 @@
 <script lang="ts">
   import { browser } from '$app/environment'
+  import { page } from '$app/stores'
   import { Tabs as TabsPrimitive } from 'bits-ui'
   import { createMutation, createQuery, useQueryClient } from '@tanstack/svelte-query'
   import { Dialog as DialogPrimitive } from 'bits-ui'
@@ -87,6 +88,28 @@
   })
 
   let viewedScenarioId: number | null = $state(null)
+  // Tracks which ?scenario=<id> param value we have already consumed. The guard
+  // is intentionally tied to the string value rather than a boolean so that
+  // navigating to the same URL on a fresh mount (e.g. hard-refresh) starts
+  // clean while preventing re-entry after discard while the param is still in
+  // the URL. Refresh-as-resume is intentional: if the operator refreshes with
+  // ?scenario=<id> still in the URL and the sandbox still exists, they land
+  // back in sandbox mode. The guard write is deferred until validation passes,
+  // so a first render with an empty scenarios list doesn't permanently burn the
+  // guard before the list loads.
+  let consumedScenarioParam: string | null = $state(null)
+  $effect(() => {
+    const raw = $page.url.searchParams.get('scenario')
+    if (raw === null) { consumedScenarioParam = null; return }
+    if (consumedScenarioParam === raw) return
+    const id = Number.parseInt(raw, 10)
+    if (!Number.isFinite(id) || id <= 0) return
+    const list = $scenariosQuery.data?.scenarios ?? []
+    const match = list.find((s) => s.id === id && s.label === null)
+    if (!match) return
+    consumedScenarioParam = raw
+    viewedScenarioId = id
+  })
 
   type ScenarioOpts = {
     queryKey: readonly unknown[]
@@ -330,6 +353,9 @@
               Planning — {data.plan.name}
               {#if inSandboxMode}<span class="text-amber-200"> (sandbox)</span>{/if}
             </CardTitle>
+            <!-- Sandbox banner subtitle is intentionally generic. Lineage (e.g.
+                 "forked from 'Smoke A'") would require persisting source_plan_id on
+                 plans rows; deferred to a future slice that needs lineage anyway. -->
             <p class="mt-2 text-sm text-muted-foreground">
               {inSandboxMode
                 ? 'Sandboxed edits will not affect your active plan until you commit.'
@@ -428,8 +454,7 @@
     <DialogHeader>
       <DialogTitle>Discard sandbox?</DialogTitle>
       <DialogDescription>
-        Throws away all edits made in this sandbox. There is no undo.
-        Use Save to keep these changes as a named scenario.
+        Throws away all edits made in this sandbox. There is no undo. Use Save to keep these changes as a named scenario.
       </DialogDescription>
     </DialogHeader>
     <DialogFooter class="gap-2">
@@ -462,8 +487,7 @@
     <DialogHeader>
       <DialogTitle>Save scenario</DialogTitle>
       <DialogDescription>
-        Name this sandbox to keep its edits as a saved scenario. You can
-        fork it back into a sandbox later from /scenarios.
+        Name this sandbox to keep its edits as a saved scenario. You can fork it back into a sandbox later from /scenarios.
       </DialogDescription>
     </DialogHeader>
     <div class="space-y-2">
@@ -515,9 +539,7 @@
     <DialogHeader>
       <DialogTitle>Commit sandbox to active plan?</DialogTitle>
       <DialogDescription>
-        Replaces your active plan with the sandbox's contents. The previous active plan is archived
-        and stays accessible from the database (it will appear in History once Phase 2.5c slice 2
-        ships per-plan history navigation). You can confirm before applying.
+        Replaces your active plan with the sandbox's contents. The previous active plan is archived and stays accessible from the database (it will appear in History once Phase 2.5c slice 2 ships per-plan history navigation). You can confirm before applying.
       </DialogDescription>
     </DialogHeader>
     <DialogFooter class="gap-2">

@@ -10,7 +10,36 @@ identical to `main`; safe to delete once origin is pushed.
 
 ## Last Session Summary
 
-**Date**: 2026-04-28 (Theming Slices 1 + 2 — full 12-theme catalogue + /settings)
+**Date**: 2026-04-29 (Phase 2.5c Slice 3.5 — post-smoke bug fixes)
+
+Three cosmetic gaps from the Phase 2.5c Slices 2 + 3 smoke test closed:
+
+- **Issue 1 (locked decision):** Added a one-line code comment near the
+  sandbox banner subtitle in `planning/+page.svelte` documenting that
+  lineage-aware copy ("forked from …") is intentionally deferred until a
+  future slice persists `source_plan_id` on the plans row.
+- **Issue 2 (auto-park redirect with id):** Updated the three `goto`
+  call sites in `scenarios/+page.svelte` (`forkMutation.onSuccess`,
+  `handleSaveAndOpen`, `handleDiscardAndOpen`) to forward `?scenario=<id>`
+  using the `plan.id` returned by `forkScenario`. Added `page` import +
+  `consumedScenarioParam $state` + `$effect` to `planning/+page.svelte`
+  so `/planning?scenario=<id>` auto-enters sandbox mode when the id
+  matches an unnamed sandbox in the scenarios list. Guard write deferred
+  to after validation so a first-render-with-empty-list race doesn't burn
+  the guard before the data loads. Refresh-as-resume is intentional.
+- **Issue 3 (multi-line dialog copy):** Collapsed multi-line
+  `DialogDescription` text to single lines in both `scenarios/+page.svelte`
+  (Make-active confirm) and `planning/+page.svelte` (Discard sandbox, Save
+  scenario, Commit sandbox). No wording changed; whitespace only.
+
+Tests added: 3 new cases in `scenarios/page.test.ts` (Save&open, Discard&open,
+direct-Open each assert goto is called with `/planning?scenario=<id>`), 1
+updated existing case, plus 3 new cases in `planning/page.test.ts`
+(?scenario= enters sandbox mode, ignores saved-scenario id, does not
+re-enter after discard). All 360 vitest pass; svelte-check 0/0;
+pytest 174/177 with the 3 pre-existing infra failures unchanged.
+
+**Previous session**: 2026-04-28 (Theming Slices 1 + 2 — full 12-theme catalogue + /settings)
 
 Slice 2 (settings page + 11 more themes + accent picker) shipped on
 top of Slice 1. The full 12-theme catalogue is now live, the
@@ -289,27 +318,22 @@ Prior migration commit log on `svelte-migration`:
 
 ## Build Status
 
-- Backend: `pytest` — 146/146 pass (was 124 pre-Phase-2.5c-slice-1;
-  +21 in `test_scenarios.py` plus the moved file count for the
-  earlier label-migration regression case).
+- Backend: `pytest` — 174/177 pass (3 pre-existing infra failures:
+  `test_api.py::test_healthcheck_and_dashboard_fallback`,
+  `test_config.py::test_app_config_reads_home_assistant_options_file`,
+  `test_mcp_server.py::test_finclaide_mcp_stdio_launch`; these require
+  the Docker container's `/app/.venv` and are not regressions).
 - Frontend: `npm run check` — `svelte-check` 0/0; `npx vitest run` —
-  31/31 (no new vitest in slice 1; planning page still 7/7 after
-  the Sandbox-mode rewrite).
-- Docker / browser smoke for 2.5c slice 1: green end-to-end via
-  chrome-devtools — sandbox create, edit, commit verified; both
-  attribution revisions present in DB; zero console errors.
+  360/360 (was 336 pre-2.5c-slices; +7 scenarios page tests total,
+  +3 new planning deeplink tests this slice).
 
 ## Active Milestone
 
-Phase 2.5c (What-if scenarios) — Slice 1 (Sandbox in place) shipped.
+Phase 2.5c (What-if scenarios) — Slices 1–3 + 3.5 (bug fixes) shipped.
 Remaining slices per
 `docs/superpowers/specs/2026-04-26-phase-2.5c-scenarios-design.md`:
 
-- Slice 2 — Saved scenarios + `/scenarios` route (POST .../save,
-  POST .../fork, list page, name modal, fork-on-edit).
-- Slice 3 — Comparison view (per-category drilldown + 6mo sparklines;
-  `POST /ui-api/scenarios/compare`).
-- Slice 4 — Pure projection panel + projection→sandbox apply.
+- Slice 4 — Pure projection panel + projection→sandbox apply (deferred).
 
 ## Blockers
 

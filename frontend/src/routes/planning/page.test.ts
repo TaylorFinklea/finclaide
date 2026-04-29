@@ -6,6 +6,7 @@ import type { ActivePlanResponse, PlanCategory } from '$lib/api'
 
 import { statusFixture } from '../../test/fixtures'
 import { renderPage } from '../../test/render-page'
+import { setMockPage } from '../../test/setup'
 import PlanningPage from './+page.svelte'
 
 const apiMocks = vi.hoisted(() => ({
@@ -303,5 +304,93 @@ describe('PlanningPage sandbox Save flow', () => {
     })
     // Modal still rendered (description text is unique to the Save modal).
     expect(screen.getByText(/Name this sandbox to keep its edits/i)).toBeInTheDocument()
+  })
+})
+
+describe('PlanningPage ?scenario= deeplink', () => {
+  const sandboxPlan: ActivePlanResponse = {
+    plan: {
+      id: 99,
+      plan_year: 2026,
+      name: '2026 Budget',
+      label: null,
+      status: 'scenario',
+      source: 'edited',
+      created_at: '2026-04-28T00:00:00+00:00',
+      updated_at: '2026-04-28T00:00:00+00:00',
+      archived_at: null,
+      source_import_id: null,
+    } as ActivePlanResponse['plan'],
+    blocks: {
+      monthly: [planFixture.blocks.monthly[0]],
+      annual: [],
+      one_time: [],
+      stipends: [],
+      savings: [],
+    },
+    totals: { grand_total_milliunits: 1200000 },
+  }
+
+  beforeEach(() => {
+    for (const mock of Object.values(apiMocks)) mock.mockReset()
+    apiMocks.getStatus.mockResolvedValue(statusFixture)
+    apiMocks.getActivePlan.mockResolvedValue(planFixture)
+    apiMocks.getScenario.mockResolvedValue(sandboxPlan)
+    apiMocks.discardScenario.mockResolvedValue(undefined)
+  })
+
+  it('enters sandbox mode when ?scenario=<id> matches an unnamed sandbox', async () => {
+    apiMocks.listScenarios.mockResolvedValue({
+      scenarios: [{ id: 99, label: null, plan_year: 2026, name: '2026 Budget', status: 'scenario', source: 'edited', created_at: '2026-04-28T00:00:00+00:00', updated_at: '2026-04-28T00:00:00+00:00', category_count: 1 }],
+    })
+
+    // renderPage calls resetMockPage internally, so we set the URL after render.
+    renderPage(PlanningPage as never, { selectedMonth: '2026-04' })
+    setMockPage({ url: new URL('http://localhost/planning?scenario=99') })
+
+    await screen.findByText('Sandbox mode')
+  })
+
+  it('ignores ?scenario=<id> when the id does not match an unnamed sandbox', async () => {
+    // Only a saved (label !== null) scenario — should not enter sandbox mode.
+    apiMocks.listScenarios.mockResolvedValue({
+      scenarios: [{ id: 99, label: 'Summer budget', plan_year: 2026, name: '2026 Budget', status: 'scenario', source: 'edited', created_at: '2026-04-28T00:00:00+00:00', updated_at: '2026-04-28T00:00:00+00:00', category_count: 1 }],
+    })
+
+    renderPage(PlanningPage as never, { selectedMonth: '2026-04' })
+    setMockPage({ url: new URL('http://localhost/planning?scenario=99') })
+
+    await screen.findByText('Rent')
+    expect(screen.queryByText('Sandbox mode')).not.toBeInTheDocument()
+  })
+
+  it('does not re-enter sandbox after discard while ?scenario=<id> is still in the URL', async () => {
+    apiMocks.listScenarios.mockResolvedValue({
+      scenarios: [{ id: 99, label: null, plan_year: 2026, name: '2026 Budget', status: 'scenario', source: 'edited', created_at: '2026-04-28T00:00:00+00:00', updated_at: '2026-04-28T00:00:00+00:00', category_count: 1 }],
+    })
+
+    const user = userEvent.setup({ pointerEventsCheck: 0 })
+    // renderPage calls resetMockPage internally, so we set the URL after render.
+    renderPage(PlanningPage as never, { selectedMonth: '2026-04' })
+    setMockPage({ url: new URL('http://localhost/planning?scenario=99') })
+
+    // Wait for sandbox mode to be active.
+    await screen.findByText('Sandbox mode')
+
+    // Discard the sandbox.
+    await user.click(screen.getByRole('button', { name: /^Discard$/ }))
+    const dialog = (await screen.findByText(/Discard sandbox\?/i)).closest('[role="dialog"]') as HTMLElement
+    // After discard mutation, scenarios list now has no sandbox (simulate removal).
+    apiMocks.listScenarios.mockResolvedValue({ scenarios: [] })
+    await user.click(within(dialog).getByRole('button', { name: /Discard sandbox/i }))
+
+    await waitFor(() => {
+      expect(apiMocks.discardScenario).toHaveBeenCalledWith(99)
+    })
+
+    // Sandbox mode must not be present after discard.
+    await waitFor(() => {
+      expect(screen.queryByText('Sandbox mode')).not.toBeInTheDocument()
+    })
   })
 })

@@ -58,9 +58,9 @@
 
   const forkMutation = createMutation({
     mutationFn: (saved_id: number) => forkScenario(saved_id),
-    onSuccess: async () => {
+    onSuccess: async (response) => {
       await invalidate()
-      goto(withBasePath('/planning'))
+      goto(withBasePath(`/planning?scenario=${response.plan.id}`))
     },
     onError: (error) => toast.error(getErrorMessage(error)),
   })
@@ -144,11 +144,11 @@
     }
     // Sandbox is now Saved — the partial-unique-sandbox slot is free.
     try {
-      await forkScenario(target.id)
+      const forked = await forkScenario(target.id)
       parkingFor = null
       parkBusy = false
       await invalidate()
-      goto(withBasePath('/planning'))
+      goto(withBasePath(`/planning?scenario=${forked.plan.id}`))
     } catch (error) {
       parkBusy = false
       parkingFor = null
@@ -171,11 +171,11 @@
       return
     }
     try {
-      await forkScenario(parkingFor.id)
+      const forked = await forkScenario(parkingFor.id)
       parkingFor = null
       parkBusy = false
       await invalidate()
-      goto(withBasePath('/planning'))
+      goto(withBasePath(`/planning?scenario=${forked.plan.id}`))
     } catch (error) {
       parkBusy = false
       parkingFor = null
@@ -348,9 +348,7 @@
         {/if}
       </DialogTitle>
       <DialogDescription>
-        Replaces your active plan with this scenario. The previous active
-        plan is archived and remains accessible from History (where you can
-        restore it).
+        Replaces your active plan with this scenario. The previous active plan is archived and remains accessible from History (where you can restore it).
       </DialogDescription>
     </DialogHeader>
     <DialogFooter class="gap-2">

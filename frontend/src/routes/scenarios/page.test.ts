@@ -135,6 +135,81 @@ describe('ScenariosPage', () => {
     expect(saveOrder).toBeLessThan(forkOrder)
     expect(apiMocks.saveScenario).toHaveBeenCalledWith(99, expect.any(String))
     expect(apiMocks.forkScenario).toHaveBeenCalledWith(10)
+    // Redirect must include the new sandbox id.
+    await waitFor(() => {
+      expect(navMocks.goto).toHaveBeenCalledWith(expect.stringContaining('/planning?scenario=200'))
+    })
+  })
+
+  it('Save & open redirects to /planning with the new sandbox id', async () => {
+    const newSandboxId = 300
+    apiMocks.listScenarios.mockResolvedValue({ scenarios: [SANDBOX, SAVED_A] })
+    apiMocks.saveScenario.mockResolvedValue({ plan: FORKED_PLAN })
+    apiMocks.forkScenario.mockResolvedValue({
+      ...FORKED_PLAN,
+      plan: { ...FORKED_PLAN.plan, id: newSandboxId },
+    })
+
+    const user = userEvent.setup({ pointerEventsCheck: 0 })
+    renderPage(ScenariosPage as never)
+    await screen.findByText('Summer budget')
+    await user.click(screen.getByRole('button', { name: 'Open' }))
+
+    const dialog = (await screen.findByText(/Save your sandbox before opening/i)).closest(
+      '[role="dialog"]',
+    ) as HTMLElement
+    await user.click(within(dialog).getByRole('button', { name: /Save & open/i }))
+
+    await waitFor(() => {
+      expect(navMocks.goto).toHaveBeenCalledWith(
+        expect.stringContaining(`/planning?scenario=${newSandboxId}`),
+      )
+    })
+  })
+
+  it('Discard & open redirects to /planning with the new sandbox id', async () => {
+    const newSandboxId = 400
+    apiMocks.listScenarios.mockResolvedValue({ scenarios: [SANDBOX, SAVED_A] })
+    apiMocks.discardScenario.mockResolvedValue(undefined)
+    apiMocks.forkScenario.mockResolvedValue({
+      ...FORKED_PLAN,
+      plan: { ...FORKED_PLAN.plan, id: newSandboxId },
+    })
+
+    const user = userEvent.setup({ pointerEventsCheck: 0 })
+    renderPage(ScenariosPage as never)
+    await screen.findByText('Summer budget')
+    await user.click(screen.getByRole('button', { name: 'Open' }))
+
+    const dialog = (await screen.findByText(/Save your sandbox before opening/i)).closest(
+      '[role="dialog"]',
+    ) as HTMLElement
+    await user.click(within(dialog).getByRole('button', { name: /Discard sandbox/i }))
+
+    await waitFor(() => {
+      expect(navMocks.goto).toHaveBeenCalledWith(
+        expect.stringContaining(`/planning?scenario=${newSandboxId}`),
+      )
+    })
+  })
+
+  it('direct Open without a sandbox redirects with the new id', async () => {
+    const newSandboxId = 500
+    apiMocks.listScenarios.mockResolvedValue({ scenarios: [SAVED_A] })
+    apiMocks.forkScenario.mockResolvedValue({
+      ...FORKED_PLAN,
+      plan: { ...FORKED_PLAN.plan, id: newSandboxId },
+    })
+
+    renderPage(ScenariosPage as never)
+    await screen.findByText('Summer budget')
+    await userEvent.click(screen.getByRole('button', { name: 'Open' }))
+
+    await waitFor(() => {
+      expect(navMocks.goto).toHaveBeenCalledWith(
+        expect.stringContaining(`/planning?scenario=${newSandboxId}`),
+      )
+    })
   })
 
   it('keeps modal open with inline error when save fails', async () => {
