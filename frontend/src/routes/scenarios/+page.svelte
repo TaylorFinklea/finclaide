@@ -288,9 +288,7 @@
         {/if}
       </DialogTitle>
       <DialogDescription>
-        You have an open sandbox with edits. Name it to keep the work, then
-        open this scenario as a new sandbox. Or discard the current sandbox
-        if you don't need it.
+        You have an open sandbox with edits. Name it to keep the work, then open this scenario as a new sandbox. Or discard the current sandbox if you don't need it.
       </DialogDescription>
     </DialogHeader>
     <div class="space-y-2">
