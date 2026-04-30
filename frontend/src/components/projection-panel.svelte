@@ -487,7 +487,7 @@
         <div class="flex items-center justify-between text-sm">
           <span class="text-muted-foreground">Annual delta vs active</span>
           <span class={`font-mono font-medium ${deltaClass(delta)}`}>
-            {formatDelta(delta / 1000)}
+            {formatDelta(delta)}
           </span>
         </div>
         {#if top3Movers().length > 0}
