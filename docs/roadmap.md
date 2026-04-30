@@ -69,6 +69,8 @@ read-only artifact written by the app on demand.
   group, category, planned amount, annual target, due month, and notes.
 - What-if scenarios: branch off the active plan, edit, compare projected
   variance vs current actuals, then commit or discard.
+  (Phase 2.5c — all four slices shipped 2026-04-26 through 2026-04-30:
+  Sandbox/Saved/Compare/Projection panel + apply-to-sandbox.)
 - Versioning & rollback: every save produces a snapshot diffable and
   restorable from the UI.
 - Publish-to-Sheets export: writes the current plan back into the configured

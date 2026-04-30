@@ -10,34 +10,56 @@ identical to `main`; safe to delete once origin is pushed.
 
 ## Last Session Summary
 
-**Date**: 2026-04-29 (Phase 2.5c Slice 3.5 — post-smoke bug fixes)
+**Date**: 2026-04-30 (Phase 2.5c Slice 4 — projection panel)
 
-Three cosmetic gaps from the Phase 2.5c Slices 2 + 3 smoke test closed:
+Slice 4 (Pure Projection Panel) shipped in two commits (18b9cb8 + eaf655c):
 
-- **Issue 1 (locked decision):** Added a one-line code comment near the
-  sandbox banner subtitle in `planning/+page.svelte` documenting that
-  lineage-aware copy ("forked from …") is intentionally deferred until a
-  future slice persists `source_plan_id` on the plans row.
-- **Issue 2 (auto-park redirect with id):** Updated the three `goto`
-  call sites in `scenarios/+page.svelte` (`forkMutation.onSuccess`,
-  `handleSaveAndOpen`, `handleDiscardAndOpen`) to forward `?scenario=<id>`
-  using the `plan.id` returned by `forkScenario`. Added `page` import +
-  `consumedScenarioParam $state` + `$effect` to `planning/+page.svelte`
-  so `/planning?scenario=<id>` auto-enters sandbox mode when the id
-  matches an unnamed sandbox in the scenarios list. Guard write deferred
-  to after validation so a first-render-with-empty-list race doesn't burn
-  the guard before the data loads. Refresh-as-resume is intentional.
-- **Issue 3 (multi-line dialog copy):** Collapsed multi-line
-  `DialogDescription` text to single lines in both `scenarios/+page.svelte`
-  (Make-active confirm) and `planning/+page.svelte` (Discard sandbox, Save
-  scenario, Commit sandbox). No wording changed; whitespace only.
+**4a — Backend** (`src/finclaide/plan_service.py`, `src/finclaide/ui_api.py`):
+- `compare_projection(axes, new_lines)`: stateless overlay of active plan
+  with percent-delta axes + hypothetical new lines. Returns the same shape
+  as `compare_scenario` with `scenario_id=None`. Pure read, no writes.
+- `apply_projection_to_sandbox(axes, new_lines)`: creates a fresh sandbox
+  from the active plan, applies axis overrides via `update_category` (writes
+  `ui_update` plan_revisions per category), inserts new hypothetical lines
+  via `create_category`. Pre-checks sandbox collision and raises
+  `DataIntegrityError` so the UI can show the auto-park modal.
+- `/scenarios/compare` endpoint now accepts EITHER `{scenario_id}` (existing
+  path) OR `{projection: {axes, new_lines}}` (new path). 400 if both or
+  neither.
+- `/scenarios/projection/apply-to-sandbox` endpoint (POST, 201), wrapped in
+  `operation_lock.guard("plan_apply_projection")`.
+- +9 service-level cases in `tests/test_scenarios.py`, +4 endpoint cases in
+  `tests/test_scenarios_api.py`. Total pytest: 177 → 190.
 
-Tests added: 3 new cases in `scenarios/page.test.ts` (Save&open, Discard&open,
-direct-Open each assert goto is called with `/planning?scenario=<id>`), 1
-updated existing case, plus 3 new cases in `planning/page.test.ts`
-(?scenario= enters sandbox mode, ignores saved-scenario id, does not
-re-enter after discard). All 360 vitest pass; svelte-check 0/0;
-pytest 174/177 with the 3 pre-existing infra failures unchanged.
+**4b — Frontend** (`frontend/src/`):
+- `components/ui/slider.svelte`: thin bits-ui Slider wrapper (single-thumb,
+  -100% to +100%, step 5%).
+- `components/projection-panel.svelte`: sliders for top-8 categories with
+  "Show all" expand, add-hypothetical-line form (group autocomplete, category,
+  $/mo), debounced 200ms inline summary card (annual delta + top-3 movers),
+  "View details" button opens compare-drawer in projection mode, "Apply to
+  Sandbox" button with auto-park modal (Cancel/Discard sandbox/Save & apply)
+  reusing the same 3-button pattern from `/scenarios`.
+- `components/compare-drawer.svelte`: extended with optional `projection` prop;
+  `$effect` branches query opts to `compareProjection` when `projection` is
+  provided and `scenarioId` is null.
+- `routes/scenarios/+page.svelte`: mounts `<ProjectionPanel />` after the
+  saved-scenarios card.
+- `lib/api.ts`: `ProjectionAxisSchema`, `ProjectionNewLineSchema`,
+  `ProjectionRequestSchema` + types; `compareProjection`,
+  `applyProjectionToSandbox`; `CompareResponseSchema.scenario_id` made
+  nullable.
+- +6 vitest cases in `projection-panel.test.ts`, +1 in `compare-drawer.test.ts`.
+  Total vitest: 360 → 367. svelte-check: 0/0.
+
+**Implementation note**: In Svelte 5, `$derived` values that are only read
+inside async event handlers (not in the template) do not establish reactive
+subscriptions with TanStack Query — the query never fires. The `getExistingSandbox()`
+helper works around this by calling `listScenarios()` directly as a fallback
+when the query cache is empty, making the auto-park flow work both in tests
+and production (where the cache is warm from the page mount).
+
+**Previous session**: 2026-04-29 (Phase 2.5c Slice 3.5 — post-smoke bug fixes)
 
 **Previous session**: 2026-04-28 (Theming Slices 1 + 2 — full 12-theme catalogue + /settings)
 
@@ -318,22 +340,19 @@ Prior migration commit log on `svelte-migration`:
 
 ## Build Status
 
-- Backend: `pytest` — 174/177 pass (3 pre-existing infra failures:
+- Backend: `pytest` — 190/193 pass (3 pre-existing infra failures:
   `test_api.py::test_healthcheck_and_dashboard_fallback`,
   `test_config.py::test_app_config_reads_home_assistant_options_file`,
   `test_mcp_server.py::test_finclaide_mcp_stdio_launch`; these require
   the Docker container's `/app/.venv` and are not regressions).
 - Frontend: `npm run check` — `svelte-check` 0/0; `npx vitest run` —
-  360/360 (was 336 pre-2.5c-slices; +7 scenarios page tests total,
-  +3 new planning deeplink tests this slice).
+  367/367 (was 360 pre-Slice-4; +7 new Slice-4 tests).
 
 ## Active Milestone
 
-Phase 2.5c (What-if scenarios) — Slices 1–3 + 3.5 (bug fixes) shipped.
-Remaining slices per
-`docs/superpowers/specs/2026-04-26-phase-2.5c-scenarios-design.md`:
-
-- Slice 4 — Pure projection panel + projection→sandbox apply (deferred).
+Phase 2.5c (What-if scenarios) — **all four slices + 3.5 (bug fixes) shipped.**
+Phase 2.5c is complete. Next direction to be decided in a separate planning pass
+(candidates: Phase 1/2 sweep work or Phase 3 Decision Engine V1).
 
 ## Blockers
 
