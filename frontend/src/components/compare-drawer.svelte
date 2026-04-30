@@ -11,19 +11,22 @@
   import Skeleton from '$components/ui/skeleton.svelte'
   import Sparkline from '$components/sparkline.svelte'
   import {
+    compareProjection,
     compareScenario,
     getErrorMessage,
     type CompareResponse,
     type CompareRow,
+    type ProjectionRequest,
   } from '$lib/api'
   import { formatMoney } from '$lib/format'
 
   type Props = {
     open: boolean
-    scenarioId: number | null
+    scenarioId?: number | null
+    projection?: ProjectionRequest | null
     onClose: () => void
   }
-  let { open, scenarioId, onClose }: Props = $props()
+  let { open, scenarioId = null, projection = null, onClose }: Props = $props()
 
   type SortKey =
     | 'name'
@@ -46,18 +49,25 @@
     enabled: false,
   })
   $effect(() => {
-    if (scenarioId === null) {
-      compareOpts.set({
-        queryKey: ['scenarios', 'compare', null],
-        queryFn: () => Promise.reject(new Error('disabled')) as Promise<CompareResponse>,
-        enabled: false,
-      })
-    } else {
+    if (scenarioId !== null && scenarioId !== undefined) {
       const id = scenarioId
       compareOpts.set({
         queryKey: ['scenarios', 'compare', id],
         queryFn: () => compareScenario(id),
         enabled: open,
+      })
+    } else if (projection !== null && projection !== undefined) {
+      const req = projection
+      compareOpts.set({
+        queryKey: ['scenarios', 'compare', 'projection', JSON.stringify(req)],
+        queryFn: () => compareProjection(req),
+        enabled: open,
+      })
+    } else {
+      compareOpts.set({
+        queryKey: ['scenarios', 'compare', null],
+        queryFn: () => Promise.reject(new Error('disabled')) as Promise<CompareResponse>,
+        enabled: false,
       })
     }
   })
@@ -114,7 +124,7 @@
     <DialogHeader>
       <DialogTitle class="flex items-center gap-2">
         <Columns2 class="h-4 w-4" />
-        Compare scenario
+        {projection ? 'Projection details' : 'Compare scenario'}
       </DialogTitle>
       <DialogDescription>
         Per-category drilldown vs the active plan and 6-month actuals
@@ -124,7 +134,7 @@
 
     <div class="mt-6 grid h-[calc(100%-7rem)] gap-4">
       <div class="overflow-y-auto rounded-md border bg-muted/15 p-3" aria-label="Compare table">
-        {#if scenarioId === null}
+        {#if scenarioId === null && (projection === null || projection === undefined)}
           <div class="text-sm text-muted-foreground">No scenario selected.</div>
         {:else if $compareQuery.isLoading}
           <Skeleton class="h-[400px] rounded" />

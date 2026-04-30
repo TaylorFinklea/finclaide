@@ -632,7 +632,7 @@ export const CompareRowSchema = z.object({
 })
 
 export const CompareResponseSchema = z.object({
-  scenario_id: z.number(),
+  scenario_id: z.number().nullable(),
   active_id: z.number(),
   window: z.object({
     since: z.string(),
@@ -661,6 +661,47 @@ export async function compareScenario(scenario_id: number) {
         'X-Finclaide-UI': '1',
       },
       body: JSON.stringify({ scenario_id }),
+    },
+  )
+}
+
+export const ProjectionAxisSchema = z.object({
+  category_id: z.number(),
+  percent_delta: z.number(),
+})
+export const ProjectionNewLineSchema = z.object({
+  group: z.string(),
+  name: z.string(),
+  monthly_amount_milliunits: z.number(),
+})
+export const ProjectionRequestSchema = z.object({
+  axes: z.array(ProjectionAxisSchema),
+  new_lines: z.array(ProjectionNewLineSchema),
+})
+export type ProjectionAxis = z.infer<typeof ProjectionAxisSchema>
+export type ProjectionNewLine = z.infer<typeof ProjectionNewLineSchema>
+export type ProjectionRequest = z.infer<typeof ProjectionRequestSchema>
+
+export async function compareProjection(req: ProjectionRequest) {
+  return requestJson(
+    withBasePath('/ui-api/scenarios/compare'),
+    CompareResponseSchema,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-Finclaide-UI': '1' },
+      body: JSON.stringify({ projection: req }),
+    },
+  )
+}
+
+export async function applyProjectionToSandbox(req: ProjectionRequest) {
+  return requestJson(
+    withBasePath('/ui-api/scenarios/projection/apply-to-sandbox'),
+    ActivePlanResponseSchema,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-Finclaide-UI': '1' },
+      body: JSON.stringify(req),
     },
   )
 }

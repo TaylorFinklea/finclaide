@@ -12,6 +12,7 @@
   import CardHeader from '$components/ui/card-header.svelte'
   import CardTitle from '$components/ui/card-title.svelte'
   import CompareDrawer from '$components/compare-drawer.svelte'
+  import ProjectionPanel from '$components/projection-panel.svelte'
   import DialogContent from '$components/ui/dialog-content.svelte'
   import DialogDescription from '$components/ui/dialog-description.svelte'
   import DialogFooter from '$components/ui/dialog-footer.svelte'
@@ -270,6 +271,10 @@
     {/if}
   </CardContent>
 </Card>
+
+<div class="mt-6">
+  <ProjectionPanel />
+</div>
 
 <!-- Auto-park modal: opens when Open is clicked while a Sandbox exists. -->
 <DialogPrimitive.Root

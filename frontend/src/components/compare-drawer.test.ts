@@ -9,6 +9,7 @@ import CompareDrawer from './compare-drawer.svelte'
 
 const apiMocks = vi.hoisted(() => ({
   compareScenario: vi.fn(),
+  compareProjection: vi.fn(),
 }))
 
 vi.mock('$lib/api', async () => {
@@ -116,5 +117,26 @@ describe('CompareDrawer', () => {
     await waitFor(() => {
       expect(screen.getByText(/Could not load comparison/i)).toBeInTheDocument()
     })
+  })
+
+  it('renders projection-mode rows when projection prop is set', async () => {
+    const projectionFixture = {
+      ...fixture,
+      scenario_id: null,
+    }
+    apiMocks.compareProjection.mockResolvedValue(projectionFixture)
+    renderPage(CompareDrawer as never, {
+      pageProps: {
+        open: true,
+        scenarioId: null,
+        projection: { axes: [{ category_id: 10, percent_delta: -20 }], new_lines: [] },
+        onClose: () => {},
+      } as never,
+    })
+    await screen.findByText('Bills / Rent')
+    expect(apiMocks.compareProjection).toHaveBeenCalledWith(
+      expect.objectContaining({ axes: expect.arrayContaining([{ category_id: 10, percent_delta: -20 }]) }),
+    )
+    expect(apiMocks.compareScenario).not.toHaveBeenCalled()
   })
 })
