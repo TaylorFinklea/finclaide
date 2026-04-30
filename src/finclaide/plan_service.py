@@ -681,6 +681,205 @@ class PlanService:
             "totals": totals,
         }
 
+    def compare_projection(
+        self,
+        axes: list[dict[str, Any]],
+        new_lines: list[dict[str, Any]],
+    ) -> dict[str, Any]:
+        """Stateless compare: active plan + axis-driven projected plan + 6mo actuals.
+
+        Returns the same shape as compare_scenario, but with scenario_id=None
+        and the rows reflecting projected (not saved) overrides. Pure read;
+        never writes."""
+        from finclaide.analytics import _month_reference, _n_months_ago
+
+        with self.database.connect() as connection:
+            active_row = connection.execute(
+                "SELECT id FROM plans WHERE status = 'active' ORDER BY plan_year DESC, id DESC LIMIT 1"
+            ).fetchone()
+            if active_row is None:
+                raise DataIntegrityError("No active plan found; cannot project.")
+            active_id = int(active_row["id"])
+
+            reference = _month_reference(None)
+            since_label = _n_months_ago(6, reference)
+            since_iso = f"{since_label}-01"
+            through_iso = reference.isoformat()
+            months_list = [_n_months_ago(i, reference) for i in range(6, 0, -1)]
+
+            active_snapshot = read_plan_categories_snapshot(connection, active_id)
+            actuals = _category_monthly_spend(connection, since_iso, through_iso)
+
+        # Build projected snapshot: copy active and apply axes.
+        active_by_id = {int(row["id"]): row for row in active_snapshot}
+        projected_snapshot: list[dict[str, Any]] = []
+        for row in active_snapshot:
+            projected_snapshot.append(dict(row))
+
+        projected_by_id = {int(row["id"]): row for row in projected_snapshot}
+        for axis in axes:
+            cat_id = int(axis.get("category_id", -999999))
+            if cat_id not in active_by_id:
+                continue  # silently skip unknown ids
+            percent_delta = float(axis.get("percent_delta", 0))
+            original = int(active_by_id[cat_id]["planned_milliunits"])
+            projected_by_id[cat_id]["planned_milliunits"] = round(
+                original * (1 + percent_delta / 100)
+            )
+
+        for i, new_line in enumerate(new_lines):
+            sentinel_id = -i - 1
+            projected_snapshot.append(
+                {
+                    "id": sentinel_id,
+                    "plan_id": active_id,
+                    "group_name": new_line.get("group", ""),
+                    "category_name": new_line.get("name", ""),
+                    "block": "monthly",
+                    "planned_milliunits": int(new_line.get("monthly_amount_milliunits", 0)),
+                    "annual_target_milliunits": 0,
+                    "due_month": None,
+                    "notes": None,
+                    "created_at": "",
+                    "updated_at": "",
+                }
+            )
+
+        rows = _build_compare_rows(
+            active_snapshot=active_snapshot,
+            scenario_snapshot=projected_snapshot,
+            actuals=actuals,
+            months_list=months_list,
+        )
+
+        # Force sparkline=[0]*6 for new hypothetical lines (sentinel ids).
+        sentinel_ids = {-i - 1 for i in range(len(new_lines))}
+        for row in rows:
+            if row["category_id"] in sentinel_ids:
+                row["sparkline"] = [0, 0, 0, 0, 0, 0]
+
+        totals = {
+            "planned_active_milliunits": sum(r["planned_active_milliunits"] for r in rows),
+            "planned_scenario_milliunits": sum(r["planned_scenario_milliunits"] for r in rows),
+            "vs_active_milliunits": sum(r["vs_active_milliunits"] for r in rows),
+        }
+        return {
+            "scenario_id": None,
+            "active_id": active_id,
+            "window": {
+                "since": since_label,
+                "through": reference.strftime("%Y-%m"),
+                "months": months_list,
+            },
+            "rows": rows,
+            "totals": totals,
+        }
+
+    def apply_projection_to_sandbox(
+        self,
+        axes: list[dict[str, Any]],
+        new_lines: list[dict[str, Any]],
+    ) -> dict[str, Any]:
+        """Materialize a projection into a freshly-created Sandbox.
+
+        create_scenario(from_plan_id=<active>) → patch each category's
+        planned_milliunits per axis → insert new plan_categories rows for
+        each new_line. Returns get_active_plan_by_id(sandbox_id)."""
+        from finclaide.database import utc_now
+
+        # Pre-check sandbox collision (create_scenario raises DataIntegrityError if one exists).
+        with self.database.connect() as connection:
+            active_row = connection.execute(
+                "SELECT id FROM plans WHERE status = 'active' ORDER BY plan_year DESC, id DESC LIMIT 1"
+            ).fetchone()
+            if active_row is None:
+                raise DataIntegrityError("No active plan found; cannot apply projection.")
+            active_id = int(active_row["id"])
+
+            # Pre-check so we can raise a friendly error before create_scenario.
+            existing_sandbox = connection.execute(
+                "SELECT id FROM plans WHERE status = 'scenario' AND label IS NULL LIMIT 1"
+            ).fetchone()
+            if existing_sandbox is not None:
+                raise DataIntegrityError(
+                    "A sandbox already exists. Save it as a scenario or "
+                    "discard it before starting a new sandbox."
+                )
+
+        # create_scenario clones categories from active.
+        sandbox_payload = self.create_scenario(from_plan_id=active_id, label=None)
+        sandbox_id = int(sandbox_payload["plan"]["id"])
+
+        # Build lookup: (group_name, category_name) -> active category_id.
+        with self.database.connect() as connection:
+            active_cats = connection.execute(
+                "SELECT id, group_name, category_name FROM plan_categories WHERE plan_id = ?",
+                (active_id,),
+            ).fetchall()
+        active_key_to_id = {
+            (int(row["id"])): (row["group_name"], row["category_name"])
+            for row in active_cats
+        }
+        # Also build group/name -> active id for reverse lookup.
+        active_id_to_key = {v: k for k, v in active_key_to_id.items()}
+
+        # Apply axes: find matching sandbox category by (group_name, category_name).
+        with self.database.connect() as connection:
+            sandbox_cats = connection.execute(
+                "SELECT id, group_name, category_name FROM plan_categories WHERE plan_id = ?",
+                (sandbox_id,),
+            ).fetchall()
+        sandbox_by_key = {
+            (row["group_name"], row["category_name"]): int(row["id"])
+            for row in sandbox_cats
+        }
+
+        now = utc_now()
+        for axis in axes:
+            cat_id = int(axis.get("category_id", -999999))
+            if cat_id not in active_key_to_id:
+                continue
+            key = active_key_to_id[cat_id]
+            sandbox_cat_id = sandbox_by_key.get(key)
+            if sandbox_cat_id is None:
+                continue
+            # Get active planned_milliunits for the original value.
+            with self.database.connect() as connection:
+                active_cat_row = connection.execute(
+                    "SELECT planned_milliunits FROM plan_categories WHERE plan_id = ? AND id = ?",
+                    (active_id, cat_id),
+                ).fetchone()
+            if active_cat_row is None:
+                continue
+            original = int(active_cat_row["planned_milliunits"])
+            percent_delta = float(axis.get("percent_delta", 0))
+            new_planned = round(original * (1 + percent_delta / 100))
+            self.update_category(
+                sandbox_id,
+                sandbox_cat_id,
+                {"planned_milliunits": new_planned},
+            )
+
+        # Insert new_lines.
+        for new_line in new_lines:
+            group = str(new_line.get("group", "")).strip()
+            name = str(new_line.get("name", "")).strip()
+            monthly_amount = int(new_line.get("monthly_amount_milliunits", 0))
+            if not group or not name:
+                continue
+            self.create_category(
+                sandbox_id,
+                {
+                    "group_name": group,
+                    "category_name": name,
+                    "block": "monthly",
+                    "planned_milliunits": monthly_amount,
+                    "annual_target_milliunits": 0,
+                },
+            )
+
+        return self.get_active_plan_by_id(sandbox_id)
+
     def get_active_plan_by_id(self, plan_id: int) -> dict[str, Any]:
         with self.database.connect() as connection:
             plan_row = connection.execute(

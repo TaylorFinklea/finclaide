@@ -225,10 +225,31 @@ def scenario_fork(scenario_id: int):
 @require_ui_write_request
 def scenario_compare():
     body = request.get_json(silent=True) or {}
-    if "scenario_id" not in body:
-        return jsonify({"error": "scenario_id is required"}), 400
-    scenario_id = int(body["scenario_id"])
-    return jsonify(_container().plan.compare_scenario(scenario_id))
+    scenario_id = body.get("scenario_id")
+    projection = body.get("projection")
+    if (scenario_id is None) == (projection is None):
+        return jsonify({"error": "Provide either scenario_id or projection (not both)."}), 400
+    plan_svc = _container().plan
+    if scenario_id is not None:
+        return jsonify(plan_svc.compare_scenario(int(scenario_id)))
+    axes = projection.get("axes", []) or []
+    new_lines = projection.get("new_lines", []) or []
+    return jsonify(plan_svc.compare_projection(axes, new_lines))
+
+
+@ui_api.post("/scenarios/projection/apply-to-sandbox")
+@require_ui_write_request
+def scenario_projection_apply():
+    body = request.get_json(silent=True) or {}
+    axes = body.get("axes", []) or []
+    new_lines = body.get("new_lines", []) or []
+    container = _container()
+    with container.operation_lock.guard("plan_apply_projection"):
+        try:
+            plan = container.plan.apply_projection_to_sandbox(axes, new_lines)
+        except DataIntegrityError as exc:
+            return jsonify({"error": str(exc)}), 400
+    return jsonify(plan), 201
 
 
 @ui_api.delete("/scenarios/<int:scenario_id>")

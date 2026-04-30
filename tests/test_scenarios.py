@@ -582,3 +582,147 @@ def test_compare_scenario_totals_match_row_sums(tmp_path: Path):
     assert response["totals"]["vs_active_milliunits"] == sum(
         r["vs_active_milliunits"] for r in response["rows"]
     )
+
+
+# --- compare_projection ---------------------------------------------------
+
+
+def test_compare_projection_applies_axis_percent_delta(tmp_path: Path):
+    """Axis with -20% on Rent ($1200) → projected $960."""
+    service, plan_id = _seeded_active(Database(tmp_path / "f.db"))
+    # Get Rent's category_id from the active plan.
+    active = service.get_active_plan_by_id(plan_id)
+    rent = next(c for c in active["blocks"]["monthly"] if c["category_name"] == "Rent")
+    response = service.compare_projection(
+        axes=[{"category_id": rent["id"], "percent_delta": -20}],
+        new_lines=[],
+    )
+    rent_row = next(r for r in response["rows"] if r["name"].endswith("Rent"))
+    assert rent_row["planned_active_milliunits"] == 1200000
+    assert rent_row["planned_scenario_milliunits"] == 960000
+    assert response["scenario_id"] is None
+    assert response["active_id"] == plan_id
+
+
+def test_compare_projection_includes_new_lines_as_virtual_rows(tmp_path: Path):
+    """new_line with $50000 milliunits → row with sentinel id < 0 and zero sparkline."""
+    service, plan_id = _seeded_active(Database(tmp_path / "f.db"))
+    response = service.compare_projection(
+        axes=[],
+        new_lines=[{"group": "Expenses", "name": "Emergency", "monthly_amount_milliunits": 50000}],
+    )
+    emerg_row = next(r for r in response["rows"] if r["name"].endswith("Emergency"))
+    assert emerg_row["category_id"] == -1
+    assert emerg_row["planned_scenario_milliunits"] == 50000
+    assert emerg_row["sparkline"] == [0, 0, 0, 0, 0, 0]
+
+
+def test_compare_projection_no_writes_to_db(tmp_path: Path):
+    """compare_projection is pure-read: plan + plan_categories row counts unchanged."""
+    db = Database(tmp_path / "f.db")
+    service, plan_id = _seeded_active(db)
+    active = service.get_active_plan_by_id(plan_id)
+    rent = next(c for c in active["blocks"]["monthly"] if c["category_name"] == "Rent")
+
+    with db.connect() as connection:
+        plan_count_before = connection.execute("SELECT COUNT(*) AS n FROM plans").fetchone()["n"]
+        cat_count_before = connection.execute(
+            "SELECT COUNT(*) AS n FROM plan_categories"
+        ).fetchone()["n"]
+
+    service.compare_projection(
+        axes=[{"category_id": rent["id"], "percent_delta": 10}],
+        new_lines=[{"group": "X", "name": "Y", "monthly_amount_milliunits": 1000}],
+    )
+
+    with db.connect() as connection:
+        plan_count_after = connection.execute("SELECT COUNT(*) AS n FROM plans").fetchone()["n"]
+        cat_count_after = connection.execute(
+            "SELECT COUNT(*) AS n FROM plan_categories"
+        ).fetchone()["n"]
+
+    assert plan_count_before == plan_count_after
+    assert cat_count_before == cat_count_after
+
+
+def test_compare_projection_handles_zero_axes_and_no_new_lines(tmp_path: Path):
+    """Empty axes/new_lines → all rows show 0 delta; totals match active sums."""
+    service, plan_id = _seeded_active(Database(tmp_path / "f.db"))
+    response = service.compare_projection(axes=[], new_lines=[])
+    for row in response["rows"]:
+        assert row["vs_active_milliunits"] == 0
+    assert response["totals"]["vs_active_milliunits"] == 0
+    assert response["totals"]["planned_active_milliunits"] == 1400000
+
+
+def test_compare_projection_handles_unknown_category_id_silently(tmp_path: Path):
+    """Axis with non-existent category_id is ignored; no error raised."""
+    service, plan_id = _seeded_active(Database(tmp_path / "f.db"))
+    response = service.compare_projection(
+        axes=[{"category_id": 99999, "percent_delta": 50}],
+        new_lines=[],
+    )
+    # Should still return rows for the two active categories with 0 delta.
+    assert len(response["rows"]) == 2
+    for row in response["rows"]:
+        assert row["vs_active_milliunits"] == 0
+
+
+# --- apply_projection_to_sandbox ------------------------------------------
+
+
+def test_apply_projection_creates_sandbox_with_axis_overrides(tmp_path: Path):
+    """axes=[(Rent, +10%)] → new sandbox has Rent at $1320000."""
+    service, plan_id = _seeded_active(Database(tmp_path / "f.db"))
+    active = service.get_active_plan_by_id(plan_id)
+    rent = next(c for c in active["blocks"]["monthly"] if c["category_name"] == "Rent")
+
+    result = service.apply_projection_to_sandbox(
+        axes=[{"category_id": rent["id"], "percent_delta": 10}],
+        new_lines=[],
+    )
+    assert result["plan"]["status"] == "scenario"
+    assert result["plan"]["label"] is None
+    sandbox_rent = next(c for c in result["blocks"]["monthly"] if c["category_name"] == "Rent")
+    assert sandbox_rent["planned_milliunits"] == 1320000
+
+    # Appears in scenarios list.
+    listed = service.list_scenarios()
+    assert any(s["id"] == result["plan"]["id"] for s in listed)
+
+
+def test_apply_projection_with_new_lines_creates_plan_categories(tmp_path: Path):
+    """new_lines=[{Expenses, Emergency, $50000}] → sandbox has the new row."""
+    service, plan_id = _seeded_active(Database(tmp_path / "f.db"))
+    result = service.apply_projection_to_sandbox(
+        axes=[],
+        new_lines=[{"group": "Expenses", "name": "Emergency", "monthly_amount_milliunits": 50000}],
+    )
+    all_cats = [c for block in result["blocks"].values() for c in block]
+    emerg = next((c for c in all_cats if c["category_name"] == "Emergency"), None)
+    assert emerg is not None
+    assert emerg["planned_milliunits"] == 50000
+    assert emerg["group_name"] == "Expenses"
+
+
+def test_apply_projection_when_sandbox_exists_raises(tmp_path: Path):
+    """Pre-existing sandbox → DataIntegrityError (UI shows auto-park modal)."""
+    service, plan_id = _seeded_active(Database(tmp_path / "f.db"))
+    service.create_scenario(plan_id)  # creates sandbox
+    with pytest.raises(DataIntegrityError, match="sandbox already exists"):
+        service.apply_projection_to_sandbox(axes=[], new_lines=[])
+
+
+def test_apply_projection_writes_revisions(tmp_path: Path):
+    """Each axis change generates a ui_update plan_revision on the new sandbox."""
+    service, plan_id = _seeded_active(Database(tmp_path / "f.db"))
+    active = service.get_active_plan_by_id(plan_id)
+    rent = next(c for c in active["blocks"]["monthly"] if c["category_name"] == "Rent")
+
+    result = service.apply_projection_to_sandbox(
+        axes=[{"category_id": rent["id"], "percent_delta": 5}],
+        new_lines=[],
+    )
+    sandbox_id = result["plan"]["id"]
+    revisions = service.list_revisions(sandbox_id)
+    assert any(rev["source"] == "ui_update" for rev in revisions)

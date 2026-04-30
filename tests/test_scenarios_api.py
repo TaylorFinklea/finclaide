@@ -186,3 +186,65 @@ def test_compare_endpoint_404_for_unknown_scenario(app_factory, ui_headers):
         headers=ui_headers,
     )
     assert response.status_code == 404
+
+
+def test_compare_endpoint_accepts_projection_body(app_factory, ui_headers):
+    """POST with {projection: {axes, new_lines}} → 200 with the right shape."""
+    app = app_factory()
+    client = _seed_active_plan(app)
+    response = client.post(
+        "/ui-api/scenarios/compare",
+        json={"projection": {"axes": [], "new_lines": []}},
+        headers=ui_headers,
+    )
+    assert response.status_code == 200, response.get_json()
+    payload = response.get_json()
+    assert payload["scenario_id"] is None
+    assert "active_id" in payload
+    assert "rows" in payload
+    assert "totals" in payload
+    assert len(payload["window"]["months"]) == 6
+
+
+def test_compare_endpoint_400_when_both_scenario_id_and_projection(app_factory, ui_headers):
+    """Providing both scenario_id and projection → 400."""
+    app = app_factory()
+    client = _seed_active_plan(app)
+    active_id = _active_plan_id(client, ui_headers)
+    sandbox_id = _create_sandbox(client, ui_headers, active_id)
+    response = client.post(
+        "/ui-api/scenarios/compare",
+        json={"scenario_id": sandbox_id, "projection": {"axes": [], "new_lines": []}},
+        headers=ui_headers,
+    )
+    assert response.status_code == 400
+
+
+def test_apply_projection_endpoint_returns_201(app_factory, ui_headers):
+    """Round-trip: POST projection/apply-to-sandbox → 201 with sandbox plan."""
+    app = app_factory()
+    client = _seed_active_plan(app)
+    response = client.post(
+        "/ui-api/scenarios/projection/apply-to-sandbox",
+        json={"axes": [], "new_lines": []},
+        headers=ui_headers,
+    )
+    assert response.status_code == 201, response.get_json()
+    payload = response.get_json()
+    assert payload["plan"]["status"] == "scenario"
+    assert payload["plan"]["label"] is None
+
+
+def test_apply_projection_endpoint_400_when_sandbox_exists(app_factory, ui_headers):
+    """Pre-existing sandbox → 400 (UI shows auto-park modal)."""
+    app = app_factory()
+    client = _seed_active_plan(app)
+    active_id = _active_plan_id(client, ui_headers)
+    _create_sandbox(client, ui_headers, active_id)
+    response = client.post(
+        "/ui-api/scenarios/projection/apply-to-sandbox",
+        json={"axes": [], "new_lines": []},
+        headers=ui_headers,
+    )
+    assert response.status_code == 400
+    assert "sandbox already exists" in response.get_json().get("error", "")
