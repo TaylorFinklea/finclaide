@@ -785,8 +785,6 @@ class PlanService:
         create_scenario(from_plan_id=<active>) → patch each category's
         planned_milliunits per axis → insert new plan_categories rows for
         each new_line. Returns get_active_plan_by_id(sandbox_id)."""
-        from finclaide.database import utc_now
-
         # Pre-check sandbox collision (create_scenario raises DataIntegrityError if one exists).
         with self.database.connect() as connection:
             active_row = connection.execute(
@@ -820,8 +818,6 @@ class PlanService:
             (int(row["id"])): (row["group_name"], row["category_name"])
             for row in active_cats
         }
-        # Also build group/name -> active id for reverse lookup.
-        active_id_to_key = {v: k for k, v in active_key_to_id.items()}
 
         # Apply axes: find matching sandbox category by (group_name, category_name).
         with self.database.connect() as connection:
@@ -834,7 +830,6 @@ class PlanService:
             for row in sandbox_cats
         }
 
-        now = utc_now()
         for axis in axes:
             cat_id = int(axis.get("category_id", -999999))
             if cat_id not in active_key_to_id:

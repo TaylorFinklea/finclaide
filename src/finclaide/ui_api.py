@@ -232,6 +232,7 @@ def scenario_compare():
     plan_svc = _container().plan
     if scenario_id is not None:
         return jsonify(plan_svc.compare_scenario(int(scenario_id)))
+    assert projection is not None  # narrowed by the XOR guard above
     axes = projection.get("axes", []) or []
     new_lines = projection.get("new_lines", []) or []
     return jsonify(plan_svc.compare_projection(axes, new_lines))
