@@ -27,6 +27,25 @@ household, single plan, not a public SaaS.
   an exported artifact for sharing/backup. Importer stays as a migration path.
   This shift is delivered in Phase 2.5.
 
+## Now / Next / Later
+
+Active items. Trim as completed.
+
+### Now
+- Optional: docker-compose + browser smoke of the History flow. Edit a category, open History, click the just-created revision, confirm Restore, verify the planning page reverts and a new `restore` revision lands at the top of the list.
+
+### Next
+- **Theming Slice 3** — polish: per-theme `--card-elevated` / `--surface-inset` tuning; per-theme body gradient (currently single hardcoded); WCAG AA contrast vitest case across every theme × every fg-on-bg combo; manual smoke of all 12 themes.
+- **Phase 2.5c Slice 2** — Saved scenarios + `/scenarios` route. `POST /ui-api/scenarios/{id}/save`, `/fork`. New route lists Saved with Open/Compare placeholders. Sandbox banner gains Save button → name modal. Edit-on-Saved forks into a new Sandbox.
+- **Phase 2.5c Slice 3** — Comparison view. `POST /ui-api/scenarios/compare` returns per-category rows with planned (active vs scenario), 6-month actuals avg, variance, sparkline. Drawer shared by Sandbox + Saved. Sortable.
+- **Phase 2.5c Slice 4** — Pure projection panel on `/scenarios` (per-category sliders + add-line). `POST .../projection/apply-to-sandbox` materializes axis state into Sandbox edits.
+- **Phase 2.5d** — Publish-to-Sheets export. Round-trip the active plan back into the configured Google Sheet using the importer-compatible 4-block layout. `.xlsx` download path for offline sharing.
+
+### Later
+- Phase 3 (analytics surfacing pages, suggested-mapping reconcile, configurable thresholds).
+- Phase 7 (iOS / household visibility) — no movement planned.
+- React-era Sonnet backlog items — re-frame against the Svelte file paths now that the migration has merged.
+
 ## Active Milestone
 
 **Phase 1 — Trusted Core Data Flow (COMPLETE 2026-04-18)**
@@ -132,78 +151,31 @@ Goal: app becomes canonical for the plan; spreadsheet is an exported artifact.
 savings (partly obviated by 2.5), operational review workflows, household /
 iOS companion, AI copilot.
 
-## Backlog (parallel, tiered by model capability)
+## Backlog
 
-<!-- tier3_owner: claude -->
+> Self-contained items any agent can execute. Each entry should include a prose tier hint ("Haiku candidate", "Sonnet — multi-file", "needs Opus to scope"). Always cite file:line. Any agent can pick up any item; first agent to start it executes it.
 
-Items are independent and low-risk; safe for a fresh agent with no session
-context. Always cite file:line. Claim by changing `[ ]` → `[~]` and
-committing. Skip `[~]` items — another agent owns them.
+- [ ] Extract Recharts inline style objects to constants — `frontend/src/components/group-chart.tsx:49-66`. **Tier hint**: Haiku.
+- [ ] Memoize `GroupChart` with `React.memo` — `frontend/src/components/group-chart.tsx:16`. **Tier hint**: Haiku.
+- [ ] Remove unused `Dialog` and `Tabs` shadcn imports from `App.tsx` and delete corresponding files in `frontend/src/components/ui/` if no consumers remain — `frontend/src/App.tsx`. **Tier hint**: Haiku.
+- [ ] Add `title` attributes to icon-only `RefreshCw` operation buttons — `frontend/src/pages/operations-page.tsx`. **Tier hint**: Haiku.
+- [ ] Add `aria-label` (or text-shadow variant) to `StatusChip` so status is not color-only — `frontend/src/components/status-chip.tsx:24`. **Tier hint**: Haiku.
+- [ ] Add explicit empty-state copy to the transactions page (today it falls back to the generic `DataTable` empty message) — `frontend/src/pages/transactions-page.tsx`. **Tier hint**: Haiku.
+- [ ] Replace bare `except Exception` in `financial_health_check` projection guard with `except (DataIntegrityError, ValueError)` and log the swallow — `src/finclaide/analytics.py:684`. **Tier hint**: Haiku.
+- [ ] Use sample variance (`n - 1`) in `_stddev` for >2 samples; document the choice — `src/finclaide/analytics.py:47-52`. **Tier hint**: Haiku.
+- [ ] Hoist `PAGE_SIZE = 25` and other hardcoded pagination/heights to a single layout constants module — `frontend/src/pages/transactions-page.tsx:30`, `frontend/src/components/group-chart.tsx:24`. **Tier hint**: Haiku.
+- [ ] One-line comments explaining each magic threshold in `_overage_watch` and `weekly()` — `src/finclaide/services.py:656, 668, 830, 866, 872, 1051` (no behavior change). **Tier hint**: Haiku.
+- [ ] Add a `THRESHOLDS` dataclass in `src/finclaide/thresholds.py` and route all overage / freshness / sigma / variance numbers through it. Keep defaults identical; allow env overrides. Touches `services.py` and `analytics.py`. **Tier hint**: Sonnet.
+- [ ] Split `ReportService.summary()` (`services.py:300-438`) into focused helpers: `_load_planned`, `_load_actuals`, `_compute_overage_watch`, `_compose_summary`. No behavior change; tests must remain green. **Tier hint**: Sonnet.
+- [ ] Split `_overage_watch()` (`services.py:562-701`) into `_analyze_spend_series`, `_compute_shortfall`, `_categorize_watch_level`. **Tier hint**: Sonnet.
+- [ ] Split `AnalyticsService.detect_anomalies()` (`analytics.py:316-441`) into `_detect_transaction_anomalies` and `_detect_category_anomalies`. **Tier hint**: Sonnet.
+- [ ] Split `financial_health_check()` (`analytics.py:593-711`) into `_check_sync_freshness`, `_check_reconciliation`, `_check_budget_import`, `_check_projection`. Each returns a list of alerts. **Tier hint**: Sonnet.
+- [ ] Add a transactions-page test in `frontend/src/test/transactions-page.test.tsx` covering: pagination next/prev, filter by group, detail-sheet open/close. **Tier hint**: Sonnet.
+- [ ] Add a top-level React error boundary around the lazy route Suspense in `frontend/src/App.tsx` with a fallback that links to Operations and logs to console. **Tier hint**: Sonnet.
+- [ ] Surface failure causes on Operations: parse `details_json.error` for the latest failed run of each source and render as a Card — `frontend/src/pages/operations-page.tsx`. Backend already provides the data via `/ui-api/status` and `/ui-api/runs`. **Tier hint**: Sonnet.
+- [ ] Add `/api/runs/{id}` (and `/ui-api` mirror) returning the full `sync_runs` row including `details_json` — `src/finclaide/api.py`, `src/finclaide/ui_api.py`, `src/finclaide/services.py`. **Tier hint**: Sonnet.
 
-### Haiku (mechanical, no judgment)
-
-- [ ] Extract Recharts inline style objects to constants —
-      `frontend/src/components/group-chart.tsx:49-66`.
-- [ ] Memoize `GroupChart` with `React.memo` —
-      `frontend/src/components/group-chart.tsx:16`.
-- [ ] Remove unused `Dialog` and `Tabs` shadcn imports from `App.tsx` and
-      delete corresponding files in `frontend/src/components/ui/` if no
-      consumers remain — `frontend/src/App.tsx`.
-- [ ] Add `title` attributes to icon-only `RefreshCw` operation buttons —
-      `frontend/src/pages/operations-page.tsx`.
-- [ ] Add `aria-label` (or text-shadow variant) to `StatusChip` so status is
-      not color-only — `frontend/src/components/status-chip.tsx:24`.
-- [ ] Add explicit empty-state copy to the transactions page (today it falls
-      back to the generic `DataTable` empty message) —
-      `frontend/src/pages/transactions-page.tsx`.
-- [ ] Replace bare `except Exception` in `financial_health_check` projection
-      guard with `except (DataIntegrityError, ValueError)` and log the swallow
-      — `src/finclaide/analytics.py:684`.
-- [ ] Use sample variance (`n - 1`) in `_stddev` for >2 samples; document the
-      choice — `src/finclaide/analytics.py:47-52`.
-- [ ] Hoist `PAGE_SIZE = 25` and other hardcoded pagination/heights to a
-      single layout constants module —
-      `frontend/src/pages/transactions-page.tsx:30`,
-      `frontend/src/components/group-chart.tsx:24`.
-- [ ] One-line comments explaining each magic threshold in `_overage_watch`
-      and `weekly()` — `src/finclaide/services.py:656, 668, 830, 866, 872,
-      1051` (no behavior change).
-
-### Sonnet (some architectural judgment)
-
-- [ ] Add a `THRESHOLDS` dataclass in `src/finclaide/thresholds.py` and route
-      all overage / freshness / sigma / variance numbers through it. Keep
-      defaults identical; allow env overrides. Touches `services.py` and
-      `analytics.py`.
-- [ ] Split `ReportService.summary()` (`services.py:300-438`) into focused
-      helpers: `_load_planned`, `_load_actuals`, `_compute_overage_watch`,
-      `_compose_summary`. No behavior change; tests must remain green.
-- [ ] Split `_overage_watch()` (`services.py:562-701`) into
-      `_analyze_spend_series`, `_compute_shortfall`, `_categorize_watch_level`.
-- [ ] Split `AnalyticsService.detect_anomalies()` (`analytics.py:316-441`)
-      into `_detect_transaction_anomalies` and `_detect_category_anomalies`.
-- [ ] Split `financial_health_check()` (`analytics.py:593-711`) into
-      `_check_sync_freshness`, `_check_reconciliation`, `_check_budget_import`,
-      `_check_projection`. Each returns a list of alerts.
-- [ ] Add a transactions-page test in
-      `frontend/src/test/transactions-page.test.tsx` covering: pagination
-      next/prev, filter by group, detail-sheet open/close.
-- [ ] Add a top-level React error boundary around the lazy route Suspense in
-      `frontend/src/App.tsx` with a fallback that links to Operations and
-      logs to console.
-- [ ] Surface failure causes on Operations: parse `details_json.error` for
-      the latest failed run of each source and render as a Card —
-      `frontend/src/pages/operations-page.tsx`. Backend already provides the
-      data via `/ui-api/status` and `/ui-api/runs`.
-- [ ] Add `/api/runs/{id}` (and `/ui-api` mirror) returning the full
-      `sync_runs` row including `details_json` —
-      `src/finclaide/api.py`, `src/finclaide/ui_api.py`,
-      `src/finclaide/services.py`.
-
-### Opus (design skill, cross-cutting — owned by Claude)
-
-Reserved for the active and upcoming milestones above. Do not start Opus-tier
-work without an explicit phase spec and the user's go-ahead.
+Opus-tier work is reserved for the active and upcoming milestones above; do not start without an explicit phase spec and the user's go-ahead.
 
 ## Priority Order
 

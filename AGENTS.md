@@ -142,6 +142,14 @@ When changing API behavior:
 - Keep `/api/*` token-protected for external clients.
 - Keep `/ui-api/*` same-origin for the browser dashboard.
 
+## Safe Operating Guidance
+
+- Do not write directly to SQLite unless you are explicitly changing internals.
+- Do not invent category aliases.
+- Do not scrape the dashboard if the API can provide the same data.
+- Do not mutate the mounted workbook from the container.
+- Do not treat the app as multi-tenant; it is single-household and single-plan in v1.
+
 ## Testing
 
 - Primary verification: `make test`
