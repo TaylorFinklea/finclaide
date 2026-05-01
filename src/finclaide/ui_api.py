@@ -115,6 +115,34 @@ def analytics_projection():
     )
 
 
+@ui_api.get("/analytics/trends")
+@require_same_origin
+def analytics_trends():
+    months = int(request.args.get("months", "12"))
+    return jsonify(
+        _container().analytics.spending_trends(
+            months=months,
+            group_name=request.args.get("group"),
+            category_name=request.args.get("category"),
+            as_of_month=request.args.get("as_of_month"),
+        )
+    )
+
+
+@ui_api.get("/analytics/anomalies")
+@require_same_origin
+def analytics_anomalies():
+    months = int(request.args.get("months", "6"))
+    threshold = float(request.args.get("threshold", "2.0"))
+    return jsonify(
+        _container().analytics.detect_anomalies(
+            months=months,
+            threshold_sigma=threshold,
+            as_of_month=request.args.get("as_of_month"),
+        )
+    )
+
+
 @ui_api.get("/plan/active")
 @require_same_origin
 def plan_active():

@@ -10,6 +10,7 @@
     FolderSync,
     Layers,
     LayoutGrid,
+    Lightbulb,
     Pencil,
     ReceiptText,
     Settings,
@@ -46,6 +47,7 @@
     { to: '/transactions', label: 'Transactions', icon: ReceiptText },
     { to: '/planning', label: 'Planning', icon: Pencil },
     { to: '/scenarios', label: 'Scenarios', icon: Layers },
+    { to: '/insights', label: 'Insights', icon: Lightbulb },
     { to: '/operations', label: 'Operations', icon: FolderSync },
     { to: '/settings', label: 'Settings', icon: Settings },
   ] as const

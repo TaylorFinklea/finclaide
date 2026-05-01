@@ -548,6 +548,122 @@ export async function getYearEndProjection(month?: string) {
   )
 }
 
+export const TrendCategorySchema = z.object({
+  group_name: z.string(),
+  category_name: z.string(),
+  monthly_spend: z.array(
+    z.object({
+      month: z.string(),
+      spend_milliunits: z.number(),
+      transaction_count: z.number(),
+    }),
+  ),
+  total_milliunits: z.number(),
+  average_milliunits: z.number(),
+  trend_direction: z.string(),
+  coefficient_of_variation: z.number(),
+})
+export type TrendCategory = z.infer<typeof TrendCategorySchema>
+
+export const SpendingTrendsSchema = z.object({
+  lookback_months: z.number(),
+  since: z.string(),
+  as_of_month: z.string(),
+  categories: z.array(TrendCategorySchema),
+})
+export type SpendingTrends = z.infer<typeof SpendingTrendsSchema>
+
+export async function getSpendingTrends(opts: {
+  months?: number
+  group?: string
+  category?: string
+  as_of_month?: string
+} = {}) {
+  const params = new URLSearchParams()
+  if (opts.months !== undefined) params.set('months', String(opts.months))
+  if (opts.group) params.set('group', opts.group)
+  if (opts.category) params.set('category', opts.category)
+  if (opts.as_of_month) params.set('as_of_month', opts.as_of_month)
+  const qs = params.toString()
+  return requestJson(
+    withBasePath(`/ui-api/analytics/trends${qs ? `?${qs}` : ''}`),
+    SpendingTrendsSchema,
+  )
+}
+
+export const TransactionAnomalySchema = z.object({
+  id: z.string(),
+  date: z.string(),
+  payee_name: NullableString,
+  amount_milliunits: z.number(),
+  group_name: NullableString,
+  category_name: NullableString,
+  category_mean_milliunits: z.number(),
+  category_stddev_milliunits: z.number(),
+  sigma_distance: z.number(),
+  narrative: z
+    .object({
+      typical_low_milliunits: z.number(),
+      typical_high_milliunits: z.number(),
+      category_average_milliunits: z.number(),
+      category_payee_count: z.number().optional(),
+      headline: z.string(),
+      context: z.string(),
+    })
+    .optional(),
+})
+export type TransactionAnomaly = z.infer<typeof TransactionAnomalySchema>
+
+export const CategoryAnomalySchema = z.object({
+  group_name: z.string(),
+  category_name: z.string(),
+  month: z.string(),
+  spend_milliunits: z.number(),
+  historical_mean_milliunits: z.number(),
+  historical_stddev_milliunits: z.number(),
+  sigma_distance: z.number(),
+  narrative: z
+    .object({
+      typical_low_milliunits: z.number(),
+      typical_high_milliunits: z.number(),
+      category_average_milliunits: z.number(),
+      recent_months: z
+        .array(
+          z.object({ month: z.string(), spend_milliunits: z.number() }),
+        )
+        .optional(),
+      headline: z.string(),
+      context: z.string(),
+    })
+    .optional(),
+})
+export type CategoryAnomaly = z.infer<typeof CategoryAnomalySchema>
+
+export const AnomaliesResponseSchema = z.object({
+  lookback_months: z.number(),
+  as_of_month: z.string(),
+  threshold_sigma: z.number(),
+  transaction_anomalies: z.array(TransactionAnomalySchema),
+  category_anomalies: z.array(CategoryAnomalySchema),
+})
+export type AnomaliesResponse = z.infer<typeof AnomaliesResponseSchema>
+
+export async function getAnomalies(opts: {
+  months?: number
+  threshold?: number
+  as_of_month?: string
+} = {}) {
+  const params = new URLSearchParams()
+  if (opts.months !== undefined) params.set('months', String(opts.months))
+  if (opts.threshold !== undefined) params.set('threshold', String(opts.threshold))
+  if (opts.as_of_month) params.set('as_of_month', opts.as_of_month)
+  const qs = params.toString()
+  return requestJson(
+    withBasePath(`/ui-api/analytics/anomalies${qs ? `?${qs}` : ''}`),
+    AnomaliesResponseSchema,
+  )
+}
+
 export const BudgetPublishResponseSchema = z.object({
   run_id: z.number(),
   tab_name: z.string(),
