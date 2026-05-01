@@ -1152,3 +1152,5 @@ class ServiceContainer:
     scheduled_refresh: Any | None
     operation_lock: OperationLock
     plan: Any = None
+    plan_exporter: Any = None
+    export_storage: Any = None

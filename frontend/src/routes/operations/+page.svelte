@@ -14,6 +14,8 @@
   import CardHeader from '$components/ui/card-header.svelte'
   import CardTitle from '$components/ui/card-title.svelte'
   import {
+    exportBudget,
+    exportBudgetDownloadUrl,
     getErrorMessage,
     getReconcilePreview,
     getRuns,
@@ -83,9 +85,28 @@
     },
     onError: (error) => toast.error(getErrorMessage(error)),
   })
+  const exportMutation = createMutation({
+    mutationFn: exportBudget,
+    onSuccess: async (resp) => {
+      latestPayload = resp as unknown as Record<string, unknown>
+      const link = document.createElement('a')
+      link.href = exportBudgetDownloadUrl(resp.run_id)
+      link.download = resp.filename
+      document.body.appendChild(link)
+      link.click()
+      link.remove()
+      toast.success(`Exported ${resp.filename}`)
+      await invalidateAll()
+    },
+    onError: (error) => toast.error(getErrorMessage(error)),
+  })
 
   let busy = $derived(
-    $importMutation.isPending || $syncMutation.isPending || $reconcileMutation.isPending || $refreshMutation.isPending,
+    $importMutation.isPending ||
+      $syncMutation.isPending ||
+      $reconcileMutation.isPending ||
+      $refreshMutation.isPending ||
+      $exportMutation.isPending,
   )
   let recentRuns = $derived($runsQuery.data?.runs ?? [])
 
@@ -127,6 +148,7 @@
     const details = run.details ?? {}
     if (typeof details.error === 'string') return details.error
     if (run.source === 'budget_import' && typeof details.row_count === 'number') return `Imported ${details.row_count} planned rows`
+    if (run.source === 'budget_export' && typeof details.filename === 'string') return `Exported ${details.filename}`
     if (run.source === 'ynab_sync' && typeof details.transaction_count === 'number') return `Synced ${details.transaction_count} transactions`
     if (run.source === 'reconcile' && typeof details.mismatch_count === 'number') {
       return details.mismatch_count === 0 ? 'No mismatches found' : `${details.mismatch_count} mismatches detected`
@@ -138,6 +160,7 @@
   function formatRunSource(source: string) {
     switch (source) {
       case 'budget_import': return 'Budget Import'
+      case 'budget_export': return 'Export .xlsx'
       case 'ynab_sync': return 'YNAB Sync'
       case 'reconcile': return 'Reconcile'
       case 'scheduled_refresh': return 'Scheduled Refresh'
@@ -194,11 +217,12 @@
         Trigger data refreshes and reconciliation for {formatMonthLabel(month)}.
       </p>
     </CardHeader>
-    <CardContent class="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+    <CardContent class="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
       {@render opButton('Import Budget', 'Reload the current workbook export into SQLite.', $importMutation.isPending, () => $importMutation.mutate())}
       {@render opButton('Sync YNAB', 'Pull new accounts, categories, and transaction deltas.', $syncMutation.isPending, () => $syncMutation.mutate())}
       {@render opButton('Reconcile', 'Verify imported sheet categories still match YNAB exactly.', $reconcileMutation.isPending, () => $reconcileMutation.mutate())}
       {@render opButton('Refresh All', 'Run import, sync, and reconcile sequentially.', $refreshMutation.isPending, () => $refreshMutation.mutate())}
+      {@render opButton('Export .xlsx', 'Download the current plan as a fresh workbook for offline sharing or accountant handoff.', $exportMutation.isPending, () => $exportMutation.mutate())}
     </CardContent>
   </Card>
 

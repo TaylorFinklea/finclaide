@@ -1105,6 +1105,89 @@ def test_ui_api_plan_revision_restore_requires_ui_header(
     assert with_header.status_code == 200
 
 
+def test_export_endpoint_returns_201_with_run_id(app_factory, auth_header, tmp_path: Path):
+    workbook = build_budget_workbook(tmp_path / "Budget.xlsx")
+    app = app_factory(workbook_path=workbook)
+    client = app.test_client()
+
+    client.post("/api/budget/import", headers=auth_header)
+    response = client.post("/api/budget/export", headers=auth_header)
+
+    assert response.status_code == 201
+    payload = response.get_json()
+    assert isinstance(payload["run_id"], int)
+    assert payload["filename"].startswith("2026 Budget — exported ")
+    assert payload["filename"].endswith(".xlsx")
+    assert payload["row_count"] == 11
+    assert payload["file_size_bytes"] > 0
+
+
+def test_export_records_run_visible_in_runs_list(app_factory, auth_header, tmp_path: Path):
+    workbook = build_budget_workbook(tmp_path / "Budget.xlsx")
+    app = app_factory(workbook_path=workbook)
+    client = app.test_client()
+
+    client.post("/api/budget/import", headers=auth_header)
+    export_payload = client.post("/api/budget/export", headers=auth_header).get_json()
+
+    runs = client.get("/api/runs?limit=10", headers=auth_header).get_json()["runs"]
+    matching = [run for run in runs if run["source"] == "budget_export"]
+    assert len(matching) == 1
+    assert matching[0]["id"] == export_payload["run_id"]
+    assert matching[0]["status"] == "success"
+    assert matching[0]["details"]["filename"] == export_payload["filename"]
+
+
+def test_export_download_streams_xlsx_bytes(app_factory, auth_header, tmp_path: Path):
+    workbook = build_budget_workbook(tmp_path / "Budget.xlsx")
+    app = app_factory(workbook_path=workbook)
+    client = app.test_client()
+
+    client.post("/api/budget/import", headers=auth_header)
+    export_payload = client.post("/api/budget/export", headers=auth_header).get_json()
+    run_id = export_payload["run_id"]
+
+    response = client.get(f"/api/budget/export/{run_id}/download", headers=auth_header)
+
+    assert response.status_code == 200
+    assert response.data.startswith(b"PK")  # xlsx is a zip file
+    assert len(response.data) == export_payload["file_size_bytes"]
+    disposition = response.headers.get("Content-Disposition", "")
+    assert "attachment" in disposition
+    assert response.headers.get("Content-Type", "").startswith(
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    )
+
+
+def test_export_download_404_for_unknown_run_id(app_factory, auth_header, tmp_path: Path):
+    workbook = build_budget_workbook(tmp_path / "Budget.xlsx")
+    app = app_factory(workbook_path=workbook)
+    client = app.test_client()
+
+    response = client.get("/api/budget/export/999999/download", headers=auth_header)
+    assert response.status_code == 404
+    body = response.get_json()
+    assert body["error"] == "not_found"
+
+
+def test_ui_api_export_endpoint_requires_ui_header(app_factory, tmp_path: Path):
+    workbook = build_budget_workbook(tmp_path / "Budget.xlsx")
+    app = app_factory(workbook_path=workbook)
+    client = app.test_client()
+
+    client.post("/api/budget/import", headers={"Authorization": "Bearer test-token"})
+
+    without_header = client.post("/ui-api/operations/export-budget", json={})
+    assert without_header.status_code == 403
+
+    with_header = client.post(
+        "/ui-api/operations/export-budget",
+        headers={"X-Finclaide-UI": "1"},
+        json={},
+    )
+    assert with_header.status_code == 201
+
+
 def test_healthcheck_and_dashboard_fallback(app_factory):
     app = app_factory()
     client = app.test_client()

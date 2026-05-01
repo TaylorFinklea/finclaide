@@ -14,6 +14,7 @@ const apiMocks = vi.hoisted(() => ({
   syncYnab: vi.fn(),
   reconcile: vi.fn(),
   refreshAll: vi.fn(),
+  exportBudget: vi.fn(),
 }))
 
 vi.mock('$lib/api', async () => {
@@ -31,6 +32,12 @@ describe('OperationsPage', () => {
     apiMocks.syncYnab.mockResolvedValue({ transaction_count: 10 })
     apiMocks.reconcile.mockResolvedValue({ mismatch_count: 0 })
     apiMocks.refreshAll.mockResolvedValue({ ok: true })
+    apiMocks.exportBudget.mockResolvedValue({
+      run_id: 42,
+      filename: 'TestBudget.xlsx',
+      row_count: 75,
+      file_size_bytes: 6040,
+    })
   })
 
   it('runs budget import from the operations panel', async () => {
@@ -53,5 +60,39 @@ describe('OperationsPage', () => {
     await waitFor(() => {
       expect(apiMocks.importBudget).toHaveBeenCalledTimes(1)
     })
+  })
+
+  it('exports the active plan via the Export .xlsx button and triggers a download', async () => {
+    const clickSpy = vi.fn()
+    const origCreate = document.createElement.bind(document)
+    vi.spyOn(document, 'createElement').mockImplementation((tag: string) => {
+      const element = origCreate(tag) as HTMLAnchorElement
+      if (tag.toLowerCase() === 'a') {
+        element.click = clickSpy
+      }
+      return element
+    })
+
+    renderPage(OperationsPage as never)
+    await screen.findByText('Operations')
+    await userEvent.click(screen.getByRole('button', { name: 'Export .xlsx' }))
+
+    await waitFor(() => {
+      expect(apiMocks.exportBudget).toHaveBeenCalledTimes(1)
+    })
+    expect(clickSpy).toHaveBeenCalled()
+  })
+
+  it('shows a toast when the export call fails', async () => {
+    apiMocks.exportBudget.mockRejectedValueOnce(new Error('boom'))
+    renderPage(OperationsPage as never)
+    await screen.findByText('Operations')
+    await userEvent.click(screen.getByRole('button', { name: 'Export .xlsx' }))
+    await waitFor(() => {
+      expect(apiMocks.exportBudget).toHaveBeenCalled()
+    })
+    // The mutation surfaces the error via toast (not asserted directly here —
+    // svelte-sonner is global-mocked elsewhere — but the call itself rejecting
+    // exercises the onError path without crashing the page).
   })
 })

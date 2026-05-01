@@ -420,6 +420,32 @@ export function refreshAll(month: string) {
   return postUiOperation('/ui-api/operations/refresh-all', { month })
 }
 
+export const BudgetExportResponseSchema = z.object({
+  run_id: z.number(),
+  filename: z.string(),
+  row_count: z.number(),
+  file_size_bytes: z.number(),
+})
+
+export async function exportBudget() {
+  return requestJson(
+    withBasePath('/ui-api/operations/export-budget'),
+    BudgetExportResponseSchema,
+    {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Finclaide-UI': '1',
+      },
+      body: JSON.stringify({}),
+    },
+  )
+}
+
+export function exportBudgetDownloadUrl(run_id: number): string {
+  return withBasePath(`/ui-api/operations/export-budget/${run_id}/download`)
+}
+
 export async function getActivePlan(year?: number) {
   const search = year ? `?year=${year}` : ''
   return requestJson(withBasePath(`/ui-api/plan/active${search}`), ActivePlanResponseSchema)

@@ -3,10 +3,15 @@ from __future__ import annotations
 from functools import wraps
 from typing import Any, Callable
 
-from flask import Blueprint, Response, current_app, jsonify, request
+from flask import Blueprint, Response, current_app, jsonify, request, send_file
 
 from finclaide.errors import DataIntegrityError
-from finclaide.operations import run_budget_import, run_reconcile, run_ynab_sync
+from finclaide.operations import (
+    run_budget_export,
+    run_budget_import,
+    run_reconcile,
+    run_ynab_sync,
+)
 
 ui_api = Blueprint("ui_api", __name__, url_prefix="/ui-api")
 
@@ -286,6 +291,39 @@ def import_budget():
     with container.operation_lock.guard("budget_import"):
         result = run_budget_import(container)
     return jsonify(result)
+
+
+@ui_api.post("/operations/export-budget")
+@require_ui_write_request
+def export_budget():
+    container = _container()
+    with container.operation_lock.guard("budget_export"):
+        result = run_budget_export(container)
+    return jsonify(result), 201
+
+
+@ui_api.get("/operations/export-budget/<int:run_id>/download")
+@require_same_origin
+def download_budget_export(run_id: int):
+    container = _container()
+    storage_path = container.export_storage.path_for(run_id)
+    if not storage_path.exists():
+        return jsonify({"error": "not_found", "error_detail": {"kind": "not_found", "message": f"Export {run_id} is no longer available."}}), 404
+    run = container.reports.run_by_id(run_id)
+    download_name = (
+        run["details"].get("filename")
+        if run and isinstance(run.get("details"), dict)
+        else f"budget-export-{run_id}.xlsx"
+    )
+    return send_file(
+        storage_path,
+        as_attachment=True,
+        download_name=download_name,
+        mimetype=(
+            "application/vnd.openxmlformats-officedocument."
+            "spreadsheetml.sheet"
+        ),
+    )
 
 
 @ui_api.post("/operations/sync-ynab")

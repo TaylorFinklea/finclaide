@@ -421,9 +421,9 @@ class Database:
         details: dict[str, Any] | None,
         started_at: str | None = None,
         finished_at: str | None = None,
-    ) -> None:
+    ) -> int:
         with self.connect() as connection:
-            connection.execute(
+            cursor = connection.execute(
                 """
                 INSERT INTO sync_runs(source, status, started_at, finished_at, details_json)
                 VALUES (?, ?, ?, ?, ?)
@@ -436,3 +436,4 @@ class Database:
                     json.dumps(details or {}, sort_keys=True),
                 ),
             )
+            return int(cursor.lastrowid or 0)
