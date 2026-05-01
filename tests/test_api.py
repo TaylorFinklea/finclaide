@@ -1170,6 +1170,64 @@ def test_export_download_404_for_unknown_run_id(app_factory, auth_header, tmp_pa
     assert body["error"] == "not_found"
 
 
+def test_publish_endpoint_400_when_budget_source_not_google_sheets(
+    app_factory, auth_header, tmp_path: Path,
+):
+    workbook = build_budget_workbook(tmp_path / "Budget.xlsx")
+    app = app_factory(workbook_path=workbook)
+    client = app.test_client()
+    client.post("/api/budget/import", headers=auth_header)
+    response = client.post("/api/budget/publish", headers=auth_header)
+    assert response.status_code == 400
+    assert "google_sheets" in response.get_json()["error"]
+
+
+def test_publish_endpoint_succeeds_with_mock_sheets_publisher(
+    app_factory, auth_header, tmp_path: Path,
+):
+    """Publish endpoint round-trip: swap the publisher's client + token
+    provider to mock the Sheets API, then assert 201 + run row recorded."""
+    workbook = build_budget_workbook(tmp_path / "Budget.xlsx")
+    app = app_factory(workbook_path=workbook)
+    client = app.test_client()
+    client.post("/api/budget/import", headers=auth_header)
+
+    services = app.extensions["finclaide"]
+    services.sheets_publisher._access_token_provider = lambda: "stub-token"
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path.endswith(":batchUpdate") and "values" not in request.url.path:
+            body_text = request.content.decode("utf-8")
+            import json as _json
+            body = _json.loads(body_text)
+            title = body["requests"][0]["addSheet"]["properties"]["title"]
+            return httpx.Response(
+                200,
+                json={"replies": [{"addSheet": {"properties": {"sheetId": 555, "title": title}}}]},
+            )
+        if "values:batchUpdate" in request.url.path:
+            return httpx.Response(200, json={})
+        return httpx.Response(404)
+
+    services.sheets_publisher._client = httpx.Client(
+        transport=httpx.MockTransport(handler), timeout=5.0
+    )
+    # Bypass the budget_source guard for this synthetic test by flipping
+    # the live config (AppConfig is frozen, so we replace the publisher's
+    # ref to a config copy).
+    services.sheets_publisher._config = type(services.config)(
+        **{**services.config.__dict__, "budget_source": "google_sheets",
+           "google_sheets_file_id": "fid-mock"}
+    )
+
+    response = client.post("/api/budget/publish", headers=auth_header)
+    assert response.status_code == 201
+    payload = response.get_json()
+    assert payload["tab_id"] == 555
+    assert "published" in payload["tab_name"]
+    assert payload["tab_url"].startswith("https://docs.google.com/spreadsheets/d/fid-mock/edit#gid=555")
+
+
 def test_ui_api_export_endpoint_requires_ui_header(app_factory, tmp_path: Path):
     workbook = build_budget_workbook(tmp_path / "Budget.xlsx")
     app = app_factory(workbook_path=workbook)

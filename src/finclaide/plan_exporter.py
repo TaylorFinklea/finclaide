@@ -58,6 +58,140 @@ class ExportResult:
     row_count: int
 
 
+@dataclass
+class PlanCellGrid:
+    """Layout-aware view of the active plan, decoupled from any output
+    format. Both the xlsx exporter and the Sheets publisher render from
+    this same grid so the column layout stays in lockstep."""
+
+    cells: dict[str, str | float]
+    """{cell_ref: value}. Cells with formula strings start with '='."""
+
+    cached_values: dict[str, float]
+    """{cell_ref: numeric_cached_value} for any cells that hold formulas
+    requiring a cached numeric (the totals row's =SUM)."""
+
+    row_count: int
+    """Count of category rows actually written (excludes group headers
+    and totals)."""
+
+
+def build_plan_cell_grid(plan: dict[str, Any]) -> PlanCellGrid:
+    cells: dict[str, str | float] = {}
+
+    monthly_total = _emit_simple_block(
+        cells,
+        rows=plan["blocks"]["monthly"],
+        name_col="A",
+        amount_col="B",
+        header_label=None,
+    )
+    cells[f"A{TOTALS_ROW}"] = "Total"
+    cells[f"B{TOTALS_ROW}"] = "=SUM(B2:B52)"
+
+    yearly_total = _emit_yearly_block(
+        cells,
+        annual_rows=plan["blocks"]["annual"],
+        one_time_rows=plan["blocks"]["one_time"],
+    )
+    cells[f"D{TOTALS_ROW}"] = "Total"
+    cells[f"G{TOTALS_ROW}"] = "=SUM(G2:G52)"
+
+    stipends_total = _emit_simple_block(
+        cells,
+        rows=plan["blocks"]["stipends"],
+        name_col="I",
+        amount_col="J",
+        header_label="Stipends",
+    )
+    cells[f"I{TOTALS_ROW}"] = "Total"
+    cells[f"J{TOTALS_ROW}"] = "=SUM(J2:J52)"
+
+    savings_total = _emit_simple_block(
+        cells,
+        rows=plan["blocks"]["savings"],
+        name_col="L",
+        amount_col="M",
+        header_label="Savings",
+    )
+    cells[f"L{TOTALS_ROW}"] = "Total"
+    cells[f"M{TOTALS_ROW}"] = "=SUM(M2:M52)"
+
+    cached_values = {
+        f"B{TOTALS_ROW}": _milliunits_to_dollars(monthly_total),
+        f"G{TOTALS_ROW}": _milliunits_to_dollars(yearly_total),
+        f"J{TOTALS_ROW}": _milliunits_to_dollars(stipends_total),
+        f"M{TOTALS_ROW}": _milliunits_to_dollars(savings_total),
+    }
+
+    row_count = (
+        len(plan["blocks"]["monthly"])
+        + len(plan["blocks"]["annual"])
+        + len(plan["blocks"]["one_time"])
+        + len(plan["blocks"]["stipends"])
+        + len(plan["blocks"]["savings"])
+    )
+
+    return PlanCellGrid(
+        cells=cells, cached_values=cached_values, row_count=row_count
+    )
+
+
+def _emit_simple_block(
+    cells: dict[str, str | float],
+    *,
+    rows: list[dict[str, Any]],
+    name_col: str,
+    amount_col: str,
+    header_label: str | None,
+) -> int:
+    if header_label is not None:
+        cells[f"{name_col}1"] = header_label
+    next_row = 2
+    current_group: str | None = None
+    block_total = 0
+    for row in rows:
+        if row["group_name"] != current_group:
+            cells[f"{name_col}{next_row}"] = row["group_name"]
+            next_row += 1
+            current_group = row["group_name"]
+        cells[f"{name_col}{next_row}"] = row["category_name"]
+        cells[f"{amount_col}{next_row}"] = _milliunits_to_dollars(row["planned_milliunits"])
+        block_total += int(row["planned_milliunits"])
+        next_row += 1
+    return block_total
+
+
+def _emit_yearly_block(
+    cells: dict[str, str | float],
+    *,
+    annual_rows: list[dict[str, Any]],
+    one_time_rows: list[dict[str, Any]],
+) -> int:
+    next_row = 2
+    block_total = 0
+    for current_group, group_rows in (
+        ("Yearly", annual_rows),
+        ("One Time Purchase", one_time_rows),
+    ):
+        if not group_rows:
+            continue
+        cells[f"D{next_row}"] = current_group
+        next_row += 1
+        for row in group_rows:
+            cells[f"D{next_row}"] = row["category_name"]
+            cells[f"E{next_row}"] = _milliunits_to_dollars(
+                row.get("annual_target_milliunits", 0)
+            )
+            due_month = row.get("due_month")
+            if due_month:
+                cells[f"F{next_row}"] = _MONTH_ABBREVIATIONS[int(due_month)]
+            cells[f"G{next_row}"] = _milliunits_to_dollars(row["planned_milliunits"])
+            block_total += int(row["planned_milliunits"])
+            next_row += 1
+    return block_total
+
+
 class PlanExporter:
     """Renders the active plan as an .xlsx matching `BudgetImporter`'s layout."""
 
@@ -72,6 +206,7 @@ class PlanExporter:
         now: str | None = None,
     ) -> ExportResult:
         plan = self._plan_service.get_active_plan(plan_year=plan_year)
+        grid = build_plan_cell_grid(plan)
         timestamp = now or utc_now()
 
         workbook = Workbook()
@@ -79,59 +214,12 @@ class PlanExporter:
         assert worksheet is not None  # openpyxl always creates one
         worksheet.title = sheet_name
 
-        cached_values: dict[str, int | float] = {}
-        row_count = 0
+        for cell_ref, value in grid.cells.items():
+            worksheet[cell_ref] = value
 
-        # --- Monthly block (A:B) --------------------------------------------
-        monthly_total = self._write_monthly_block(
-            worksheet, plan["blocks"]["monthly"]
-        )
-        row_count += len(plan["blocks"]["monthly"])
-        worksheet["A" + str(TOTALS_ROW)] = "Total"
-        worksheet["B" + str(TOTALS_ROW)] = "=SUM(B2:B52)"
-        cached_values["B" + str(TOTALS_ROW)] = _milliunits_to_dollars(monthly_total)
-
-        # --- Yearly + One-time block (D:G) ----------------------------------
-        yearly_total = self._write_yearly_block(
-            worksheet,
-            annual_rows=plan["blocks"]["annual"],
-            one_time_rows=plan["blocks"]["one_time"],
-        )
-        row_count += len(plan["blocks"]["annual"]) + len(
-            plan["blocks"]["one_time"]
-        )
-        worksheet["D" + str(TOTALS_ROW)] = "Total"
-        worksheet["G" + str(TOTALS_ROW)] = "=SUM(G2:G52)"
-        cached_values["G" + str(TOTALS_ROW)] = _milliunits_to_dollars(yearly_total)
-
-        # --- Stipends (I:J) -------------------------------------------------
-        stipends_total = self._write_simple_block(
-            worksheet,
-            rows=plan["blocks"]["stipends"],
-            name_col="I",
-            amount_col="J",
-            header_label="Stipends",
-        )
-        row_count += len(plan["blocks"]["stipends"])
-        worksheet["I" + str(TOTALS_ROW)] = "Total"
-        worksheet["J" + str(TOTALS_ROW)] = "=SUM(J2:J52)"
-        cached_values["J" + str(TOTALS_ROW)] = _milliunits_to_dollars(stipends_total)
-
-        # --- Savings (L:M) --------------------------------------------------
-        savings_total = self._write_simple_block(
-            worksheet,
-            rows=plan["blocks"]["savings"],
-            name_col="L",
-            amount_col="M",
-            header_label="Savings",
-        )
-        row_count += len(plan["blocks"]["savings"])
-        worksheet["L" + str(TOTALS_ROW)] = "Total"
-        worksheet["M" + str(TOTALS_ROW)] = "=SUM(M2:M52)"
-        cached_values["M" + str(TOTALS_ROW)] = _milliunits_to_dollars(savings_total)
-
-        # Currency format on amount columns. Skip the totals row's text
-        # cell (only format the amount column).
+        # Currency format on amount columns. The totals row's text label
+        # cells (A53/D53/I53/L53) get the format too but it's harmless
+        # since they hold strings.
         for column_letter in ("B", "E", "G", "J", "M"):
             for row in range(2, TOTALS_ROW + 1):
                 cell = worksheet[f"{column_letter}{row}"]
@@ -145,7 +233,7 @@ class PlanExporter:
         # totals so the importer's `_required_total_value` check passes
         # on a round-trip.
         rendered_bytes = _inject_cached_values(
-            rendered_bytes, sheet_name, cached_values
+            rendered_bytes, sheet_name, grid.cached_values
         )
 
         plan_name = plan["plan"]["name"]
@@ -154,89 +242,8 @@ class PlanExporter:
         return ExportResult(
             bytes=rendered_bytes,
             filename=suggested_filename,
-            row_count=row_count,
+            row_count=grid.row_count,
         )
-
-    # --- block writers -----------------------------------------------------
-
-    def _write_monthly_block(self, worksheet, rows: list[dict[str, Any]]) -> int:
-        return self._write_simple_block(
-            worksheet,
-            rows=rows,
-            name_col="A",
-            amount_col="B",
-            header_label=None,
-        )
-
-    def _write_simple_block(
-        self,
-        worksheet,
-        *,
-        rows: list[dict[str, Any]],
-        name_col: str,
-        amount_col: str,
-        header_label: str | None,
-    ) -> int:
-        """Writes monthly/stipends/savings-shaped block (single name col + single amount col)."""
-        if header_label is not None:
-            worksheet[f"{name_col}1"] = header_label
-        next_row = 2
-        current_group: str | None = None
-        block_total = 0
-        for row in rows:
-            if row["group_name"] != current_group:
-                worksheet[f"{name_col}{next_row}"] = row["group_name"]
-                # Amount cell stays empty → matches importer's group-row
-                # detection (`amount_value in (None, "")`).
-                next_row += 1
-                current_group = row["group_name"]
-            worksheet[f"{name_col}{next_row}"] = row["category_name"]
-            worksheet[f"{amount_col}{next_row}"] = _milliunits_to_dollars(
-                row["planned_milliunits"]
-            )
-            block_total += int(row["planned_milliunits"])
-            next_row += 1
-        return block_total
-
-    def _write_yearly_block(
-        self,
-        worksheet,
-        *,
-        annual_rows: list[dict[str, Any]],
-        one_time_rows: list[dict[str, Any]],
-    ) -> int:
-        """Writes the yearly + one-time block at columns D:G.
-
-        Group header rows have empty E/F/G (matches importer's
-        `_is_yearly_group_header`). Category rows have:
-            E = annual_target ($)
-            F = due-month text (e.g. "Jun") or empty
-            G = monthly amount ($)
-        """
-        next_row = 2
-        block_total = 0
-        for current_group, group_rows in (
-            ("Yearly", annual_rows),
-            ("One Time Purchase", one_time_rows),
-        ):
-            if not group_rows:
-                continue
-            worksheet[f"D{next_row}"] = current_group
-            next_row += 1
-            for row in group_rows:
-                worksheet[f"D{next_row}"] = row["category_name"]
-                worksheet[f"E{next_row}"] = _milliunits_to_dollars(
-                    row.get("annual_target_milliunits", 0)
-                )
-                due_month = row.get("due_month")
-                if due_month:
-                    worksheet[f"F{next_row}"] = _MONTH_ABBREVIATIONS[int(due_month)]
-                worksheet[f"G{next_row}"] = _milliunits_to_dollars(
-                    row["planned_milliunits"]
-                )
-                block_total += int(row["planned_milliunits"])
-                next_row += 1
-        return block_total
 
 
 def _milliunits_to_dollars(milliunits: int | None) -> float:

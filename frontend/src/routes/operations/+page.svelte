@@ -22,6 +22,7 @@
     getStatus,
     getSummary,
     importBudget,
+    publishBudget,
     reconcile,
     refreshAll,
     syncYnab,
@@ -100,13 +101,29 @@
     },
     onError: (error) => toast.error(getErrorMessage(error)),
   })
+  const publishMutation = createMutation({
+    mutationFn: publishBudget,
+    onSuccess: async (resp) => {
+      latestPayload = resp as unknown as Record<string, unknown>
+      toast.success(`Published as "${resp.tab_name}"`, {
+        action: { label: 'Open', onClick: () => window.open(resp.tab_url, '_blank') },
+      })
+      await invalidateAll()
+    },
+    onError: (error) => toast.error(getErrorMessage(error)),
+  })
 
   let busy = $derived(
     $importMutation.isPending ||
       $syncMutation.isPending ||
       $reconcileMutation.isPending ||
       $refreshMutation.isPending ||
-      $exportMutation.isPending,
+      $exportMutation.isPending ||
+      $publishMutation.isPending,
+  )
+
+  let canPublish = $derived(
+    $statusQuery.data?.plan_provenance?.source_type === 'google_sheets',
   )
   let recentRuns = $derived($runsQuery.data?.runs ?? [])
 
@@ -149,6 +166,7 @@
     if (typeof details.error === 'string') return details.error
     if (run.source === 'budget_import' && typeof details.row_count === 'number') return `Imported ${details.row_count} planned rows`
     if (run.source === 'budget_export' && typeof details.filename === 'string') return `Exported ${details.filename}`
+    if (run.source === 'budget_publish' && typeof details.tab_name === 'string') return `Published as "${details.tab_name}"`
     if (run.source === 'ynab_sync' && typeof details.transaction_count === 'number') return `Synced ${details.transaction_count} transactions`
     if (run.source === 'reconcile' && typeof details.mismatch_count === 'number') {
       return details.mismatch_count === 0 ? 'No mismatches found' : `${details.mismatch_count} mismatches detected`
@@ -161,6 +179,7 @@
     switch (source) {
       case 'budget_import': return 'Budget Import'
       case 'budget_export': return 'Export .xlsx'
+      case 'budget_publish': return 'Publish to Sheets'
       case 'ynab_sync': return 'YNAB Sync'
       case 'reconcile': return 'Reconcile'
       case 'scheduled_refresh': return 'Scheduled Refresh'
@@ -223,6 +242,7 @@
       {@render opButton('Reconcile', 'Verify imported sheet categories still match YNAB exactly.', $reconcileMutation.isPending, () => $reconcileMutation.mutate())}
       {@render opButton('Refresh All', 'Run import, sync, and reconcile sequentially.', $refreshMutation.isPending, () => $refreshMutation.mutate())}
       {@render opButton('Export .xlsx', 'Download the current plan as a fresh workbook for offline sharing or accountant handoff.', $exportMutation.isPending, () => $exportMutation.mutate())}
+      {@render opButton('Publish to Sheets', canPublish ? 'Write the current plan to a new tab in your configured Google Sheet.' : 'Set FINCLAIDE_BUDGET_SOURCE=google_sheets to enable.', $publishMutation.isPending, () => $publishMutation.mutate(), !canPublish)}
     </CardContent>
   </Card>
 
@@ -300,13 +320,19 @@
   </Card>
 </div>
 
-{#snippet opButton(label: string, description: string, pending: boolean, onClick: () => void)}
+{#snippet opButton(
+  label: string,
+  description: string,
+  pending: boolean,
+  onClick: () => void,
+  forceDisabled: boolean = false,
+)}
   <div class="rounded-xl bg-muted/30 p-5 transition-colors duration-150 hover:bg-muted/50">
     <div class="text-base font-medium text-foreground">{label}</div>
     <p class="mt-2 min-h-12 text-sm text-muted-foreground">{description}</p>
     <button
       class="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground shadow transition-colors hover:bg-primary/90 disabled:pointer-events-none disabled:opacity-50"
-      disabled={busy}
+      disabled={busy || forceDisabled}
       onclick={onClick}
       type="button"
     >

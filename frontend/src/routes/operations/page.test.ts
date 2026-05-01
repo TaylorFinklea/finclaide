@@ -15,6 +15,7 @@ const apiMocks = vi.hoisted(() => ({
   reconcile: vi.fn(),
   refreshAll: vi.fn(),
   exportBudget: vi.fn(),
+  publishBudget: vi.fn(),
 }))
 
 vi.mock('$lib/api', async () => {
@@ -37,6 +38,14 @@ describe('OperationsPage', () => {
       filename: 'TestBudget.xlsx',
       row_count: 75,
       file_size_bytes: 6040,
+    })
+    apiMocks.publishBudget.mockResolvedValue({
+      run_id: 43,
+      tab_name: '2026 Budget — published 2026-04-30 2010',
+      tab_id: 555,
+      tab_url: 'https://docs.google.com/spreadsheets/d/fid-x/edit#gid=555',
+      spreadsheet_id: 'fid-x',
+      row_count: 75,
     })
   })
 
@@ -81,6 +90,31 @@ describe('OperationsPage', () => {
       expect(apiMocks.exportBudget).toHaveBeenCalledTimes(1)
     })
     expect(clickSpy).toHaveBeenCalled()
+  })
+
+  it('publishes to Sheets when budget_source is google_sheets', async () => {
+    apiMocks.getStatus.mockResolvedValue({
+      ...statusFixture,
+      plan_provenance: {
+        ...statusFixture.plan_provenance,
+        source_type: 'google_sheets',
+      },
+    })
+    renderPage(OperationsPage as never)
+    await screen.findByText('Operations')
+    const button = await screen.findByRole('button', { name: 'Publish to Sheets' })
+    await waitFor(() => expect(button).not.toBeDisabled())
+    await userEvent.click(button)
+    await waitFor(() => {
+      expect(apiMocks.publishBudget).toHaveBeenCalledTimes(1)
+    })
+  })
+
+  it('disables Publish to Sheets when budget_source is not google_sheets', async () => {
+    renderPage(OperationsPage as never)
+    await screen.findByText('Operations')
+    const button = await screen.findByRole('button', { name: 'Publish to Sheets' })
+    await waitFor(() => expect(button).toBeDisabled())
   })
 
   it('shows a toast when the export call fails', async () => {

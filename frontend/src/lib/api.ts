@@ -446,6 +446,30 @@ export function exportBudgetDownloadUrl(run_id: number): string {
   return withBasePath(`/ui-api/operations/export-budget/${run_id}/download`)
 }
 
+export const BudgetPublishResponseSchema = z.object({
+  run_id: z.number(),
+  tab_name: z.string(),
+  tab_id: z.number(),
+  tab_url: z.string(),
+  spreadsheet_id: z.string(),
+  row_count: z.number(),
+})
+
+export async function publishBudget() {
+  return requestJson(
+    withBasePath('/ui-api/operations/publish-budget'),
+    BudgetPublishResponseSchema,
+    {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Finclaide-UI': '1',
+      },
+      body: JSON.stringify({}),
+    },
+  )
+}
+
 export async function getActivePlan(year?: number) {
   const search = year ? `?year=${year}` : ''
   return requestJson(withBasePath(`/ui-api/plan/active${search}`), ActivePlanResponseSchema)

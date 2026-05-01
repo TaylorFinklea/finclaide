@@ -113,3 +113,42 @@ def run_budget_export(container: Any) -> dict[str, Any]:
         "row_count": result.row_count,
         "file_size_bytes": file_size_bytes,
     }
+
+
+def run_budget_publish(container: Any) -> dict[str, Any]:
+    started_at = utc_now()
+    try:
+        result = container.sheets_publisher.publish()
+    except Exception as error:
+        container.database.record_run(
+            "budget_publish",
+            "failed",
+            {"source": "budget_publish", "error": str(error)},
+            started_at=started_at,
+            finished_at=utc_now(),
+        )
+        raise
+    details = {
+        "source": "budget_publish",
+        "spreadsheet_id": result.spreadsheet_id,
+        "tab_name": result.tab_name,
+        "tab_id": result.tab_id,
+        "tab_url": result.tab_url,
+        "row_count": result.row_count,
+        "file_size_bytes": result.file_size_bytes,
+    }
+    run_id = container.database.record_run(
+        "budget_publish",
+        "success",
+        details,
+        started_at=started_at,
+        finished_at=utc_now(),
+    )
+    return {
+        "run_id": run_id,
+        "tab_name": result.tab_name,
+        "tab_id": result.tab_id,
+        "tab_url": result.tab_url,
+        "spreadsheet_id": result.spreadsheet_id,
+        "row_count": result.row_count,
+    }

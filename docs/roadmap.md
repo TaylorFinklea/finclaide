@@ -54,11 +54,16 @@ Exit criteria:
 - Scheduled refresh is fully covered by deterministic tests.
 - The operator can see the next scheduled run without leaving Operations.
 
-## Phase 2.5: Native Planning Surface (NEW — added 2026-04-18)
+## Phase 2.5: Native Planning Surface (NEW — added 2026-04-18; shipped 2026-04-30)
 
 Goal: replace the spreadsheet as the canonical planning surface. The React UI
 becomes the editing surface; SQLite owns plan state; Google Sheets becomes a
 read-only artifact written by the app on demand.
+
+**Status: shipped.** Slice 2.5a (plan model + UI), 2.5b (versioning +
+rollback), 2.5c (what-if scenarios, four slices + bug fixes), and 2.5d
+(publish plan: xlsx download + Google Sheets new-tab write-back) all
+landed by 2026-04-30. All exit criteria met.
 
 - Introduce a SQLite plan model (`plans`, `plan_categories`, plan-version
   snapshots) and a `PlanService` that abstracts read / write / branch /

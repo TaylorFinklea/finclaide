@@ -9,6 +9,7 @@ from finclaide.errors import DataIntegrityError
 from finclaide.operations import (
     run_budget_export,
     run_budget_import,
+    run_budget_publish,
     run_reconcile,
     run_ynab_sync,
 )
@@ -299,6 +300,15 @@ def export_budget():
     container = _container()
     with container.operation_lock.guard("budget_export"):
         result = run_budget_export(container)
+    return jsonify(result), 201
+
+
+@ui_api.post("/operations/publish-budget")
+@require_ui_write_request
+def publish_budget():
+    container = _container()
+    with container.operation_lock.guard("budget_publish"):
+        result = run_budget_publish(container)
     return jsonify(result), 201
 
 

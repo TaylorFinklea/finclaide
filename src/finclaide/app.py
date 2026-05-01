@@ -16,6 +16,7 @@ from finclaide.locking import OperationLock
 from finclaide.plan_exporter import PlanExporter
 from finclaide.plan_service import PlanService
 from finclaide.scheduled_refresh import ScheduledRefreshService
+from finclaide.sheets_publisher import create_sheets_publisher
 from finclaide.services import ReconciliationService, ReportService, ServiceContainer, WeeklyReviewService
 from finclaide.ui_api import ui_api
 from finclaide.ynab import YNABClient, YNABSyncService
@@ -54,6 +55,10 @@ def create_app(
     )
     services.plan_exporter = PlanExporter(plan_service=services.plan)
     services.export_storage = ExportStorage(base_dir=database.db_path.parent)
+    services.sheets_publisher = create_sheets_publisher(
+        plan_service=services.plan,
+        config=config,
+    )
     services.review = WeeklyReviewService(reports=services.reports, analytics=services.analytics)
     services.scheduled_refresh = ScheduledRefreshService(
         enabled=config.scheduled_refresh_enabled,

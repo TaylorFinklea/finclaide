@@ -13,6 +13,7 @@ from finclaide.errors import (
 from finclaide.operations import (
     run_budget_export,
     run_budget_import,
+    run_budget_publish,
     run_reconcile,
     run_ynab_sync,
 )
@@ -67,6 +68,15 @@ def export_budget():
     container = _container()
     with container.operation_lock.guard("budget_export"):
         result = run_budget_export(container)
+    return jsonify(result), 201
+
+
+@api.post("/budget/publish")
+@require_bearer_token
+def publish_budget():
+    container = _container()
+    with container.operation_lock.guard("budget_publish"):
+        result = run_budget_publish(container)
     return jsonify(result), 201
 
 

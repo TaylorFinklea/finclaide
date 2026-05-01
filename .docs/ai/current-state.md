@@ -10,7 +10,72 @@ identical to `main`; safe to delete once origin is pushed.
 
 ## Last Session Summary
 
-**Date**: 2026-04-30 (Phase 2.5c Slice 4 — projection panel)
+**Date**: 2026-04-30 (Phase 2.5d — Publish Plan: xlsx + Sheets write-back)
+
+Phase 2.5d shipped in two commits (5b5ca5d + this commit) closing the
+last unmet Phase 2.5 exit criterion ("Sheet exports remain readable by
+non-app users and round-trip back into the importer").
+
+**5a — xlsx export** (`src/finclaide/plan_exporter.py`,
+`src/finclaide/export_storage.py`, +5 endpoint cases, +6 exporter cases):
+- `PlanExporter.export_active_plan()` renders the active plan into a
+  fresh `.xlsx` whose column layout mirrors `BudgetImporter` exactly
+  (A:B monthly / D:G yearly+one-time / I:J stipends / L:M savings; row
+  53 totals with `=SUM` formulas + injected cached values for round-trip
+  validation).
+- `build_plan_cell_grid(plan) → PlanCellGrid` (cells dict + cached_values
+  + row_count) extracted as a layout-aware builder shared with the Sheets
+  publisher.
+- `ExportStorage` persists rendered bytes under `{db_dir}/exports/{run_id}.xlsx`
+  with a 20-file LRU cap.
+- `Database.record_run()` now returns `int` (the inserted run id).
+- `POST /api/budget/export` + `/ui-api/operations/export-budget` (201
+  with `{run_id, filename, row_count, file_size_bytes}`); `GET .../export/<run_id>/download`
+  streams bytes with `Content-Disposition: attachment`.
+- Operations page: "Export .xlsx" button (5th in the action grid; layout
+  shifted from 4-col to 3-col). Run-history label maps to `Export .xlsx`.
+
+**5b — Google Sheets publish** (`src/finclaide/sheets_publisher.py`,
++5 publisher cases, +2 endpoint cases):
+- `SheetsPublisher.publish()` creates a new tab in the configured
+  workbook (gid via Sheets API `:batchUpdate addSheet`, cells via
+  `values:batchUpdate USER_ENTERED`). Tab name template:
+  `2026 Budget — published {YYYY-MM-DD HHMM}`. Same-minute collisions
+  retry with `(2)`, `(3)` suffixes (10-attempt cap).
+- Implementation deviation from spec: uses raw `httpx` instead of
+  `google-api-python-client` to match the existing `budget_source.py`
+  pattern. Avoids 3 new pip deps; same mocking story as the importer's
+  Drive client.
+- `_SheetsServiceAccountTokenProvider` mirrors
+  `GoogleServiceAccountTokenProvider` from `budget_source.py` but
+  requests `https://www.googleapis.com/auth/spreadsheets` scope (write).
+- `POST /api/budget/publish` + `/ui-api/operations/publish-budget`
+  (201 with `{run_id, tab_name, tab_id, tab_url, spreadsheet_id, row_count}`).
+  Wrapped in `operation_lock.guard("budget_publish")`.
+- Operations page: "Publish to Sheets" button (6th in grid). Disabled
+  unless `status_query.plan_provenance.source_type === 'google_sheets'`
+  (extra `forceDisabled` snippet param). Toast on success has an "Open"
+  action that opens `tab_url` in a new tab. Run-history label maps to
+  `Publish to Sheets`.
+
+**Operator setup gotcha**: Slice 5b requires the operator to re-share
+the source workbook with the service-account email as **Editor**. The
+existing import flow only needed Viewer. One-time UI action in Drive.
+
+**Test counts (final)**: pytest **208/208** (was 190 pre-2.5d; +13 this
+phase = 6 exporter + 5 publisher + 2 publish endpoint cases). vitest
+**371/371** (was 369 pre-2.5d; +2 page tests for Publish button enabled/
+disabled paths). svelte-check 0/0.
+
+**Manual smoke deferred** — the Google Sheets path needs a real
+service-account credential + a configured `FINCLAIDE_GOOGLE_SHEETS_FILE_ID`
+to exercise the Drive API end-to-end. The publisher's tests fully cover
+the request shape via `httpx.MockTransport`; manual smoke is a follow-up
+when the operator has credentials wired.
+
+---
+
+**Earlier session**: 2026-04-30 (Phase 2.5c Slice 4 — projection panel)
 
 Slice 4 (Pure Projection Panel) shipped in two commits (18b9cb8 + eaf655c):
 
@@ -346,13 +411,18 @@ Prior migration commit log on `svelte-migration`:
   `test_mcp_server.py::test_finclaide_mcp_stdio_launch`; these require
   the Docker container's `/app/.venv` and are not regressions).
 - Frontend: `npm run check` — `svelte-check` 0/0; `npx vitest run` —
-  367/367 (was 360 pre-Slice-4; +7 new Slice-4 tests).
+  371/371 (was 369 pre-Phase-2.5d; +2 new ops-page tests for Publish button).
 
 ## Active Milestone
 
-Phase 2.5c (What-if scenarios) — **all four slices + 3.5 (bug fixes) shipped.**
-Phase 2.5c is complete. Next direction to be decided in a separate planning pass
-(candidates: Phase 1/2 sweep work or Phase 3 Decision Engine V1).
+**Phase 2.5 (Native Planning Surface) is fully shipped** as of 2026-04-30:
+- Slice 2.5a (plan model + UI editing) ✓
+- Slice 2.5b (versioning + rollback) ✓
+- Slice 2.5c (what-if scenarios, four slices + 3.5 bug fixes) ✓
+- Slice 2.5d (publish plan: xlsx + Sheets write-back) ✓ ← shipped today
+
+All Phase 2.5 exit criteria met. Next direction up to the operator —
+roadmap candidates listed in the session summary above.
 
 ## Blockers
 
