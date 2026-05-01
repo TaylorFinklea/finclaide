@@ -446,6 +446,88 @@ export function exportBudgetDownloadUrl(run_id: number): string {
   return withBasePath(`/ui-api/operations/export-budget/${run_id}/download`)
 }
 
+export const PaceCategorySchema = z.object({
+  category_id: z.number(),
+  group_name: z.string(),
+  category_name: z.string(),
+  block: z.enum(['monthly', 'stipends']),
+  planned_milliunits: z.number(),
+  actual_milliunits: z.number(),
+  pace_factor: z.number(),
+  pace_status: z.enum([
+    'no_spend_yet',
+    'unplanned',
+    'under_pace',
+    'on_pace',
+    'over_pace',
+    'at_risk',
+    'blowout',
+  ]),
+  projected_month_end_milliunits: z.number(),
+  projected_overage_milliunits: z.number(),
+})
+export type PaceCategory = z.infer<typeof PaceCategorySchema>
+
+export const MonthPaceSchema = z.object({
+  month: z.string(),
+  days_elapsed: z.number(),
+  days_total: z.number(),
+  days_remaining: z.number(),
+  warming_up: z.boolean(),
+  categories: z.array(PaceCategorySchema),
+  totals: z.object({
+    planned_milliunits: z.number(),
+    actual_milliunits: z.number(),
+    projected_month_end_milliunits: z.number(),
+  }),
+})
+export type MonthPace = z.infer<typeof MonthPaceSchema>
+
+export async function getMonthPace(month?: string) {
+  const search = month ? `?month=${month}` : ''
+  return requestJson(
+    withBasePath(`/ui-api/analytics/pace${search}`),
+    MonthPaceSchema,
+  )
+}
+
+export const ProjectionCategorySchema = z.object({
+  group_name: z.string(),
+  category_name: z.string(),
+  planned_annual_milliunits: z.number(),
+  actual_ytd_milliunits: z.number(),
+  projected_annual_milliunits: z.number(),
+  projected_variance_milliunits: z.number(),
+  run_rate_monthly_milliunits: z.number(),
+  planned_monthly_milliunits: z.number(),
+})
+export type ProjectionCategory = z.infer<typeof ProjectionCategorySchema>
+
+export const YearEndProjectionSchema = z.object({
+  as_of_month: z.string(),
+  plan_year: z.number().nullable(),
+  months_elapsed: z.number(),
+  months_remaining: z.number(),
+  categories: z.array(ProjectionCategorySchema),
+  totals: z.union([
+    z.object({}),
+    z.object({
+      planned_annual_milliunits: z.number(),
+      projected_annual_milliunits: z.number(),
+      projected_variance_milliunits: z.number(),
+    }),
+  ]),
+})
+export type YearEndProjection = z.infer<typeof YearEndProjectionSchema>
+
+export async function getYearEndProjection(month?: string) {
+  const search = month ? `?as_of_month=${month}` : ''
+  return requestJson(
+    withBasePath(`/ui-api/analytics/projection${search}`),
+    YearEndProjectionSchema,
+  )
+}
+
 export const BudgetPublishResponseSchema = z.object({
   run_id: z.number(),
   tab_name: z.string(),

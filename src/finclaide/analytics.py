@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import calendar
 import math
 from dataclasses import dataclass
 from datetime import UTC, date, datetime
@@ -50,6 +51,35 @@ def _stddev(values: list[int | float]) -> float:
     mean = sum(values) / len(values)
     variance = sum((v - mean) ** 2 for v in values) / len(values)
     return math.sqrt(variance)
+
+
+def _classify_pace(
+    *,
+    planned: int,
+    actual: int,
+    days_elapsed: int,
+    days_total: int,
+) -> tuple[float, str]:
+    """Compute (pace_factor, pace_status) per the spec ladder.
+
+    pace_factor = (actual / planned) / (days_elapsed / days_total)
+    Sentinels: -1.0 = unplanned (planned=0, actual>0), 0.0 = no spend yet."""
+    if planned == 0 and actual > 0:
+        return -1.0, "unplanned"
+    if actual == 0:
+        return 0.0, "no_spend_yet"
+    if planned == 0 or days_elapsed <= 0:
+        return -1.0, "unplanned"
+    pace = (actual / planned) / (days_elapsed / days_total)
+    if pace < 0.85:
+        return pace, "under_pace"
+    if pace <= 1.15:
+        return pace, "on_pace"
+    if pace <= 1.50:
+        return pace, "over_pace"
+    if pace <= 2.00:
+        return pace, "at_risk"
+    return pace, "blowout"
 
 
 @dataclass
@@ -207,6 +237,167 @@ class AnalyticsService:
             "since": since,
             "as_of_month": reference.strftime("%Y-%m"),
             "categories": categories,
+        }
+
+    # ------------------------------------------------------------------
+    # month_pace
+    # ------------------------------------------------------------------
+
+    def month_pace(
+        self,
+        *,
+        month: str | None = None,
+        now: date | None = None,
+    ) -> dict[str, Any]:
+        """Per-category mid-month pace analysis.
+
+        For each `monthly` and `stipends` category in the active plan,
+        compares actual spending so far against a linear-pace budget
+        (planned × days_elapsed / days_total). Returns a status ladder
+        and projected month-end values; the frontend ranks by
+        projected_overage_milliunits desc and surfaces the worst.
+
+        `now` is overridable for tests; defaults to today (UTC).
+
+        See `.docs/ai/phases/phase-3-decision-engine-spec.md` for the
+        full status threshold ladder.
+        """
+        today = now or datetime.now(UTC).date()
+        target_month_first = _month_reference(month)
+        days_total = calendar.monthrange(
+            target_month_first.year, target_month_first.month
+        )[1]
+        target_month_last = date(
+            target_month_first.year,
+            target_month_first.month,
+            days_total,
+        )
+
+        # For past months we treat the entire month as elapsed; for the
+        # current month we use today's day-of-month; for future months
+        # we'd surface a "warming up" empty (days_elapsed = 0).
+        if today >= target_month_last:
+            days_elapsed = days_total
+        elif today < target_month_first:
+            days_elapsed = 0
+        else:
+            days_elapsed = today.day
+        days_remaining = max(0, days_total - days_elapsed)
+
+        warming_up = days_elapsed < 3
+
+        month_label = target_month_first.strftime("%Y-%m")
+        next_month_first = _next_month_start(target_month_first)
+
+        if warming_up:
+            return {
+                "month": month_label,
+                "days_elapsed": days_elapsed,
+                "days_total": days_total,
+                "days_remaining": days_remaining,
+                "warming_up": True,
+                "categories": [],
+                "totals": {
+                    "planned_milliunits": 0,
+                    "actual_milliunits": 0,
+                    "projected_month_end_milliunits": 0,
+                },
+            }
+
+        with self.database.connect() as conn:
+            planned_rows = conn.execute(
+                """
+                SELECT
+                    pc.id AS category_id,
+                    pc.group_name,
+                    pc.category_name,
+                    pc.block,
+                    pc.planned_milliunits
+                FROM plan_categories pc
+                JOIN plans p ON p.id = pc.plan_id
+                WHERE p.status = 'active'
+                  AND pc.block IN ('monthly', 'stipends')
+                """
+            ).fetchall()
+
+            actual_rows = conn.execute(
+                """
+                SELECT
+                    COALESCE(c.group_name, t.group_name) AS group_name,
+                    COALESCE(c.name, t.category_name) AS category_name,
+                    SUM(CASE WHEN t.amount_milliunits < 0
+                             THEN -1 * t.amount_milliunits ELSE 0 END) AS spend_milliunits
+                FROM transactions t
+                LEFT JOIN categories c ON c.id = t.category_id
+                WHERE t.deleted = 0
+                  AND t.date >= ?
+                  AND t.date < ?
+                GROUP BY 1, 2
+                """,
+                (target_month_first.isoformat(), next_month_first.isoformat()),
+            ).fetchall()
+
+        actual_by_key = {
+            (row["group_name"] or "", row["category_name"] or ""): int(row["spend_milliunits"])
+            for row in actual_rows
+        }
+
+        category_rows: list[dict[str, Any]] = []
+        total_planned = 0
+        total_actual = 0
+        total_projected = 0
+        for row in planned_rows:
+            planned = int(row["planned_milliunits"] or 0)
+            key = (row["group_name"] or "", row["category_name"] or "")
+            actual = actual_by_key.get(key, 0)
+
+            pace_factor, pace_status = _classify_pace(
+                planned=planned,
+                actual=actual,
+                days_elapsed=days_elapsed,
+                days_total=days_total,
+            )
+            if days_elapsed > 0 and actual > 0:
+                projected = round(actual * days_total / days_elapsed)
+            else:
+                projected = max(actual, planned)
+            projected_overage = projected - planned
+
+            category_rows.append(
+                {
+                    "category_id": int(row["category_id"]),
+                    "group_name": row["group_name"],
+                    "category_name": row["category_name"],
+                    "block": row["block"],
+                    "planned_milliunits": planned,
+                    "actual_milliunits": actual,
+                    "pace_factor": pace_factor,
+                    "pace_status": pace_status,
+                    "projected_month_end_milliunits": projected,
+                    "projected_overage_milliunits": projected_overage,
+                }
+            )
+            total_planned += planned
+            total_actual += actual
+            total_projected += projected
+
+        category_rows.sort(
+            key=lambda r: r["projected_overage_milliunits"],
+            reverse=True,
+        )
+
+        return {
+            "month": month_label,
+            "days_elapsed": days_elapsed,
+            "days_total": days_total,
+            "days_remaining": days_remaining,
+            "warming_up": False,
+            "categories": category_rows,
+            "totals": {
+                "planned_milliunits": total_planned,
+                "actual_milliunits": total_actual,
+                "projected_month_end_milliunits": total_projected,
+            },
         }
 
     # ------------------------------------------------------------------

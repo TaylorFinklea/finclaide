@@ -97,6 +97,24 @@ def weekly_review():
     return jsonify(_container().review.weekly(month=request.args.get("month")))
 
 
+@ui_api.get("/analytics/pace")
+@require_same_origin
+def analytics_pace():
+    return jsonify(
+        _container().analytics.month_pace(month=request.args.get("month"))
+    )
+
+
+@ui_api.get("/analytics/projection")
+@require_same_origin
+def analytics_projection():
+    return jsonify(
+        _container().analytics.year_end_projection(
+            as_of_month=request.args.get("as_of_month"),
+        )
+    )
+
+
 @ui_api.get("/plan/active")
 @require_same_origin
 def plan_active():

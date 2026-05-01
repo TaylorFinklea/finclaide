@@ -45,6 +45,16 @@ def projection():
     )
 
 
+@analytics_api.get("/pace")
+@require_bearer_token
+def pace():
+    return jsonify(
+        _container().analytics.month_pace(
+            month=request.args.get("month"),
+        )
+    )
+
+
 @analytics_api.get("/anomalies")
 @require_bearer_token
 def anomalies():

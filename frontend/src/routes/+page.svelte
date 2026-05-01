@@ -7,13 +7,23 @@
   import FailureCauseCard from '$components/failure-cause-card.svelte'
   import GroupChart from '$components/group-chart.svelte'
   import MetricCard from '$components/metric-card.svelte'
+  import MonthPaceCard from '$components/month-pace-card.svelte'
   import StatusChip from '$components/status-chip.svelte'
   import Card from '$components/ui/card.svelte'
   import CardContent from '$components/ui/card-content.svelte'
   import CardHeader from '$components/ui/card-header.svelte'
   import CardTitle from '$components/ui/card-title.svelte'
   import Skeleton from '$components/ui/skeleton.svelte'
-  import { getStatus, getSummary, getWeeklyReview, type ReviewItem, type StatusResponse } from '$lib/api'
+  import YearEndForecastCard from '$components/year-end-forecast-card.svelte'
+  import {
+    getMonthPace,
+    getStatus,
+    getSummary,
+    getWeeklyReview,
+    getYearEndProjection,
+    type ReviewItem,
+    type StatusResponse,
+  } from '$lib/api'
   import { formatCompactMoney, formatDay, formatMoney, formatMonthLabel, formatRunAt } from '$lib/format'
   import { monthStore } from '$lib/stores/month.svelte'
 
@@ -31,6 +41,16 @@
     queryFn: () => getWeeklyReview(monthStore.value),
     enabled: browser,
   })
+  const paceOpts = writable({
+    queryKey: ['analytics-pace', monthStore.value],
+    queryFn: () => getMonthPace(monthStore.value),
+    enabled: browser,
+  })
+  const projectionOpts = writable({
+    queryKey: ['analytics-projection', monthStore.value],
+    queryFn: () => getYearEndProjection(monthStore.value),
+    enabled: browser,
+  })
   $effect(() => {
     summaryOpts.set({
       queryKey: ['summary', month],
@@ -42,9 +62,21 @@
       queryFn: () => getWeeklyReview(month),
       enabled: browser,
     })
+    paceOpts.set({
+      queryKey: ['analytics-pace', month],
+      queryFn: () => getMonthPace(month),
+      enabled: browser,
+    })
+    projectionOpts.set({
+      queryKey: ['analytics-projection', month],
+      queryFn: () => getYearEndProjection(month),
+      enabled: browser,
+    })
   })
   const summaryQuery = createQuery(summaryOpts)
   const reviewQuery = createQuery(reviewOpts)
+  const paceQuery = createQuery(paceOpts)
+  const projectionQuery = createQuery(projectionOpts)
 
   let summary = $derived($summaryQuery.data)
   let status = $derived($statusQuery.data)
@@ -225,6 +257,19 @@
         </div>
       </CardContent>
     </Card>
+
+    <div class="grid gap-6 xl:grid-cols-[1.6fr_1fr]">
+      <MonthPaceCard
+        pace={$paceQuery.data}
+        isLoading={$paceQuery.isLoading}
+        isError={$paceQuery.isError}
+      />
+      <YearEndForecastCard
+        projection={$projectionQuery.data}
+        isLoading={$projectionQuery.isLoading}
+        isError={$projectionQuery.isError}
+      />
+    </div>
 
     <div class="grid gap-6 xl:grid-cols-[1.6fr_1fr]">
       <Card class="border-border/40 bg-card">

@@ -10,7 +10,62 @@ identical to `main`; safe to delete once origin is pushed.
 
 ## Last Session Summary
 
-**Date**: 2026-04-30 (Phase 2.5d — Publish Plan: xlsx + Sheets write-back)
+**Date**: 2026-04-30 (Phase 3 Slice 1 — Mid-month pace + year-end forecast on Home)
+
+Slice 1 of Phase 3 (Decision Engine V1) shipped in a single commit. Adds two
+new home-page cards backed by existing transaction data + a new analytics
+service method.
+
+**Backend** (`src/finclaide/analytics.py`, `analytics_api.py`, `ui_api.py`):
+- `_classify_pace(planned, actual, days_elapsed, days_total)` module helper —
+  returns `(pace_factor, pace_status)` per the spec ladder. Status states:
+  `no_spend_yet` / `unplanned` / `under_pace` / `on_pace` / `over_pace` /
+  `at_risk` / `blowout`. `pace_factor = (actual/planned) ÷ (days_elapsed/days_total)`;
+  -1.0 sentinel for unplanned.
+- `AnalyticsService.month_pace(month=None, now=None)` — per-category mid-
+  month pace for `monthly` + `stipends` blocks of the active plan. Returns
+  `{month, days_elapsed, days_total, days_remaining, warming_up, categories,
+  totals}`. Sorts by `projected_overage_milliunits desc`. `warming_up=True`
+  when fewer than 3 days elapsed (suppresses noisy single-day extrapolation).
+  `now` is overridable for tests.
+- New endpoints: `GET /api/analytics/pace?month=YYYY-MM`,
+  `GET /ui-api/analytics/pace?month=YYYY-MM`, plus a UI mirror at
+  `GET /ui-api/analytics/projection` for the existing year-end-projection
+  service method (which previously had no UI mirror).
+
+**Frontend** (`frontend/src/`):
+- `lib/api.ts` — `MonthPaceSchema`, `PaceCategorySchema`,
+  `YearEndProjectionSchema`, `ProjectionCategorySchema` + types;
+  `getMonthPace(month?)` and `getYearEndProjection(month?)` functions.
+- `components/month-pace-card.svelte` (NEW) — card showing top-5 surfaced
+  categories (sorted by projected overage). Status chip per row with the 7-
+  state ladder mapped to color tokens. "Show all N" expand. Surface filter:
+  drops categories with projected overage < $25 unless their status is
+  unplanned/at_risk/blowout (always surfaced). Renders warming-up message
+  for early-month.
+- `components/year-end-forecast-card.svelte` (NEW) — top-3 categories
+  projected to exceed annual target, sorted by variance desc. Footer line
+  shows year-end projected total + variance vs plan. Filter threshold $50
+  to keep tiny categories off the card.
+- `routes/+page.svelte` — mounts both cards in a 2-col xl grid between the
+  weekly review and the existing Plan-vs-Actual group chart. Each card has
+  its own `createQuery` keyed by month; both gated by `enabled: browser`.
+
+**Tests added**: 7 `_classify_pace` cases + 6 `month_pace` service cases +
+2 endpoint cases (private + UI mirror) = +15 pytest. 3 month-pace-card +
+2 year-end-forecast-card vitest cases = +5 vitest.
+
+**Manual smoke deferred** — the cards work end-to-end against the seeded
+test fixture in pytest; manual UI smoke against `docker compose up` is the
+operator's call. Stack rebuilds needed if you want to see the new cards in
+the running browser.
+
+**Test counts (final)**: pytest **223/223** (was 208; +15). vitest
+**376/376** (was 371; +5). svelte-check 0/0.
+
+---
+
+**Earlier session**: 2026-04-30 (Phase 2.5d — Publish Plan: xlsx + Sheets write-back)
 
 Phase 2.5d shipped in two commits (5b5ca5d + this commit) closing the
 last unmet Phase 2.5 exit criterion ("Sheet exports remain readable by
@@ -415,14 +470,17 @@ Prior migration commit log on `svelte-migration`:
 
 ## Active Milestone
 
-**Phase 2.5 (Native Planning Surface) is fully shipped** as of 2026-04-30:
-- Slice 2.5a (plan model + UI editing) ✓
-- Slice 2.5b (versioning + rollback) ✓
-- Slice 2.5c (what-if scenarios, four slices + 3.5 bug fixes) ✓
-- Slice 2.5d (publish plan: xlsx + Sheets write-back) ✓ ← shipped today
+**Phase 2.5 (Native Planning Surface) is fully shipped** as of 2026-04-30.
 
-All Phase 2.5 exit criteria met. Next direction up to the operator —
-roadmap candidates listed in the session summary above.
+**Phase 3 (Decision Engine V1) is in progress.** Spec at
+`.docs/ai/phases/phase-3-decision-engine-spec.md` outlines four slices:
+- Slice 1 — Mid-month pace + year-end forecast on Home ✓ shipped 2026-04-30
+- Slice 2 — Anomaly explanations + narratives (next)
+- Slice 3 — `/insights` route + drilldowns (2 commits)
+- Slice 4 — Recommendation grounding (transaction-level evidence)
+
+Closes "what needs attention now" half of Phase 3 exit criteria; "explains
+why something is risky" half lands in Slice 2.
 
 ## Blockers
 
