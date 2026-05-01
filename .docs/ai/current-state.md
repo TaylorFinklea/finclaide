@@ -472,15 +472,20 @@ Prior migration commit log on `svelte-migration`:
 
 **Phase 2.5 (Native Planning Surface) is fully shipped** as of 2026-04-30.
 
-**Phase 3 (Decision Engine V1) is in progress.** Spec at
-`.docs/ai/phases/phase-3-decision-engine-spec.md` outlines four slices:
-- Slice 1 — Mid-month pace + year-end forecast on Home ✓ shipped 2026-04-30
-- Slice 2 — Anomaly explanations + narratives (next)
-- Slice 3 — `/insights` route + drilldowns (2 commits)
-- Slice 4 — Recommendation grounding (transaction-level evidence)
+**Phase 3 (Decision Engine V1) is fully shipped** as of 2026-04-30:
+- Slice 1 — Mid-month pace + year-end forecast on Home ✓
+- Slice 2 — Anomaly explanations + narratives ✓ (510421b)
+- Slice 3a — `/insights` route + per-category trend page ✓ (41a53b8)
+- Slice 3b — Variance heatmap ✓ (7f430b8)
+- Slice 4 — Recommendation grounding ✓ (this commit)
 
-Closes "what needs attention now" half of Phase 3 exit criteria; "explains
-why something is risky" half lands in Slice 2.
+Both Phase 3 exit criteria met:
+- "Weekly review reliably identifies spending shifts, overages, and outliers" ✓
+- "The app explains *why* something is risky, not just that it is risky" ✓
+
+Weekly review archive (mentioned in the spec for Slice 3) was descoped —
+needs snapshot-storage schema; not justified now. Can land later if the
+operator wants to track review history.
 
 ## Blockers
 

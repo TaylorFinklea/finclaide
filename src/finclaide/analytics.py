@@ -749,6 +749,14 @@ class AnalyticsService:
             cv = trend_info.get("coefficient_of_variation", 0)
             confidence = "high" if cv < 0.3 else "medium" if cv < 0.6 else "low"
 
+            evidence = self._recommendation_evidence(
+                group_name=cat["group_name"],
+                category_name=cat["category_name"],
+                planned_monthly=planned,
+                trend_info=trend_info,
+                action=action,
+            )
+
             recommendations.append({
                 "group_name": cat["group_name"],
                 "category_name": cat["category_name"],
@@ -759,6 +767,7 @@ class AnalyticsService:
                 "projected_annual_impact_milliunits": variance,
                 "confidence": confidence,
                 "trend_direction": trend_info.get("trend_direction", "stable"),
+                "supporting_evidence": evidence,
             })
 
         recommendations.sort(key=lambda r: -abs(r["projected_annual_impact_milliunits"]))
@@ -774,6 +783,75 @@ class AnalyticsService:
                 "categories_over_budget": over_count,
                 "categories_under_budget": under_count,
             },
+        }
+
+    def _recommendation_evidence(
+        self,
+        *,
+        group_name: str,
+        category_name: str,
+        planned_monthly: int,
+        trend_info: dict[str, Any],
+        action: str,
+    ) -> dict[str, Any]:
+        """Slice 4: ground each recommendation with concrete months + transactions.
+
+        Returns:
+            recent_overage_months: list of {month, spend_milliunits, variance_milliunits}
+                (descending by absolute variance) for months where actual differed
+                from plan in the direction of the recommendation.
+            top_transactions: largest 5 transactions in the lookback window.
+        """
+        monthly_spend = trend_info.get("months") or []
+        recent_overage: list[dict[str, Any]] = []
+        for m in monthly_spend:
+            spend = int(m.get("spend_milliunits", 0))
+            variance = spend - planned_monthly
+            if action == "increase_budget" and variance > 0:
+                recent_overage.append({
+                    "month": m["month"],
+                    "spend_milliunits": spend,
+                    "variance_milliunits": variance,
+                })
+            elif action == "reduce_budget" and variance < 0:
+                recent_overage.append({
+                    "month": m["month"],
+                    "spend_milliunits": spend,
+                    "variance_milliunits": variance,
+                })
+        recent_overage.sort(
+            key=lambda entry: abs(entry["variance_milliunits"]), reverse=True
+        )
+
+        with self.database.connect() as conn:
+            txn_rows = conn.execute(
+                """
+                SELECT t.id, t.date, t.payee_name, t.amount_milliunits
+                FROM transactions t
+                LEFT JOIN categories c ON c.id = t.category_id
+                WHERE t.deleted = 0
+                  AND COALESCE(c.group_name, t.group_name) = ?
+                  AND COALESCE(c.name, t.category_name) = ?
+                  AND t.amount_milliunits < 0
+                ORDER BY ABS(t.amount_milliunits) DESC
+                LIMIT 5
+                """,
+                (group_name, category_name),
+            ).fetchall()
+
+        top_transactions = [
+            {
+                "id": row["id"],
+                "date": row["date"],
+                "payee_name": row["payee_name"],
+                "amount_milliunits": int(row["amount_milliunits"]),
+            }
+            for row in txn_rows
+        ]
+
+        return {
+            "recent_overage_months": recent_overage[:6],
+            "top_transactions": top_transactions,
         }
 
     # ------------------------------------------------------------------

@@ -98,7 +98,7 @@
 
   let trendCategory = $derived(() => $trendsQuery.data?.categories?.[0] ?? null)
   let monthlySeries = $derived(
-    () => trendCategory()?.monthly_spend ?? [],
+    () => trendCategory()?.months ?? [],
   )
 
   let categoryAnomalies = $derived((): CategoryAnomaly[] => {

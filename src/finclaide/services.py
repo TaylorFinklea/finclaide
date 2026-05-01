@@ -1050,6 +1050,7 @@ class WeeklyReviewService:
                         "confidence": recommendation["confidence"],
                         "trend_direction": recommendation["trend_direction"],
                     },
+                    "supporting_evidence": recommendation.get("supporting_evidence"),
                     "impact_milliunits": abs(recommendation["projected_annual_impact_milliunits"]),
                 }
             )

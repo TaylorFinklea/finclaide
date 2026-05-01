@@ -98,6 +98,31 @@ const AnomalyNarrativeSchema = z
   })
   .optional()
 
+const SupportingEvidenceSchema = z
+  .object({
+    recent_overage_months: z
+      .array(
+        z.object({
+          month: z.string(),
+          spend_milliunits: z.number(),
+          variance_milliunits: z.number(),
+        }),
+      )
+      .optional(),
+    top_transactions: z
+      .array(
+        z.object({
+          id: z.string(),
+          date: z.string(),
+          payee_name: NullableString,
+          amount_milliunits: z.number(),
+        }),
+      )
+      .optional(),
+  })
+  .optional()
+  .nullable()
+
 const ReviewItemSchema = z.object({
   kind: z.string(),
   signal_class: z.string(),
@@ -109,6 +134,7 @@ const ReviewItemSchema = z.object({
   category_name: NullableString,
   evidence: z.record(z.string(), z.any()),
   narrative: AnomalyNarrativeSchema,
+  supporting_evidence: SupportingEvidenceSchema,
 })
 
 const WeeklyReviewSchema = z.object({
@@ -551,15 +577,16 @@ export async function getYearEndProjection(month?: string) {
 export const TrendCategorySchema = z.object({
   group_name: z.string(),
   category_name: z.string(),
-  monthly_spend: z.array(
+  months: z.array(
     z.object({
       month: z.string(),
       spend_milliunits: z.number(),
       transaction_count: z.number(),
     }),
   ),
-  total_milliunits: z.number(),
   average_milliunits: z.number(),
+  min_milliunits: z.number(),
+  max_milliunits: z.number(),
   trend_direction: z.string(),
   coefficient_of_variation: z.number(),
 })

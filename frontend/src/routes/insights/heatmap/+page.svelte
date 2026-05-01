@@ -46,7 +46,7 @@
     if (!trends) return []
     const months = new Set<string>()
     for (const cat of trends.categories) {
-      for (const m of cat.monthly_spend) months.add(m.month)
+      for (const m of cat.months) months.add(m.month)
     }
     const list = Array.from(months).sort()
     return list.slice(-12)
@@ -60,7 +60,7 @@
     const trendByKey = new Map<string, Map<string, number>>()
     for (const cat of trends.categories) {
       const inner = new Map<string, number>()
-      for (const m of cat.monthly_spend) inner.set(m.month, m.spend_milliunits)
+      for (const m of cat.months) inner.set(m.month, m.spend_milliunits)
       trendByKey.set(`${cat.group_name}|${cat.category_name}`, inner)
     }
     const eligible: PlanCategory[] = [

@@ -373,6 +373,49 @@ class TestAggregateSpending:
         assert data["period_type"] == "year"
 
 
+class TestRecommendationGrounding:
+    """Slice 4: budget_recommendations attaches supporting_evidence
+    that links each suggestion back to the months + transactions
+    that drove it."""
+
+    def test_recommendation_carries_supporting_evidence(self, tmp_path: Path):
+        service, database = _seed_pace_fixture(tmp_path)
+        # Bills/Rent is planned at $1000/mo by the fixture. Drive 3
+        # months of overspend to trigger an increase_budget recommendation.
+        for month, amount in (
+            ("2026-01", 1_500_000),
+            ("2026-02", 1_400_000),
+            ("2026-03", 1_300_000),
+        ):
+            _insert_txn(
+                database,
+                date_iso=f"{month}-15",
+                group="Bills",
+                category="Rent",
+                amount_milliunits=amount,
+            )
+        result = service.budget_recommendations(as_of_month="2026-04")
+        rec = next(
+            (r for r in result["recommendations"] if r["category_name"] == "Rent"),
+            None,
+        )
+        assert rec is not None, "expected a Rent budget recommendation"
+        evidence = rec.get("supporting_evidence")
+        assert evidence is not None
+        assert "recent_overage_months" in evidence
+        assert "top_transactions" in evidence
+        # All three injected months should appear as overage months sorted
+        # by absolute variance descending.
+        overage_months = [m["month"] for m in evidence["recent_overage_months"]]
+        assert "2026-01" in overage_months
+        # Top transactions should be the largest 5; we injected 3 → at most 3.
+        top = evidence["top_transactions"]
+        assert len(top) <= 5
+        assert all(t["amount_milliunits"] < 0 for t in top)
+        # Largest in our seed is the Jan $1500 charge.
+        assert top[0]["amount_milliunits"] == -1_500_000
+
+
 class TestPaceEndpoint:
     def test_pace_endpoint_returns_payload(self, client, auth_header):
         _seed_data(client, auth_header)

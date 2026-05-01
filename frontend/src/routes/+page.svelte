@@ -421,6 +421,38 @@
                 <p class="mt-2">{item.narrative.context}</p>
               </details>
             {/if}
+            {#if item.supporting_evidence && (item.supporting_evidence.recent_overage_months?.length || item.supporting_evidence.top_transactions?.length)}
+              <details class="mt-2 text-xs text-muted-foreground/80">
+                <summary class="cursor-pointer select-none hover:text-foreground">Supporting evidence</summary>
+                <div class="mt-2 space-y-2">
+                  {#if item.supporting_evidence.recent_overage_months?.length}
+                    <div>
+                      <div class="text-[10px] uppercase tracking-wide text-muted-foreground">Recent variance</div>
+                      <ul class="mt-1 space-y-0.5">
+                        {#each item.supporting_evidence.recent_overage_months as m (m.month)}
+                          <li class="font-mono text-[11px]">
+                            {m.month}: spent {formatMoney(m.spend_milliunits)}
+                            ({m.variance_milliunits > 0 ? '+' : ''}{formatMoney(m.variance_milliunits)} vs plan)
+                          </li>
+                        {/each}
+                      </ul>
+                    </div>
+                  {/if}
+                  {#if item.supporting_evidence.top_transactions?.length}
+                    <div>
+                      <div class="text-[10px] uppercase tracking-wide text-muted-foreground">Top transactions</div>
+                      <ul class="mt-1 space-y-0.5">
+                        {#each item.supporting_evidence.top_transactions as txn (txn.id)}
+                          <li class="font-mono text-[11px]">
+                            {txn.date} {txn.payee_name ?? '—'} {formatMoney(txn.amount_milliunits)}
+                          </li>
+                        {/each}
+                      </ul>
+                    </div>
+                  {/if}
+                </div>
+              </details>
+            {/if}
             {#if showAction && item.recommended_action}
               <div class="mt-3 text-sm text-foreground/90">{item.recommended_action}</div>
             {/if}

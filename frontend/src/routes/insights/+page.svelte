@@ -85,7 +85,7 @@
       const key = `${cat.group_name}|${cat.category_name}`
       const trend = trendByKey.get(key)
       const sparklineValues = trend
-        ? trend.monthly_spend.map((m) => m.spend_milliunits)
+        ? trend.months.map((m) => m.spend_milliunits)
         : []
       out.push({
         category_id: cat.id,
