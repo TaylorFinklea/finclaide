@@ -268,6 +268,73 @@ class TestYearEndProjection:
         assert data["categories"] == []
 
 
+class TestAnomalyNarratives:
+    """Slice 2: detect_anomalies attaches a narrative payload per item."""
+
+    def test_transaction_anomaly_carries_narrative_with_typical_range(self, tmp_path: Path):
+        service, database = _seed_pace_fixture(tmp_path)
+        # 6 normal $100 grocery txns + one $700 spike → +sigma triggers anomaly.
+        for day in range(1, 7):
+            _insert_txn(
+                database,
+                date_iso=f"2026-04-{day:02d}",
+                group="Expenses",
+                category="Groceries",
+                amount_milliunits=100_000,
+            )
+        _insert_txn(
+            database,
+            date_iso="2026-04-08",
+            group="Expenses",
+            category="Groceries",
+            amount_milliunits=700_000,
+        )
+        result = service.detect_anomalies(months=1, threshold_sigma=1.5, as_of_month="2026-04")
+        spikes = [
+            a for a in result["transaction_anomalies"]
+            if a["category_name"] == "Groceries"
+        ]
+        assert spikes, "expected the $700 transaction to register"
+        narrative = spikes[0]["narrative"]
+        assert "typical_low_milliunits" in narrative
+        assert "typical_high_milliunits" in narrative
+        assert "category_average_milliunits" in narrative
+        assert "category_payee_count" in narrative
+        assert "Groceries" in narrative["headline"]
+        assert "$700" in narrative["headline"] or "$700.00" in narrative["headline"]
+        assert narrative["category_payee_count"] >= 1
+
+    def test_category_anomaly_carries_narrative_with_recent_months(self, tmp_path: Path):
+        service, database = _seed_pace_fixture(tmp_path)
+        # Three baseline months at $200, then an outlier at $600 in the 4th.
+        for month, amount in (
+            ("2026-01", 200_000),
+            ("2026-02", 210_000),
+            ("2026-03", 190_000),
+            ("2026-04", 600_000),
+        ):
+            _insert_txn(
+                database,
+                date_iso=f"{month}-15",
+                group="Bills",
+                category="Claude",
+                amount_milliunits=amount,
+            )
+        result = service.detect_anomalies(months=4, threshold_sigma=1.0, as_of_month="2026-04")
+        outliers = [
+            a for a in result["category_anomalies"]
+            if a["category_name"] == "Claude" and a["month"] == "2026-04"
+        ]
+        assert outliers, "expected April 2026 Claude to be flagged"
+        narrative = outliers[0]["narrative"]
+        assert "Claude" in narrative["headline"]
+        assert "2026-04" in narrative["headline"]
+        recent_months = [m["month"] for m in narrative["recent_months"]]
+        assert "2026-03" in recent_months
+        # Narrative context should list recent month/spend pairs.
+        assert "2026-03" in narrative["context"]
+
+
 class TestDetectAnomalies:
     def test_anomalies_returns_structure(self, client, auth_header):
         _seed_data(client, auth_header)

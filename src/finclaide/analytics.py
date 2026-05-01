@@ -53,6 +53,17 @@ def _stddev(values: list[int | float]) -> float:
     return math.sqrt(variance)
 
 
+def _format_money_inline(milliunits: int) -> str:
+    """Format milliunits as a compact dollar string for narrative copy
+    (`$200`, `$1,250`, `$15.50`). Whole-dollar amounts drop the cents."""
+    dollars = milliunits / 1000
+    if abs(dollars) >= 100 and dollars == int(dollars):
+        return f"${int(dollars):,}"
+    if dollars == int(dollars):
+        return f"${int(dollars):,}"
+    return f"${dollars:,.2f}"
+
+
 def _classify_pace(
     *,
     planned: int,
@@ -580,6 +591,28 @@ class AnalyticsService:
             for txn in txns:
                 sigma = (txn["abs_amount"] - mean) / std
                 if sigma >= threshold_sigma:
+                    payee_count = sum(
+                        1 for other in txns if other["payee_name"] == txn["payee_name"]
+                    )
+                    typical_low = int(max(0, mean - std))
+                    typical_high = int(mean + std)
+                    ratio = (txn["abs_amount"] / mean) if mean > 0 else 0
+                    headline = (
+                        f"{_format_money_inline(txn['abs_amount'])} is "
+                        f"{round(sigma, 1)}σ above the typical "
+                        f"{_format_money_inline(typical_low)}-"
+                        f"{_format_money_inline(typical_high)} range "
+                        f"for {grp or 'Uncategorized'} / {cat or 'Uncategorized'}."
+                    )
+                    context = (
+                        f"Last {months} months of "
+                        f"{cat or 'this category'} averaged "
+                        f"{_format_money_inline(int(mean))}"
+                    )
+                    if ratio >= 1.5:
+                        context += f"; this transaction is {ratio:.1f}× larger."
+                    else:
+                        context += "."
                     transaction_anomalies.append({
                         "id": txn["id"],
                         "date": txn["date"],
@@ -590,6 +623,14 @@ class AnalyticsService:
                         "category_mean_milliunits": int(mean),
                         "category_stddev_milliunits": int(std),
                         "sigma_distance": round(sigma, 1),
+                        "narrative": {
+                            "typical_low_milliunits": typical_low,
+                            "typical_high_milliunits": typical_high,
+                            "category_average_milliunits": int(mean),
+                            "category_payee_count": payee_count,
+                            "headline": headline,
+                            "context": context,
+                        },
                     })
 
         # Category-level anomalies: monthly totals
@@ -613,6 +654,28 @@ class AnalyticsService:
             for entry in monthly:
                 sigma = (entry["spend_milliunits"] - mean) / std
                 if sigma >= threshold_sigma:
+                    typical_low = int(max(0, mean - std))
+                    typical_high = int(mean + std)
+                    other_months = [
+                        m for m in monthly if m["month"] != entry["month"]
+                    ]
+                    other_months.sort(key=lambda m: m["month"], reverse=True)
+                    recent = other_months[:3]
+                    headline = (
+                        f"{grp or 'Uncategorized'} / {cat or 'Uncategorized'} "
+                        f"spent {_format_money_inline(entry['spend_milliunits'])} "
+                        f"in {entry['month']} vs typical "
+                        f"{_format_money_inline(typical_low)}-"
+                        f"{_format_money_inline(typical_high)}."
+                    )
+                    if recent:
+                        recent_str = ", ".join(
+                            f"{m['month']} {_format_money_inline(m['spend_milliunits'])}"
+                            for m in recent
+                        )
+                        context = f"Most recent comparable months: {recent_str}."
+                    else:
+                        context = "No prior months in the lookback window."
                     category_anomalies.append({
                         "group_name": grp,
                         "category_name": cat,
@@ -621,6 +684,14 @@ class AnalyticsService:
                         "historical_mean_milliunits": int(mean),
                         "historical_stddev_milliunits": int(std),
                         "sigma_distance": round(sigma, 1),
+                        "narrative": {
+                            "typical_low_milliunits": typical_low,
+                            "typical_high_milliunits": typical_high,
+                            "category_average_milliunits": int(mean),
+                            "recent_months": recent,
+                            "headline": headline,
+                            "context": context,
+                        },
                     })
 
         return {

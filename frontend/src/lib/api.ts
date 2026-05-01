@@ -79,6 +79,25 @@ export const ReconcilePreviewSchema = z.object({
   }),
 })
 
+const AnomalyNarrativeSchema = z
+  .object({
+    typical_low_milliunits: z.number(),
+    typical_high_milliunits: z.number(),
+    category_average_milliunits: z.number(),
+    category_payee_count: z.number().optional(),
+    recent_months: z
+      .array(
+        z.object({
+          month: z.string(),
+          spend_milliunits: z.number(),
+        }),
+      )
+      .optional(),
+    headline: z.string(),
+    context: z.string(),
+  })
+  .optional()
+
 const ReviewItemSchema = z.object({
   kind: z.string(),
   signal_class: z.string(),
@@ -89,6 +108,7 @@ const ReviewItemSchema = z.object({
   group_name: NullableString,
   category_name: NullableString,
   evidence: z.record(z.string(), z.any()),
+  narrative: AnomalyNarrativeSchema,
 })
 
 const WeeklyReviewSchema = z.object({

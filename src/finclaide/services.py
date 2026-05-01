@@ -987,6 +987,11 @@ class WeeklyReviewService:
             if not anomaly["date"].startswith(month_label):
                 continue
             amount = abs(anomaly["amount_milliunits"])
+            narrative = anomaly.get("narrative") or {}
+            why = narrative.get("headline") or (
+                f"{self._format_money(amount)} is {anomaly['sigma_distance']}σ above "
+                "the category's typical transaction size."
+            )
             items.append(
                 {
                     "kind": "transaction_anomaly",
@@ -996,9 +1001,7 @@ class WeeklyReviewService:
                         f"{anomaly['payee_name'] or 'Transaction'} looks unusual in "
                         f"{anomaly['group_name'] or 'Uncategorized'} / {anomaly['category_name'] or 'Uncategorized'}"
                     ),
-                    "why_it_matters": (
-                        f"{self._format_money(amount)} is {anomaly['sigma_distance']}σ above the category's typical transaction size."
-                    ),
+                    "why_it_matters": why,
                     "recommended_action": "Verify whether this was intentional and whether it should change the category plan.",
                     "group_name": anomaly["group_name"] or None,
                     "category_name": anomaly["category_name"] or None,
@@ -1009,6 +1012,7 @@ class WeeklyReviewService:
                         "category_mean_milliunits": anomaly["category_mean_milliunits"],
                         "category_stddev_milliunits": anomaly["category_stddev_milliunits"],
                     },
+                    "narrative": narrative,
                     "impact_milliunits": amount,
                 }
             )

@@ -415,6 +415,12 @@
               <StatusChip status={item.severity} />
             </div>
             <div class="mt-2 text-sm text-muted-foreground">{item.why_it_matters}</div>
+            {#if item.narrative?.context}
+              <details class="mt-2 text-xs text-muted-foreground/80">
+                <summary class="cursor-pointer select-none hover:text-foreground">Context</summary>
+                <p class="mt-2">{item.narrative.context}</p>
+              </details>
+            {/if}
             {#if showAction && item.recommended_action}
               <div class="mt-3 text-sm text-foreground/90">{item.recommended_action}</div>
             {/if}
