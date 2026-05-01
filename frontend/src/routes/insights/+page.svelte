@@ -137,12 +137,20 @@
 <div class="space-y-6">
   <Card class="border-border/40 bg-card">
     <CardHeader>
-      <CardTitle>
-        <span class="inline-flex items-center gap-2">
-          <Lightbulb class="h-4 w-4 text-muted-foreground" aria-hidden="true" />
-          Insights
-        </span>
-      </CardTitle>
+      <div class="flex items-center justify-between gap-3">
+        <CardTitle>
+          <span class="inline-flex items-center gap-2">
+            <Lightbulb class="h-4 w-4 text-muted-foreground" aria-hidden="true" />
+            Insights
+          </span>
+        </CardTitle>
+        <a
+          href={withBasePath('/insights/heatmap')}
+          class="text-xs text-muted-foreground hover:text-foreground"
+        >
+          Variance heatmap →
+        </a>
+      </div>
       <p class="text-sm text-muted-foreground">
         Per-category trends across the last 12 months. Click a row to see the full timeline,
         anomalies, and recent transactions.
