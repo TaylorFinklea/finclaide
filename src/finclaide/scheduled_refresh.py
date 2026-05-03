@@ -8,7 +8,7 @@ from typing import Any
 
 from finclaide.database import Database, utc_now
 from finclaide.errors import DataIntegrityError, OperationInProgressError
-from finclaide.operations import run_budget_import, run_reconcile, run_ynab_sync
+from finclaide.operations import run_reconcile, run_ynab_sync
 
 
 def _iso_after_minutes(minutes: int) -> str:
@@ -68,20 +68,23 @@ class ScheduledRefreshService:
         status: str
         try:
             with self.operation_lock.guard("scheduled_refresh"):
-                budget_import = run_budget_import(self.container)
+                # Per the source-of-truth model: SQLite owns the plan,
+                # YNAB owns actuals, the workbook is a one-way artifact.
+                # Scheduled refresh syncs YNAB and verifies the plan
+                # still matches YNAB's category structure. Importing
+                # from the workbook would clobber in-app plan edits and
+                # is now an explicit recovery action only.
                 ynab_sync = run_ynab_sync(self.container)
                 try:
                     reconcile = run_reconcile(self.container)
                     status = "success"
                     details = {
-                        "budget_import": budget_import,
                         "ynab_sync": ynab_sync,
                         "reconcile": reconcile,
                     }
                 except DataIntegrityError as error:
                     status = "failed"
                     details = {
-                        "budget_import": budget_import,
                         "ynab_sync": ynab_sync,
                         "reconcile_error": str(error),
                     }

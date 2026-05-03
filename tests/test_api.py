@@ -84,8 +84,10 @@ def test_budget_import_sync_reconcile_and_summary(app_factory, auth_header, ui_h
     refresh_response = client.post("/ui-api/operations/refresh-all", json={"month": "2026-03"}, headers=ui_headers)
     refresh_payload = refresh_response.get_json()
     assert refresh_response.status_code == 200
-    assert "budget_import" in refresh_payload
     assert "ynab_sync" in refresh_payload
+    assert "reconcile" in refresh_payload
+    # Phase 2.5e: refresh-all does NOT re-import the workbook.
+    assert "budget_import" not in refresh_payload
     assert refresh_payload["summary"]["month"] == "2026-03"
 
 
@@ -407,16 +409,20 @@ def test_ui_api_rejects_cross_origin_and_missing_header(app_factory):
     assert missing_header.status_code == 403
 
 
-def test_refresh_all_returns_partial_payload_on_reconcile_failure(app_factory, ui_headers, tmp_path: Path):
+def test_refresh_all_returns_partial_payload_on_reconcile_failure(app_factory, auth_header, ui_headers, tmp_path: Path):
     workbook = build_budget_workbook(tmp_path / "Budget.xlsx")
     app = app_factory(workbook_path=workbook, categories_fixture="categories_missing_investments.json")
     client = app.test_client()
+
+    # Phase 2.5e: app owns the plan; refresh_all no longer imports.
+    # The plan has to be seeded explicitly (or via the manual import
+    # button) before scheduled / refresh-all runs do anything useful.
+    client.post("/api/budget/import", headers=auth_header)
 
     response = client.post("/ui-api/operations/refresh-all", json={"month": "2026-03"}, headers=ui_headers)
     payload = response.get_json()
 
     assert response.status_code == 400
-    assert "budget_import" in payload
     assert "ynab_sync" in payload
     assert "reconcile_error" in payload
     assert payload["reconcile_error"]["message"]
@@ -734,6 +740,11 @@ def test_scheduled_refresh_run_is_reflected_in_status(app_factory, auth_header, 
     client = app.test_client()
     services = app.extensions["finclaide"]
 
+    # Plan is now app-owned (Phase 2.5e); the schedule no longer imports.
+    # Seed it once via the manual import path so reconcile has something
+    # to compare against.
+    client.post("/api/budget/import", headers=auth_header)
+
     result = services.scheduled_refresh.run_once()
     status_payload = client.get("/api/status", headers=auth_header).get_json()
     latest_run = status_payload["latest_runs"]["scheduled_refresh"]
@@ -759,6 +770,8 @@ def test_scheduled_refresh_failure_is_reflected_in_status(app_factory, auth_head
     app.extensions["finclaide"].scheduled_refresh.stop()
     client = app.test_client()
     services = app.extensions["finclaide"]
+
+    client.post("/api/budget/import", headers=auth_header)
 
     result = services.scheduled_refresh.run_once()
     status_payload = client.get("/api/status", headers=auth_header).get_json()
@@ -815,6 +828,14 @@ def test_scheduler_skips_bootstrap_when_prior_runs_succeeded(
 
 def test_scheduler_bootstraps_when_no_prior_successful_runs(app_factory, auth_header, tmp_path: Path):
     workbook = build_budget_workbook(tmp_path / "Budget.xlsx")
+
+    # Phase 2.5e: schedule no longer imports. Seed the plan in a separate
+    # app instance so the bootstrap-eligible app starts with a populated
+    # plan and reconcile can succeed.
+    seed_app = app_factory(workbook_path=workbook)
+    seed_client = seed_app.test_client()
+    assert seed_client.post("/api/budget/import", headers=auth_header).status_code == 200
+
     app = app_factory(
         workbook_path=workbook,
         scheduled_refresh_enabled=True,
@@ -834,7 +855,6 @@ def test_scheduler_bootstraps_when_no_prior_successful_runs(app_factory, auth_he
         pytest.fail("Scheduled refresh did not bootstrap on startup.")
 
     assert status_payload["scheduled_refresh"]["last_status"] == "success"
-    assert status_payload["last_budget_import_id"] is not None
     assert status_payload["last_ynab_sync_at"] is not None
 
 

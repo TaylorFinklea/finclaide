@@ -64,7 +64,10 @@ describe('OperationsPage', () => {
     expect((await screen.findAllByText('Temporary YNAB timeout')).length).toBeGreaterThan(0)
     expect(await screen.findByText('Failure cause')).toBeInTheDocument()
 
-    await userEvent.click(screen.getByRole('button', { name: 'Import Budget' }))
+    // Phase 2.5e: import is now a destructive "Restore from workbook" action
+    // gated by a confirm modal. Click the button, then confirm.
+    await userEvent.click(screen.getByRole('button', { name: 'Restore from workbook' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Restore plan' }))
 
     await waitFor(() => {
       expect(apiMocks.importBudget).toHaveBeenCalledTimes(1)

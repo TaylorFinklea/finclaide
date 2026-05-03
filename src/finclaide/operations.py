@@ -65,11 +65,15 @@ def run_reconcile(container: Any) -> dict[str, Any]:
 
 
 def run_refresh_all(container: Any, month: str | None = None) -> dict[str, Any]:
-    budget_import = run_budget_import(container)
+    """Sync YNAB + reconcile against the in-app plan.
+
+    Does NOT re-import from the workbook. SQLite owns the plan now;
+    importing on every refresh would clobber in-app edits. Use the
+    explicit "Restore from workbook" action when you actually want
+    to overwrite the plan from the artifact."""
     ynab_sync = run_ynab_sync(container)
     reconcile = run_reconcile(container)
     return {
-        "budget_import": budget_import,
         "ynab_sync": ynab_sync,
         "reconcile": reconcile,
         "status": container.reports.status(include_recent_runs=True),

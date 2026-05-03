@@ -1,5 +1,6 @@
 <script lang="ts">
   import { browser } from '$app/environment'
+  import { Dialog as DialogPrimitive } from 'bits-ui'
   import { createMutation, createQuery, useQueryClient } from '@tanstack/svelte-query'
   import { LoaderCircle, RefreshCw } from 'lucide-svelte'
   import { toast } from 'svelte-sonner'
@@ -9,10 +10,16 @@
   import FailureCauseCard from '$components/failure-cause-card.svelte'
   import ReconcilePreviewCard from '$components/reconcile-preview-card.svelte'
   import StatusChip from '$components/status-chip.svelte'
+  import Button from '$components/ui/button.svelte'
   import Card from '$components/ui/card.svelte'
   import CardContent from '$components/ui/card-content.svelte'
   import CardHeader from '$components/ui/card-header.svelte'
   import CardTitle from '$components/ui/card-title.svelte'
+  import DialogContent from '$components/ui/dialog-content.svelte'
+  import DialogDescription from '$components/ui/dialog-description.svelte'
+  import DialogFooter from '$components/ui/dialog-footer.svelte'
+  import DialogHeader from '$components/ui/dialog-header.svelte'
+  import DialogTitle from '$components/ui/dialog-title.svelte'
   import {
     exportBudget,
     exportBudgetDownloadUrl,
@@ -35,6 +42,7 @@
 
   let month = $derived(monthStore.value)
   let latestPayload: Record<string, unknown> | null = $state(null)
+  let confirmingImport = $state(false)
 
   const queryClient = useQueryClient()
   const statusQuery = createQuery({ queryKey: ['status'], queryFn: getStatus, enabled: browser })
@@ -237,12 +245,12 @@
       </p>
     </CardHeader>
     <CardContent class="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-      {@render opButton('Import Budget', 'Reload the current workbook export into SQLite.', $importMutation.isPending, () => $importMutation.mutate())}
-      {@render opButton('Sync YNAB', 'Pull new accounts, categories, and transaction deltas.', $syncMutation.isPending, () => $syncMutation.mutate())}
-      {@render opButton('Reconcile', 'Verify imported sheet categories still match YNAB exactly.', $reconcileMutation.isPending, () => $reconcileMutation.mutate())}
-      {@render opButton('Refresh All', 'Run import, sync, and reconcile sequentially.', $refreshMutation.isPending, () => $refreshMutation.mutate())}
+      {@render opButton('Sync YNAB', 'Pull new accounts, categories, and transaction deltas. YNAB is the source of truth for actuals.', $syncMutation.isPending, () => $syncMutation.mutate())}
+      {@render opButton('Reconcile', 'Verify the in-app plan still matches YNAB category names exactly.', $reconcileMutation.isPending, () => $reconcileMutation.mutate())}
+      {@render opButton('Refresh All', 'Sync YNAB then reconcile against the in-app plan. Does not re-import the workbook.', $refreshMutation.isPending, () => $refreshMutation.mutate())}
       {@render opButton('Export .xlsx', 'Download the current plan as a fresh workbook for offline sharing or accountant handoff.', $exportMutation.isPending, () => $exportMutation.mutate())}
       {@render opButton('Publish to Sheets', canPublish ? 'Write the current plan to a new tab in your configured Google Sheet.' : 'Set FINCLAIDE_BUDGET_SOURCE=google_sheets to enable.', $publishMutation.isPending, () => $publishMutation.mutate(), !canPublish)}
+      {@render opButton('Restore from workbook', 'Replaces the current plan with the contents of the configured workbook. Use only when migrating data in or recovering — overwrites in-app edits.', $importMutation.isPending, () => (confirmingImport = true), false, 'destructive')}
     </CardContent>
   </Card>
 
@@ -326,12 +334,17 @@
   pending: boolean,
   onClick: () => void,
   forceDisabled: boolean = false,
+  tone: 'primary' | 'destructive' = 'primary',
 )}
   <div class="rounded-xl bg-muted/30 p-5 transition-colors duration-150 hover:bg-muted/50">
     <div class="text-base font-medium text-foreground">{label}</div>
     <p class="mt-2 min-h-12 text-sm text-muted-foreground">{description}</p>
     <button
-      class="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground shadow transition-colors hover:bg-primary/90 disabled:pointer-events-none disabled:opacity-50"
+      class={`mt-4 inline-flex w-full items-center justify-center gap-2 rounded-md px-4 py-2 text-sm font-medium shadow transition-colors disabled:pointer-events-none disabled:opacity-50 ${
+        tone === 'destructive'
+          ? 'border border-rose-500/40 bg-rose-500/10 text-rose-100 hover:bg-rose-500/20'
+          : 'bg-primary text-primary-foreground hover:bg-primary/90'
+      }`}
       disabled={busy || forceDisabled}
       onclick={onClick}
       type="button"
@@ -341,3 +354,30 @@
     </button>
   </div>
 {/snippet}
+
+<DialogPrimitive.Root bind:open={() => confirmingImport, (next) => { if (!next) confirmingImport = false }}>
+  <DialogContent>
+    <DialogHeader>
+      <DialogTitle>Restore plan from workbook?</DialogTitle>
+      <DialogDescription>
+        Replaces the current in-app plan with the contents of the configured workbook. Any in-app edits since the last import will be archived (recoverable from /planning History) but no longer the active plan.
+      </DialogDescription>
+    </DialogHeader>
+    <DialogFooter class="gap-2">
+      <Button variant="outline" disabled={$importMutation.isPending} onclick={() => (confirmingImport = false)}>
+        Cancel
+      </Button>
+      <Button
+        variant="outline"
+        class="border-rose-500/40 text-rose-100 hover:bg-rose-500/10"
+        disabled={$importMutation.isPending}
+        onclick={() => {
+          confirmingImport = false
+          $importMutation.mutate()
+        }}
+      >
+        {$importMutation.isPending ? 'Restoring…' : 'Restore plan'}
+      </Button>
+    </DialogFooter>
+  </DialogContent>
+</DialogPrimitive.Root>

@@ -403,10 +403,13 @@ def reconcile():
 @ui_api.post("/operations/refresh-all")
 @require_ui_write_request
 def refresh_all():
+    # Per the source-of-truth model: app owns the plan, YNAB owns
+    # actuals, the workbook is a one-way artifact. Refresh All syncs
+    # YNAB + reconciles against the in-app plan. Use "Restore from
+    # workbook" if you really need to overwrite the plan.
     container = _container()
     month = (request.get_json(silent=True) or {}).get("month")
     with container.operation_lock.guard("refresh_all"):
-        budget_import = run_budget_import(container)
         ynab_sync = run_ynab_sync(container)
         try:
             reconcile_result = run_reconcile(container)
@@ -417,7 +420,6 @@ def refresh_all():
             payload = {"reconcile_error": {"kind": "application_error", "message": str(error)}}
         payload.update(
             {
-                "budget_import": budget_import,
                 "ynab_sync": ynab_sync,
                 "status": container.reports.status(include_recent_runs=True),
                 "summary": container.reports.summary(month=month),

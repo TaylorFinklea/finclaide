@@ -10,7 +10,68 @@ identical to `main`; safe to delete once origin is pushed.
 
 ## Last Session Summary
 
-**Date**: 2026-04-30 (Phase 3 Slice 1 — Mid-month pace + year-end forecast on Home)
+**Date**: 2026-05-03 (Phase 2.5e — App as plan source of truth; sheet is one-way artifact)
+
+The scheduled refresh and Refresh All operations were both running
+`run_budget_import` first, which clobbered any in-app plan edits and (in
+practice) failed the entire refresh whenever the workbook had any
+internal inconsistency (e.g. cached SUM formula didn't match the
+category sums). Operator surfaced the issue from a real failure: the
+April-May 2026 refresh was failing on `expected 1638333, got 1671668`.
+
+The architectural fix codifies what Phase 2.5 was already moving toward:
+
+- **YNAB** owns actuals (transactions, accounts, categories).
+- **The application (SQLite)** owns the plan.
+- **The Google Sheet / xlsx** is a **one-way artifact** — written by
+  Publish-to-Sheets / Export, not read on a schedule.
+
+Backend changes:
+- `src/finclaide/scheduled_refresh.py:run_once` no longer calls
+  `run_budget_import`. Schedule = sync YNAB + reconcile only.
+- `src/finclaide/operations.py:run_refresh_all` matches: sync + reconcile.
+- `src/finclaide/ui_api.py:/operations/refresh-all` matches: response
+  shape no longer includes `budget_import`.
+- The `/api/budget/import` and `/ui-api/operations/import-budget`
+  endpoints stay, repurposed as a **manual recovery** path.
+
+Frontend changes:
+- Operations page: dropped the "Import Budget" tile. Added "Restore
+  from workbook" tile in its place, painted destructive (rose border),
+  with copy noting it overwrites the in-app plan. Click opens a
+  confirm modal: "Restore plan from workbook?" → Cancel / Restore plan.
+- Updated copy on Sync YNAB ("YNAB is the source of truth for actuals"),
+  Reconcile ("Verify the in-app plan still matches YNAB category names
+  exactly"), and Refresh All ("Sync YNAB then reconcile against the
+  in-app plan. Does not re-import the workbook.").
+
+Tests:
+- 4 pytest cases updated to pre-seed the plan via explicit budget
+  import call now that the schedule no longer does it
+  (`test_refresh_all_returns_partial_payload_on_reconcile_failure`,
+  `test_scheduled_refresh_run_is_reflected_in_status`,
+  `test_scheduled_refresh_failure_is_reflected_in_status`,
+  `test_scheduler_bootstraps_when_no_prior_successful_runs`).
+- `test_budget_import_sync_reconcile_and_summary` asserts
+  `budget_import` is **not** in the refresh-all payload.
+- 1 vitest case updated to click "Restore from workbook" then confirm
+  via the modal instead of clicking the now-removed "Import Budget"
+  button.
+
+**Test counts (final)**: pytest **226/226** (no count change; same
+tests, fixed assertions). vitest **376/376** unchanged. svelte-check
+0/0.
+
+What this fixes for the operator: the scheduled refresh card on Home
+should stop showing "Budget totals do not match cached formulas..."
+errors — that error path is no longer in the schedule's path. YNAB
+sync + reconcile will run unblocked. The reconcile failure ("6
+mismatches" in the screenshot) is now the canonical signal of plan
+drift from YNAB; fix it in the in-app planning UI, not by re-importing.
+
+---
+
+**Earlier session**: 2026-04-30 (Phase 3 Slice 1 — Mid-month pace + year-end forecast on Home)
 
 Slice 1 of Phase 3 (Decision Engine V1) shipped in a single commit. Adds two
 new home-page cards backed by existing transaction data + a new analytics
@@ -471,6 +532,10 @@ Prior migration commit log on `svelte-migration`:
 ## Active Milestone
 
 **Phase 2.5 (Native Planning Surface) is fully shipped** as of 2026-04-30.
+
+**Phase 2.5e** (app-as-source-of-truth correction) shipped 2026-05-03 —
+removes scheduled / refresh-all dependency on the workbook. See last-
+session summary.
 
 **Phase 3 (Decision Engine V1) is fully shipped** as of 2026-04-30:
 - Slice 1 — Mid-month pace + year-end forecast on Home ✓
