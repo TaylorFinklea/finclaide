@@ -4,6 +4,7 @@ import math
 import json
 from dataclasses import dataclass
 from datetime import UTC, date, datetime
+from difflib import SequenceMatcher
 from pathlib import Path
 from typing import Any
 
@@ -11,6 +12,50 @@ from finclaide.config import AppConfig
 from finclaide.database import Database, utc_now
 from finclaide.errors import DataIntegrityError
 from finclaide.locking import OperationLock
+
+
+# Phase 2.5f: similarity-based reconcile suggestions. Threshold is the
+# minimum (normalized SequenceMatcher ratio + same-group bonus) that
+# qualifies as a "high-confidence rename" suggestion. 0.75 is roughly
+# "two-thirds of the characters in common after a small edit" — strict
+# enough that 'Bills/Rent' vs 'Bills/Internet' does NOT collide, lenient
+# enough to catch 'Wk Trip' vs 'Week Trip'.
+_RECONCILE_SUGGESTION_THRESHOLD = 0.75
+_SAME_GROUP_BONUS = 0.10
+
+
+def _normalize_for_match(name: str) -> str:
+    """Normalize a category/group name for similarity comparison.
+
+    Collapses whitespace (incl. NBSP U+00A0) to single spaces, lowercases,
+    and drops the unicode replacement char U+FFFD. The reconcile preview
+    keeps the original bytes; only the similarity score sees the
+    normalized form. Today's session caught two YNAB-side cases this
+    fixes: `Apple\xa0Card` (NBSP) and `Wells Fargo Active Cash Visa��
+    Card` (replacement chars).
+    """
+    cleaned = name.replace("�", "").replace("\xa0", " ")
+    return " ".join(cleaned.lower().split())
+
+
+def _score_match(
+    *,
+    plan_group: str,
+    plan_name: str,
+    ynab_group: str,
+    ynab_name: str,
+) -> float:
+    """Returns a similarity score in [0.0, 1.10]. Same-group matches get
+    a +0.1 bonus to prefer them over cross-group matches with the same
+    name-only ratio."""
+    name_ratio = SequenceMatcher(
+        None,
+        _normalize_for_match(plan_name),
+        _normalize_for_match(ynab_name),
+    ).ratio()
+    if _normalize_for_match(plan_group) == _normalize_for_match(ynab_group):
+        return name_ratio + _SAME_GROUP_BONUS
+    return name_ratio
 
 
 def _month_bounds(month: str | None) -> tuple[str, str, int, str]:
@@ -93,23 +138,103 @@ class ReconciliationService:
             (row["group_name"], row["category_name"]) for row in ynab_rows
         }
 
-        def to_payload(pairs: set[tuple[str, str]]) -> list[dict[str, str]]:
+        # plan_id lookup: (group, name) → plan_categories.id, for active plan.
+        # Used to enrich extra_in_ynab suggestions with the id the
+        # frontend would PATCH if the operator accepts the rename.
+        with self.database.connect() as connection:
+            plan_id_rows = connection.execute(
+                """
+                SELECT pc.id, pc.group_name, pc.category_name
+                FROM plan_categories pc
+                JOIN plans p ON p.id = pc.plan_id
+                WHERE p.status = 'active'
+                """
+            ).fetchall()
+        plan_id_lookup = {
+            (row["group_name"], row["category_name"]): int(row["id"])
+            for row in plan_id_rows
+        }
+
+        exact_matches = planned_set & ynab_set
+        missing_in_ynab = sorted(planned_set - ynab_set)
+        extra_in_ynab = sorted(ynab_set - planned_set)
+
+        def best_suggestion(
+            target_group: str,
+            target_name: str,
+            candidates: list[tuple[str, str]],
+            *,
+            attach_plan_id: bool,
+        ) -> dict[str, Any] | None:
+            best: tuple[float, tuple[str, str]] | None = None
+            for cand_group, cand_name in candidates:
+                score = _score_match(
+                    plan_group=cand_group if attach_plan_id else target_group,
+                    plan_name=cand_name if attach_plan_id else target_name,
+                    ynab_group=target_group if attach_plan_id else cand_group,
+                    ynab_name=target_name if attach_plan_id else cand_name,
+                )
+                if score < _RECONCILE_SUGGESTION_THRESHOLD:
+                    continue
+                if best is None or score > best[0]:
+                    best = (score, (cand_group, cand_name))
+            if best is None:
+                return None
+            score, (g, n) = best
+            payload: dict[str, Any] = {
+                "group_name": g,
+                "category_name": n,
+                "confidence": round(min(score, 1.0), 2),
+            }
+            if attach_plan_id:
+                payload["plan_category_id"] = plan_id_lookup.get((g, n))
+            else:
+                payload["plan_category_id"] = None
+            return payload
+
+        # extra_in_ynab items propose renaming an existing plan row
+        # (sourced from missing_in_ynab) to YNAB's name. So the
+        # suggested_match points into the plan side, and we attach
+        # plan_category_id.
+        extra_payload: list[dict[str, Any]] = []
+        for group, name in extra_in_ynab:
+            extra_payload.append(
+                {
+                    "group_name": group,
+                    "category_name": name,
+                    "suggested_match": best_suggestion(
+                        group, name, missing_in_ynab, attach_plan_id=True
+                    ),
+                }
+            )
+
+        # missing_in_ynab items either propose a rename target in YNAB
+        # OR no suggestion at all (operator likely wants to delete).
+        missing_payload: list[dict[str, Any]] = []
+        for group, name in missing_in_ynab:
+            missing_payload.append(
+                {
+                    "group_name": group,
+                    "category_name": name,
+                    "suggested_match": best_suggestion(
+                        group, name, extra_in_ynab, attach_plan_id=False
+                    ),
+                }
+            )
+
+        def exact_payload(pairs: set[tuple[str, str]]) -> list[dict[str, str]]:
             return [
                 {"group_name": group, "category_name": category}
                 for group, category in sorted(pairs)
             ]
 
-        exact_matches = planned_set & ynab_set
-        missing_in_ynab = planned_set - ynab_set
-        extra_in_ynab = ynab_set - planned_set
-
         return {
             "previewed_at": utc_now(),
             "planned_count": len(planned_set),
             "ynab_count": len(ynab_set),
-            "exact_matches": to_payload(exact_matches),
-            "missing_in_ynab": to_payload(missing_in_ynab),
-            "extra_in_ynab": to_payload(extra_in_ynab),
+            "exact_matches": exact_payload(exact_matches),
+            "missing_in_ynab": missing_payload,
+            "extra_in_ynab": extra_payload,
             "counts": {
                 "exact": len(exact_matches),
                 "missing_in_ynab": len(missing_in_ynab),

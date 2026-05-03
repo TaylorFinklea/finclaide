@@ -60,9 +60,19 @@ const RunsSchema = z.object({
   runs: z.array(RunEntrySchema),
 })
 
+export const ReconcileSuggestionSchema = z.object({
+  group_name: z.string(),
+  category_name: z.string(),
+  confidence: z.number(),
+  plan_category_id: z.number().nullable(),
+})
+
 export const ReconcilePreviewEntrySchema = z.object({
   group_name: z.string(),
   category_name: z.string(),
+  // Suggestions land on extra_in_ynab + missing_in_ynab. Exact matches
+  // serialize without the field, so it's optional.
+  suggested_match: ReconcileSuggestionSchema.nullable().optional(),
 })
 
 export const ReconcilePreviewSchema = z.object({
@@ -326,6 +336,7 @@ export type OverageWatchCategory = z.infer<typeof OverageWatchCategorySchema>
 export type TransactionRow = z.infer<typeof TransactionSchema>
 export type TransactionsPageResponse = z.infer<typeof TransactionsPageSchema>
 export type RunEntry = z.infer<typeof RunEntrySchema>
+export type ReconcileSuggestion = z.infer<typeof ReconcileSuggestionSchema>
 export type ReconcilePreviewEntry = z.infer<typeof ReconcilePreviewEntrySchema>
 export type ReconcilePreviewResponse = z.infer<typeof ReconcilePreviewSchema>
 export type ReviewItem = z.infer<typeof ReviewItemSchema>

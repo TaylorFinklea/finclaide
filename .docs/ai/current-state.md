@@ -10,7 +10,60 @@ identical to `main`; safe to delete once origin is pushed.
 
 ## Last Session Summary
 
-**Date**: 2026-05-03 (Phase 2.5e — App as plan source of truth; sheet is one-way artifact)
+**Date**: 2026-05-03 (Phase 2.5f — Self-service reconcile)
+
+The Reconcile Preview card on Operations turned actionable. Today's earlier
+session forced me to drive ~22 manual API calls to fix a 6-mismatch reconcile
+failure (8 renames + 1 delete + 13 adds). This slice makes that one-click.
+
+**Backend** (`src/finclaide/services.py`):
+- New `_normalize_for_match(name)` helper: collapses whitespace incl. NBSP
+  (U+00A0), drops unicode replacement chars (U+FFFD), lowercases. Used only
+  for similarity scoring; the plan keeps YNAB's exact bytes.
+- New `_score_match(plan_group, plan_name, ynab_group, ynab_name)` helper:
+  `difflib.SequenceMatcher.ratio()` on normalized names + 0.10 same-group
+  bonus.
+- `ReconciliationService.preview()` extended: each `extra_in_ynab` and
+  `missing_in_ynab` item now carries an optional `suggested_match` field
+  (group_name, category_name, confidence, plan_category_id). Threshold for
+  "show a suggestion" = 0.75. `extra_in_ynab` suggestions point at the
+  plan-side row (with plan_category_id set so the frontend can PATCH
+  directly); `missing_in_ynab` suggestions point at the YNAB-side name.
+
+**Frontend** (`frontend/src/`):
+- `lib/api.ts`: `ReconcileSuggestionSchema` added, wired into
+  `ReconcilePreviewEntrySchema` as `suggested_match`.
+- `components/reconcile-preview-card.svelte` (rewritten): replaces the
+  read-only diff lists with action-bearing rows. Each `extra_in_ynab` row
+  shows "Rename" (when there's a confident plan-side match) + "Add to
+  plan" buttons. Each `missing_in_ynab` row shows "Delete from plan"; if
+  the row is already covered by an `extra_in_ynab` rename suggestion,
+  it's hidden so the operator only makes one decision per pair.
+  Destructive delete prompts a confirm modal when `planned_milliunits > 0`.
+- `routes/operations/+page.svelte`: passes the active plan into the card
+  so it can resolve `plan_category_id → block + planned_milliunits`
+  without a second roundtrip.
+
+**Tests added**:
+- `tests/test_reconciliation_suggestions.py` (NEW) — 8 cases covering
+  normalization, same-group bonus, no-suggestion when in sync, high-
+  confidence rename, NBSP + replacement-char handling, low-confidence
+  null suggestion, missing_in_ynab suggestion direction, endpoint
+  round-trip.
+- `frontend/src/components/reconcile-preview-card.test.ts` (NEW) — 6
+  cases covering rename rendering + click, add to plan, delete-when-zero
+  (no modal) and delete-when-nonzero (modal).
+
+**Test counts (final)**: pytest **234/234** (was 226; +8). vitest
+**382/382** (was 376; +6). svelte-check 0/0.
+
+**Out of scope** (deferred): bulk-apply, group-rename detection, auto-
+rename on YNAB sync. The architecture rule (YNAB owns names; operator
+confirms each change) stays.
+
+---
+
+**Earlier session**: 2026-05-03 (Phase 2.5e — App as plan source of truth; sheet is one-way artifact)
 
 The scheduled refresh and Refresh All operations were both running
 `run_budget_import` first, which clobbered any in-app plan edits and (in

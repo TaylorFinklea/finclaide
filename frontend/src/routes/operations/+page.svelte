@@ -23,6 +23,7 @@
   import {
     exportBudget,
     exportBudgetDownloadUrl,
+    getActivePlan,
     getErrorMessage,
     getReconcilePreview,
     getRuns,
@@ -156,6 +157,17 @@
   })
   const previewQuery = createQuery(previewOpts)
 
+  // Active plan is loaded alongside the preview so the reconcile card
+  // can resolve plan_category_id → block + planned_milliunits for the
+  // delete confirm + add inference. Cheap query — always enabled when
+  // we're in the browser; the card itself gates on the reconcile-failed
+  // condition.
+  const planQuery = createQuery({
+    queryKey: ['plan-active'],
+    queryFn: () => getActivePlan(),
+    enabled: browser,
+  })
+
   function handleRetry(source: string) {
     if (source === 'budget_import') $importMutation.mutate()
     else if (source === 'ynab_sync') $syncMutation.mutate()
@@ -226,6 +238,7 @@
   {#if reconcileFailed && planImported}
     <ReconcilePreviewCard
       preview={$previewQuery.data}
+      plan={$planQuery.data}
       isLoading={$previewQuery.isLoading}
       isError={$previewQuery.isError}
       error={$previewQuery.error}
