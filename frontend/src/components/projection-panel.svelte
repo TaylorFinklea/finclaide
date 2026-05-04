@@ -1,6 +1,7 @@
 <script lang="ts">
   import { browser } from '$app/environment'
   import { goto } from '$app/navigation'
+  import { page } from '$app/stores'
   import { Dialog as DialogPrimitive } from 'bits-ui'
   import { createMutation, createQuery, useQueryClient } from '@tanstack/svelte-query'
   import { Plus, SlidersHorizontal, Trash2, Bookmark } from 'lucide-svelte'
@@ -136,20 +137,54 @@
     return [...groups].sort()
   })
 
-  // Initialise axes when categories first load (zero-delta for each).
+  // Phase 4 Slice 2: parse `?axes=id:pct,id:pct,...` deeplink so the
+  // forecast page's "Project this change" button can pre-fill the
+  // sliders. Pure session state — once consumed, the URL stays as-is
+  // (we don't strip the param) so a refresh re-applies the same
+  // initial state until the operator manually navigates away.
+  function parseAxesFromQuery(raw: string | null): Map<number, number> {
+    const out = new Map<number, number>()
+    if (!raw) return out
+    for (const segment of raw.split(',')) {
+      const [idStr, pctStr] = segment.split(':')
+      const id = Number(idStr)
+      const pct = Number(pctStr)
+      if (Number.isFinite(id) && Number.isFinite(pct)) {
+        out.set(id, pct)
+      }
+    }
+    return out
+  }
+  let initialAxesConsumed = $state(false)
+
+  // Initialise axes when categories first load (zero-delta unless an
+  // ?axes= query param sets a starting value).
   $effect(() => {
     const cats = allCategories()
     if (cats.length === 0) return
-    // Only initialise once (if axes already set, keep user edits).
+    const initial = !initialAxesConsumed
+      ? parseAxesFromQuery($page.url.searchParams.get('axes'))
+      : new Map<number, number>()
     if (axes.length === 0) {
-      axes = cats.map((c) => ({ category_id: c.id, percent_delta: 0 }))
+      axes = cats.map((c) => ({
+        category_id: c.id,
+        percent_delta: initial.get(c.id) ?? 0,
+      }))
+      initialAxesConsumed = true
     } else {
       // Sync any new categories that weren't in axes yet.
       const known = new Set(axes.map((a) => a.category_id))
       const toAdd = cats.filter((c) => !known.has(c.id))
       if (toAdd.length > 0) {
-        axes = [...axes, ...toAdd.map((c) => ({ category_id: c.id, percent_delta: 0 }))]
+        axes = [
+          ...axes,
+          ...toAdd.map((c) => ({
+            category_id: c.id,
+            percent_delta: initial.get(c.id) ?? 0,
+          })),
+        ]
       }
+      initialAxesConsumed = true
     }
   })
 

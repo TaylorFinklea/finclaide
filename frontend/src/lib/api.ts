@@ -647,6 +647,54 @@ export async function getCashflowTimeline(opts: {
   )
 }
 
+// --- Phase 4 Slice 2: cash flow recommendations -------------------------
+
+export const CashflowRecommendationSchema = z.object({
+  kind: z.literal('plan_calibration'),
+  category: z.object({
+    id: z.number(),
+    group_name: z.string(),
+    category_name: z.string(),
+    block: z.string(),
+  }),
+  current_planned_milliunits: z.number(),
+  suggested_planned_milliunits: z.number(),
+  run_rate_milliunits: z.number(),
+  monthly_delta_milliunits: z.number(),
+  annual_impact_milliunits: z.number(),
+  headline: z.string(),
+  rationale: z.string(),
+  projected_impact: z.object({
+    lowest_balance_before_milliunits: z.number(),
+    lowest_balance_after_milliunits: z.number(),
+    first_negative_month_before: z.string().nullable(),
+    first_negative_month_after: z.string().nullable(),
+  }),
+})
+export type CashflowRecommendation = z.infer<typeof CashflowRecommendationSchema>
+
+export const CashflowRecommendationsSchema = z.object({
+  as_of_month: z.string(),
+  baseline_lowest_balance_milliunits: z.number(),
+  baseline_first_negative_month: z.string().nullable(),
+  recommendations: z.array(CashflowRecommendationSchema),
+})
+export type CashflowRecommendations = z.infer<typeof CashflowRecommendationsSchema>
+
+export async function getCashflowRecommendations(opts: {
+  months?: number
+  as_of_month?: string
+} = {}) {
+  const params = new URLSearchParams()
+  if (opts.months !== undefined) params.set('months', String(opts.months))
+  if (opts.as_of_month) params.set('as_of_month', opts.as_of_month)
+  const qs = params.toString()
+  return requestJson(
+    withBasePath(`/ui-api/analytics/cashflow/recommendations${qs ? `?${qs}` : ''}`),
+    CashflowRecommendationsSchema,
+  )
+}
+
 export const TrendCategorySchema = z.object({
   group_name: z.string(),
   category_name: z.string(),

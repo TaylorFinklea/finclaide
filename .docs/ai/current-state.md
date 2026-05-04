@@ -10,7 +10,69 @@ identical to `main`; safe to delete once origin is pushed.
 
 ## Last Session Summary
 
-**Date**: 2026-05-04 (Phase 4 Slice 1 — Cash flow timeline + realism detector)
+**Date**: 2026-05-04 (Phase 4 Slice 2 — Plan-calibration recommendations)
+
+Slice 2 layers actionable recommendations onto Slice 1's forecast view.
+When a discretionary category's 6-month run-rate exceeds plan by ≥10%
+**and** ≥$25/mo, a card on `/forecast` surfaces a one-line headline,
+multi-sentence rationale, before/after impact (lowest_balance shift,
+first_negative_month shift), and two buttons:
+
+- **Apply** — PATCHes the plan category to the suggested amount in
+  one click. Invalidates the cashflow + plan + summary queries on
+  success.
+- **Project** — navigates to `/scenarios?axes=<id>:<delta_pct>` and
+  the projection panel pre-fills the matching slider so the operator
+  can preview the change in a sandbox before committing.
+
+**Backend** (`src/finclaide/analytics.py`,
+`src/finclaide/analytics_api.py`, `src/finclaide/ui_api.py`):
+- New `AnalyticsService.cash_flow_recommendations(months=12,
+  as_of_month=None)` method. Reuses `cash_flow_timeline` for the
+  baseline and `_six_month_run_rates` for the per-category averages.
+  Cheap simulation per recommendation: clones baseline `months[]`,
+  adds `(suggested - current)` to each month's outflow, recomputes
+  the running balance + first_negative_month + lowest_balance.
+- Skips `_is_fixed_group()` categories — calibration is for
+  discretionary spend only; the operator's plan is authoritative
+  for Bills / Payments / Stipends / Savings.
+- Sort by absolute monthly delta (biggest gap first); cap at 10.
+- New endpoints:
+  `GET /api/analytics/cashflow/recommendations?months=12&as_of_month=...`
+  and `/ui-api/analytics/cashflow/recommendations` UI mirror.
+
+**Frontend** (`frontend/src/`):
+- `lib/api.ts`: `CashflowRecommendationSchema` +
+  `CashflowRecommendationsSchema` + types;
+  `getCashflowRecommendations()` function.
+- `components/forecast-recommendations-card.svelte` (NEW) — the
+  recommendations surface. Each rec card shows headline, rationale,
+  `current → suggested` arrow, annual impact, optional
+  first-negative-month shift, and Apply/Project buttons.
+- `components/projection-panel.svelte` — reads `?axes=` query param
+  on first mount and pre-fills slider state. Format:
+  `id:percent_delta,id:percent_delta,...`. Once consumed, the URL
+  isn't stripped (refresh re-applies the same initial state).
+- `routes/forecast/+page.svelte` — mounts the new card under the
+  bar chart, above the shortfall-drivers card.
+
+**Tests added**:
+- `tests/test_cashflow_recommendations.py` (NEW) — 7 cases: in-
+  tolerance no-op, calibration trigger, fixed-group skip, noise-
+  floor skip, simulation impact, 10-cap, endpoint round-trip.
+- `frontend/src/components/forecast-recommendations-card.test.ts`
+  (NEW) — 3 cases: render, Apply mutation, Project deeplink.
+
+**Test counts (final)**: pytest **256/256** (was 249; +7). vitest
+**388/388** (was 385; +3). svelte-check 0/0.
+
+**Operator next move**: load `/forecast` after a YNAB sync, see if
+the engine surfaces useful recs against real data. The Apply path
+permanently changes plan rows — Project first if uncertain.
+
+---
+
+**Earlier session**: 2026-05-04 (Phase 4 Slice 1 — Cash flow timeline + realism detector)
 
 Phase 4 (Cash Flow & Forecasting) opens with a 12-month forward cash-flow
 view at `/forecast`. Hybrid model: fixed groups (Bills, Payments, Credit

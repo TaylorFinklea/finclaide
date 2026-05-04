@@ -662,6 +662,170 @@ class AnalyticsService:
             "shortfall_drivers": shortfall_drivers,
         }
 
+    # ------------------------------------------------------------------
+    # cash_flow_recommendations (Phase 4 Slice 2)
+    # ------------------------------------------------------------------
+
+    def cash_flow_recommendations(
+        self,
+        *,
+        months: int = 12,
+        as_of_month: str | None = None,
+    ) -> dict[str, Any]:
+        """Plan-calibration recommendations: discretionary categories
+        whose 6-month run-rate exceeds plan by ≥10% and ≥$25/mo. Each
+        carries a projected impact (lowest_balance + first_negative_month
+        deltas) so the operator can pick the highest-leverage tweaks."""
+        baseline = self.cash_flow_timeline(months=months, as_of_month=as_of_month)
+        baseline_lowest = baseline["lowest_balance"]["balance_milliunits"]
+        baseline_first_neg = baseline["first_negative_month"]
+        starting_balance = baseline["starting_balance_milliunits"]
+        baseline_months = baseline["months"]
+        as_of_label = baseline["as_of_month"]
+
+        reference = _month_reference(as_of_month)
+        with self.database.connect() as conn:
+            plan_rows = conn.execute(
+                """
+                SELECT pc.id, pc.group_name, pc.category_name, pc.block,
+                       pc.planned_milliunits
+                FROM plan_categories pc
+                JOIN plans p ON p.id = pc.plan_id
+                WHERE p.status = 'active' AND pc.block IN ('monthly', 'stipends')
+                """
+            ).fetchall()
+        run_rates = self._six_month_run_rates(reference)
+
+        recommendations: list[dict[str, Any]] = []
+        for row in plan_rows:
+            grp = row["group_name"] or ""
+            name = row["category_name"] or ""
+            block = row["block"]
+            planned = int(row["planned_milliunits"] or 0)
+            cat_id = int(row["id"])
+
+            # Calibration only applies to discretionary categories. The
+            # operator's plan is authoritative for fixed groups.
+            if _is_fixed_group(grp):
+                continue
+
+            rate = run_rates.get((grp, name))
+            if rate is None:
+                continue
+
+            # Trigger: run-rate exceeds plan by ≥10% AND absolute monthly
+            # delta ≥ $25 (matches the pace card's noise floor).
+            monthly_delta = rate - planned
+            if monthly_delta < 25_000:
+                continue
+            if planned > 0 and rate < planned * 1.10:
+                continue
+            # Round suggested amount to whole dollars.
+            suggested = round(rate / 1000) * 1000
+            if suggested == planned:
+                continue
+
+            applied_delta = suggested - planned
+
+            # Cheap simulation: clone baseline contributions, add the
+            # delta to each month's outflow (or subtract from inflow if
+            # this is a stipends category — though stipends are fixed,
+            # so we won't reach here in practice).
+            sim_months = []
+            running_balance = starting_balance
+            sim_lowest = running_balance
+            sim_lowest_month = baseline_months[0]["month"] if baseline_months else as_of_label
+            sim_first_neg: str | None = None
+            for base in baseline_months:
+                if block == "stipends":
+                    sim_inflows = base["inflows_milliunits"] + applied_delta
+                    sim_outflows = base["outflows_milliunits"]
+                else:
+                    sim_inflows = base["inflows_milliunits"]
+                    sim_outflows = base["outflows_milliunits"] + applied_delta
+                sim_net = sim_inflows - sim_outflows
+                running_balance += sim_net
+                sim_months.append({
+                    "month": base["month"],
+                    "ending_balance": running_balance,
+                })
+                if running_balance < sim_lowest:
+                    sim_lowest = running_balance
+                    sim_lowest_month = base["month"]
+                if sim_first_neg is None and running_balance < 0:
+                    sim_first_neg = base["month"]
+
+            # Build copy
+            current_dollars = planned // 1000
+            suggested_dollars = suggested // 1000
+            rate_dollars = rate // 1000
+            headline = (
+                f"{grp} / {name}: averaging ${rate_dollars}/mo against "
+                f"${current_dollars} plan. Raise plan to ${suggested_dollars}."
+            )
+            rationale_parts = [
+                f"6-month run-rate is ${rate_dollars}/mo, "
+                f"{int((rate / max(planned, 1) - 1) * 100) if planned else 0}% over the "
+                f"${current_dollars}/mo plan." if planned > 0 else
+                f"6-month run-rate is ${rate_dollars}/mo with no plan currently set.",
+            ]
+            if baseline_first_neg and sim_first_neg != baseline_first_neg:
+                if sim_first_neg is None:
+                    rationale_parts.append(
+                        f"Forecast no longer goes negative within {months} months."
+                    )
+                else:
+                    rationale_parts.append(
+                        f"Pushes first-negative month from {baseline_first_neg} to {sim_first_neg}."
+                    )
+            elif baseline_lowest != sim_lowest:
+                rationale_parts.append(
+                    f"Lowest-balance moves by "
+                    f"${(sim_lowest - baseline_lowest) // 1000:+,}/."
+                )
+
+            recommendations.append({
+                "kind": "plan_calibration",
+                "category": {
+                    "id": cat_id,
+                    "group_name": grp,
+                    "category_name": name,
+                    "block": block,
+                },
+                "current_planned_milliunits": planned,
+                "suggested_planned_milliunits": suggested,
+                "run_rate_milliunits": rate,
+                "monthly_delta_milliunits": applied_delta,
+                "annual_impact_milliunits": applied_delta * 12,
+                "headline": headline,
+                "rationale": " ".join(rationale_parts),
+                "projected_impact": {
+                    "lowest_balance_before_milliunits": baseline_lowest,
+                    "lowest_balance_after_milliunits": sim_lowest,
+                    "first_negative_month_before": baseline_first_neg,
+                    "first_negative_month_after": sim_first_neg,
+                },
+            })
+
+        # Sort: biggest improvement to lowest_balance first; tiebreak by
+        # absolute monthly delta. (Note: applying a calibration
+        # *increases* outflow, so it makes the forecast WORSE, not
+        # better. The "improvement" framing is — these are the
+        # categories where the plan is most out of alignment with reality;
+        # higher delta = bigger gap = bigger leverage to fix.)
+        recommendations.sort(
+            key=lambda r: (
+                abs(r["monthly_delta_milliunits"]),
+            ),
+            reverse=True,
+        )
+        return {
+            "as_of_month": as_of_label,
+            "baseline_lowest_balance_milliunits": baseline_lowest,
+            "baseline_first_negative_month": baseline_first_neg,
+            "recommendations": recommendations[:10],
+        }
+
     def _cash_starting_balance(self) -> int:
         """Sum of positive account balances on open, on-budget accounts.
         Credit-card accounts in YNAB typically carry negative balances

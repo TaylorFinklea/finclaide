@@ -3,12 +3,14 @@
   import { createQuery } from '@tanstack/svelte-query'
   import { AlertTriangle, TrendingUp } from 'lucide-svelte'
 
+  import ForecastRecommendationsCard from '$components/forecast-recommendations-card.svelte'
   import Card from '$components/ui/card.svelte'
   import CardContent from '$components/ui/card-content.svelte'
   import CardHeader from '$components/ui/card-header.svelte'
   import CardTitle from '$components/ui/card-title.svelte'
   import Skeleton from '$components/ui/skeleton.svelte'
   import {
+    getCashflowRecommendations,
     getCashflowTimeline,
     type CashflowMonth,
   } from '$lib/api'
@@ -18,6 +20,11 @@
   const cashflowQuery = createQuery({
     queryKey: ['analytics-cashflow-12'],
     queryFn: () => getCashflowTimeline({ months: 12 }),
+    enabled: browser,
+  })
+  const recommendationsQuery = createQuery({
+    queryKey: ['analytics-cashflow-recommendations'],
+    queryFn: () => getCashflowRecommendations({ months: 12 }),
     enabled: browser,
   })
 
@@ -289,6 +296,12 @@
       {/if}
     </CardContent>
   </Card>
+
+  <ForecastRecommendationsCard
+    recommendations={$recommendationsQuery.data}
+    isLoading={$recommendationsQuery.isLoading}
+    isError={$recommendationsQuery.isError}
+  />
 
   {#if $cashflowQuery.data?.first_negative_month && $cashflowQuery.data.shortfall_drivers}
     <Card class="border-rose-500/30 bg-rose-500/[0.05]">

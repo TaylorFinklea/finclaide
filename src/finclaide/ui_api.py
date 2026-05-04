@@ -141,6 +141,18 @@ def analytics_cashflow():
     )
 
 
+@ui_api.get("/analytics/cashflow/recommendations")
+@require_same_origin
+def analytics_cashflow_recommendations():
+    months = int(request.args.get("months", "12"))
+    return jsonify(
+        _container().analytics.cash_flow_recommendations(
+            months=months,
+            as_of_month=request.args.get("as_of_month"),
+        )
+    )
+
+
 @ui_api.get("/analytics/anomalies")
 @require_same_origin
 def analytics_anomalies():
