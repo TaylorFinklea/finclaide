@@ -55,6 +55,18 @@ def pace():
     )
 
 
+@analytics_api.get("/cashflow")
+@require_bearer_token
+def cashflow():
+    months = int(request.args.get("months", "12"))
+    return jsonify(
+        _container().analytics.cash_flow_timeline(
+            months=months,
+            as_of_month=request.args.get("as_of_month"),
+        )
+    )
+
+
 @analytics_api.get("/anomalies")
 @require_bearer_token
 def anomalies():

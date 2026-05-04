@@ -129,6 +129,18 @@ def analytics_trends():
     )
 
 
+@ui_api.get("/analytics/cashflow")
+@require_same_origin
+def analytics_cashflow():
+    months = int(request.args.get("months", "12"))
+    return jsonify(
+        _container().analytics.cash_flow_timeline(
+            months=months,
+            as_of_month=request.args.get("as_of_month"),
+        )
+    )
+
+
 @ui_api.get("/analytics/anomalies")
 @require_same_origin
 def analytics_anomalies():

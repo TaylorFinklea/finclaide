@@ -585,6 +585,68 @@ export async function getYearEndProjection(month?: string) {
   )
 }
 
+// --- Phase 4: cash flow timeline ----------------------------------------
+
+export const CashflowObligationLumpSchema = z.object({
+  group_name: z.string(),
+  category_name: z.string(),
+  milliunits: z.number(),
+})
+
+export const CashflowOutflowCategorySchema = z.object({
+  group_name: z.string(),
+  category_name: z.string(),
+  milliunits: z.number(),
+  basis: z.enum(['plan', 'run_rate', 'lump']),
+})
+
+export const CashflowMonthSchema = z.object({
+  month: z.string(),
+  inflows_milliunits: z.number(),
+  outflows_milliunits: z.number(),
+  obligation_lumps: z.array(CashflowObligationLumpSchema),
+  top_outflow_categories: z.array(CashflowOutflowCategorySchema),
+  net_milliunits: z.number(),
+  ending_balance_milliunits: z.number(),
+})
+export type CashflowMonth = z.infer<typeof CashflowMonthSchema>
+
+export const CashflowTimelineSchema = z.object({
+  as_of_month: z.string(),
+  months_ahead: z.number(),
+  starting_balance_milliunits: z.number(),
+  months: z.array(CashflowMonthSchema),
+  lowest_balance: z.object({
+    month: z.string(),
+    balance_milliunits: z.number(),
+  }),
+  first_negative_month: z.string().nullable(),
+  shortfall_drivers: z
+    .array(
+      z.object({
+        group_name: z.string(),
+        category_name: z.string(),
+        total_milliunits: z.number(),
+      }),
+    )
+    .nullable(),
+})
+export type CashflowTimeline = z.infer<typeof CashflowTimelineSchema>
+
+export async function getCashflowTimeline(opts: {
+  months?: number
+  as_of_month?: string
+} = {}) {
+  const params = new URLSearchParams()
+  if (opts.months !== undefined) params.set('months', String(opts.months))
+  if (opts.as_of_month) params.set('as_of_month', opts.as_of_month)
+  const qs = params.toString()
+  return requestJson(
+    withBasePath(`/ui-api/analytics/cashflow${qs ? `?${qs}` : ''}`),
+    CashflowTimelineSchema,
+  )
+}
+
 export const TrendCategorySchema = z.object({
   group_name: z.string(),
   category_name: z.string(),

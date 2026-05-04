@@ -93,6 +93,45 @@ def _classify_pace(
     return pace, "blowout"
 
 
+# Phase 4: groups whose categories use plan-based projection ("the
+# operator has explicit control"). Everything else is run-rate-based
+# ("recent behavior predicts future better than aspirational plan").
+# Hardcoded for v1; the operator iterates on this rule once they see
+# live forecasts. See `_is_fixed_group` below.
+_FIXED_GROUPS = frozenset({
+    "Bills",
+    "Payments",
+    "Credit Card Payments",
+    "Stipends",
+    "Savings",
+})
+
+
+def _is_fixed_group(group_name: str) -> bool:
+    """Hybrid forecast classifier — does this category project from
+    plan or from recent run-rate?
+
+    Fixed = plan is authoritative (rent, salary, fixed bills).
+    Discretionary = recent behavior is more predictive (groceries,
+    eating out).
+
+    OPERATOR-EDITABLE: refine this rule once live forecasts are
+    visible. The function is pure and small; tests in
+    `tests/test_cashflow.py` cover the default classification."""
+    return group_name in _FIXED_GROUPS
+
+
+def _add_months(year: int, month: int, delta: int) -> tuple[int, int]:
+    """Return (year, month) `delta` months after (year, month). delta=1
+    advances to the next month; delta=12 advances a year."""
+    total = year * 12 + (month - 1) + delta
+    return divmod(total, 12)[0], divmod(total, 12)[1] + 1
+
+
+def _month_key(year: int, month: int) -> str:
+    return f"{year:04d}-{month:02d}"
+
+
 @dataclass
 class AnalyticsService:
     config: AppConfig
@@ -410,6 +449,265 @@ class AnalyticsService:
                 "projected_month_end_milliunits": total_projected,
             },
         }
+
+    # ------------------------------------------------------------------
+    # cash_flow_timeline (Phase 4 Slice 1)
+    # ------------------------------------------------------------------
+
+    def cash_flow_timeline(
+        self,
+        *,
+        months: int = 12,
+        as_of_month: str | None = None,
+        starting_balance_override_milliunits: int | None = None,
+    ) -> dict[str, Any]:
+        """12-month forward cash-flow projection. See plan file
+        (`.docs/ai/phases/...`-style docs) for the model.
+
+        Hybrid: fixed groups (`Bills`, `Payments`, `Credit Card Payments`,
+        `Stipends`, `Savings`) project from plan. Discretionary
+        categories project from 6-month run-rate (falling back to plan
+        if no recent transactions). Annual + one_time categories
+        with `due_month` set lump in that month; otherwise smoothed
+        across 12 months.
+
+        Stipends are inflows. Bills/Payments/Savings/discretionary +
+        obligation lumps are outflows."""
+        reference = _month_reference(as_of_month)
+        as_of_label = reference.strftime("%Y-%m")
+        # Build the 12-month window starting from `reference`.
+        month_keys: list[str] = []
+        year, month = reference.year, reference.month
+        for offset in range(months):
+            y, m = _add_months(year, month, offset)
+            month_keys.append(_month_key(y, m))
+
+        starting_balance = (
+            starting_balance_override_milliunits
+            if starting_balance_override_milliunits is not None
+            else self._cash_starting_balance()
+        )
+
+        # Pull the active plan + run-rate per category once.
+        with self.database.connect() as conn:
+            plan_rows = conn.execute(
+                """
+                SELECT pc.id, pc.group_name, pc.category_name, pc.block,
+                       pc.planned_milliunits, pc.annual_target_milliunits,
+                       pc.due_month
+                FROM plan_categories pc
+                JOIN plans p ON p.id = pc.plan_id
+                WHERE p.status = 'active'
+                """
+            ).fetchall()
+        run_rates = self._six_month_run_rates(reference)
+
+        # Per-month accumulators.
+        per_month_inflows = [0] * months
+        per_month_outflows = [0] * months
+        per_month_lumps: list[list[dict[str, Any]]] = [[] for _ in range(months)]
+        # category total contribution (signed: positive = outflow, negative = inflow)
+        # only used for shortfall_drivers ranking.
+        per_month_top_contribs: list[list[dict[str, Any]]] = [[] for _ in range(months)]
+        # Cumulative outflow per category up through each month (for shortfall_drivers).
+        cumulative_by_category: dict[tuple[str, str], list[int]] = {}
+
+        for row in plan_rows:
+            grp = row["group_name"] or ""
+            name = row["category_name"] or ""
+            block = row["block"]
+            planned = int(row["planned_milliunits"] or 0)
+            annual_target = int(row["annual_target_milliunits"] or 0)
+            due_month = row["due_month"]
+            cat_key = (grp, name)
+            cumulative_by_category.setdefault(cat_key, [0] * months)
+
+            if block in ("annual", "one_time"):
+                # Lump in due_month (current or next year, whichever
+                # falls within the window) OR smoothed if no due_month.
+                lump_amount = annual_target or (planned * 12)
+                if due_month is not None:
+                    # Find the month index in the window matching due_month.
+                    target_index = None
+                    for idx, key in enumerate(month_keys):
+                        m = int(key.split("-")[1])
+                        if m == int(due_month):
+                            target_index = idx
+                            break
+                    if target_index is not None and lump_amount > 0:
+                        per_month_outflows[target_index] += lump_amount
+                        per_month_lumps[target_index].append({
+                            "group_name": grp,
+                            "category_name": name,
+                            "milliunits": lump_amount,
+                        })
+                        per_month_top_contribs[target_index].append({
+                            "group_name": grp,
+                            "category_name": name,
+                            "milliunits": lump_amount,
+                            "basis": "lump",
+                        })
+                        cumulative_by_category[cat_key][target_index] += lump_amount
+                else:
+                    # Smooth across the 12 months.
+                    monthly_share = lump_amount // 12 if lump_amount else 0
+                    if monthly_share > 0:
+                        for idx in range(months):
+                            per_month_outflows[idx] += monthly_share
+                            per_month_top_contribs[idx].append({
+                                "group_name": grp,
+                                "category_name": name,
+                                "milliunits": monthly_share,
+                                "basis": "plan",
+                            })
+                            cumulative_by_category[cat_key][idx] += monthly_share
+                continue
+
+            # monthly / stipends / savings — recurring each month.
+            is_fixed = _is_fixed_group(grp)
+            if is_fixed:
+                amount = planned
+                basis = "plan"
+            else:
+                rate = run_rates.get(cat_key)
+                if rate is None:
+                    amount = planned
+                    basis = "plan"
+                else:
+                    amount = rate
+                    basis = "run_rate"
+
+            if amount <= 0:
+                continue
+
+            for idx in range(months):
+                if block == "stipends":
+                    per_month_inflows[idx] += amount
+                    per_month_top_contribs[idx].append({
+                        "group_name": grp,
+                        "category_name": name,
+                        "milliunits": -amount,  # signed: inflow = negative outflow
+                        "basis": basis,
+                    })
+                else:
+                    per_month_outflows[idx] += amount
+                    per_month_top_contribs[idx].append({
+                        "group_name": grp,
+                        "category_name": name,
+                        "milliunits": amount,
+                        "basis": basis,
+                    })
+                    cumulative_by_category[cat_key][idx] += amount
+
+        # Build per-month payload + balance trajectory.
+        balance = starting_balance
+        months_payload: list[dict[str, Any]] = []
+        lowest_balance_value = balance
+        lowest_balance_month = month_keys[0] if month_keys else as_of_label
+        first_negative_month: str | None = None
+        for idx, key in enumerate(month_keys):
+            inflow = per_month_inflows[idx]
+            outflow = per_month_outflows[idx]
+            net = inflow - outflow
+            balance += net
+            top_outflows = sorted(
+                (c for c in per_month_top_contribs[idx] if c["milliunits"] > 0),
+                key=lambda c: c["milliunits"],
+                reverse=True,
+            )[:3]
+            months_payload.append(
+                {
+                    "month": key,
+                    "inflows_milliunits": inflow,
+                    "outflows_milliunits": outflow,
+                    "obligation_lumps": per_month_lumps[idx],
+                    "top_outflow_categories": top_outflows,
+                    "net_milliunits": net,
+                    "ending_balance_milliunits": balance,
+                }
+            )
+            if balance < lowest_balance_value:
+                lowest_balance_value = balance
+                lowest_balance_month = key
+            if first_negative_month is None and balance < 0:
+                first_negative_month = key
+
+        shortfall_drivers: list[dict[str, Any]] | None = None
+        if first_negative_month is not None:
+            negative_idx = month_keys.index(first_negative_month)
+            totals = []
+            for (grp, name), cumulative in cumulative_by_category.items():
+                cum_total = sum(cumulative[: negative_idx + 1])
+                if cum_total > 0:
+                    totals.append(
+                        {
+                            "group_name": grp,
+                            "category_name": name,
+                            "total_milliunits": cum_total,
+                        }
+                    )
+            totals.sort(key=lambda d: d["total_milliunits"], reverse=True)
+            shortfall_drivers = totals[:3]
+
+        return {
+            "as_of_month": as_of_label,
+            "months_ahead": months,
+            "starting_balance_milliunits": starting_balance,
+            "months": months_payload,
+            "lowest_balance": {
+                "month": lowest_balance_month,
+                "balance_milliunits": lowest_balance_value,
+            },
+            "first_negative_month": first_negative_month,
+            "shortfall_drivers": shortfall_drivers,
+        }
+
+    def _cash_starting_balance(self) -> int:
+        """Sum of positive account balances on open, on-budget accounts.
+        Credit-card accounts in YNAB typically carry negative balances
+        (liabilities) and are excluded by the `> 0` filter; closed
+        accounts are skipped via `closed = 0`. Refine if operator data
+        surfaces false positives."""
+        with self.database.connect() as conn:
+            row = conn.execute(
+                """
+                SELECT COALESCE(SUM(balance_milliunits), 0) AS total
+                FROM accounts
+                WHERE closed = 0 AND balance_milliunits > 0
+                """
+            ).fetchone()
+        return int(row["total"] or 0) if row else 0
+
+    def _six_month_run_rates(self, reference: date) -> dict[tuple[str, str], int]:
+        """Returns {(group, category): avg_milliunits_per_month} computed
+        from the last 6 fully-elapsed months ending the month before
+        `reference`. Only positive run-rates are returned."""
+        since = _n_months_ago(6, reference=reference)
+        through = reference.isoformat()
+        with self.database.connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT
+                    COALESCE(c.group_name, t.group_name) AS group_name,
+                    COALESCE(c.name, t.category_name) AS category_name,
+                    SUM(CASE WHEN t.amount_milliunits < 0
+                             THEN -1 * t.amount_milliunits ELSE 0 END) AS spend
+                FROM transactions t
+                LEFT JOIN categories c ON c.id = t.category_id
+                WHERE t.deleted = 0
+                  AND t.date >= ? AND t.date < ?
+                GROUP BY 1, 2
+                """,
+                (f"{since}-01", through),
+            ).fetchall()
+        rates: dict[tuple[str, str], int] = {}
+        for row in rows:
+            grp = row["group_name"] or ""
+            name = row["category_name"] or ""
+            avg = int(row["spend"] or 0) // 6
+            if avg > 0:
+                rates[(grp, name)] = avg
+        return rates
 
     # ------------------------------------------------------------------
     # year_end_projection

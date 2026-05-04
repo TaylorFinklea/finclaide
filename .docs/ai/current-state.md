@@ -10,7 +10,71 @@ identical to `main`; safe to delete once origin is pushed.
 
 ## Last Session Summary
 
-**Date**: 2026-05-03 (Phase 2.5f — Self-service reconcile)
+**Date**: 2026-05-04 (Phase 4 Slice 1 — Cash flow timeline + realism detector)
+
+Phase 4 (Cash Flow & Forecasting) opens with a 12-month forward cash-flow
+view at `/forecast`. Hybrid model: fixed groups (Bills, Payments, Credit
+Card Payments, Stipends, Savings) project from plan; everything else uses
+6-month run-rate (falling back to plan if no recent transactions). Annual
++ one_time categories with `due_month` set lump in that month; otherwise
+smoothed across 12 months. Stipends are inflows; the rest are outflows.
+Surfaces `lowest_balance`, `first_negative_month`, and top-3
+`shortfall_drivers` when the forecast goes negative.
+
+**Backend** (`src/finclaide/analytics.py`,
+`src/finclaide/analytics_api.py`, `src/finclaide/ui_api.py`):
+- New `_FIXED_GROUPS` constant + `_is_fixed_group(group_name)` classifier.
+  Operator-editable single point of authority for hybrid routing.
+- New `_add_months(year, month, delta)` and `_month_key(year, month)`
+  helpers.
+- `AnalyticsService.cash_flow_timeline(months=12, as_of_month=None,
+  starting_balance_override_milliunits=None)` — full per-month payload
+  with inflows, outflows, obligation lumps, top-3 outflow categories
+  (with basis label: plan / run_rate / lump), running ending balance.
+- Helpers: `_cash_starting_balance()` (sums positive open accounts),
+  `_six_month_run_rates(reference)` (returns
+  `{(group, category): avg_milliunits_per_month}`).
+- New endpoints: `GET /api/analytics/cashflow?months=12&as_of_month=...`
+  + `/ui-api/analytics/cashflow` UI mirror.
+
+**Frontend** (`frontend/src/`):
+- `lib/api.ts`: `CashflowMonthSchema`, `CashflowTimelineSchema`,
+  `getCashflowTimeline` + types.
+- `routes/forecast/+page.svelte` (NEW) — dedicated forecast surface.
+  Three headline cards (cash on hand, lowest projected balance, "plan
+  goes negative?"). Hand-rolled SVG bar+line chart: bars colored
+  emerald (positive net) or rose (negative net), polyline overlay of
+  ending balance. Click any bar to drill into that month's
+  inflows/outflows/obligations/top-outflow-categories. Separate rose
+  card lists top-3 shortfall drivers when first_negative_month is set,
+  with "View →" links into Phase 3 Slice 3a's per-category trends.
+- `routes/+layout.svelte`: added `Forecast` nav link (TrendingUp icon)
+  between Insights and Operations.
+
+**Tests added**:
+- `tests/test_cashflow.py` (NEW) — 15 cases: helper unit tests
+  (_is_fixed_group, _add_months), 12-month window, account balance
+  sum, fixed-group plan projection, discretionary run-rate +
+  fallback, stipends as inflows, annual due_month lumps,
+  first_negative_month set/null, shortfall_drivers ordering, endpoint
+  round-trip.
+- `frontend/src/routes/forecast/page.test.ts` (NEW) — 3 cases:
+  headline cards render, rose alert appears when negative,
+  shortfall drivers list.
+
+**Test counts (final)**: pytest **249/249** (was 234; +15). vitest
+**385/385** (was 382; +3). svelte-check 0/0.
+
+**Operator contribution opportunity**: `_is_fixed_group` is the single
+most consequential design decision in Phase 4. Default ruleset ships;
+once live forecasts surface against real data, the operator should
+edit that 5-line helper in `analytics.py` to match how they actually
+think about their finances. Function is pure, fully tested, isolated
+— iterate fast.
+
+---
+
+**Earlier session**: 2026-05-03 (Phase 2.5f — Self-service reconcile)
 
 The Reconcile Preview card on Operations turned actionable. Today's earlier
 session forced me to drive ~22 manual API calls to fix a 6-mismatch reconcile
