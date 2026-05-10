@@ -20,14 +20,43 @@ Finclaide is a private finance dashboard for one YNAB budget plus a spreadsheet-
 ### Google Sheets / Drive-hosted workbook
 
 1. Set `budget_source` to `google_sheets`.
-2. Put your Google service account JSON into the add-on config directory as `/addon_configs/<slug>/google-service-account.json`.
-3. Set `google_service_account_file` to that filename.
-4. Set `google_file_id` to the spreadsheet or Drive file ID.
-5. Share the sheet/file with the service account email as a viewer.
+2. Set `google_file_id` to the spreadsheet or Drive file ID.
+3. Set `google_service_account_file` to `google-service-account.json`.
+4. Share the sheet/file with the service account email as a viewer.
+5. Put the service account JSON file into the add-on config directory.
+
+Home Assistant may not create the add-on config directory automatically.
+From the Terminal & SSH add-on, find the real add-on slug:
+
+```bash
+ha addons list | grep -i finclaide
+```
+
+Create the matching config directory if it is missing:
+
+```bash
+mkdir -p /addon_configs/<actual-finclaide-slug>
+```
+
+Then create the JSON file and paste the full Google service account JSON:
+
+```bash
+vi /addon_configs/<actual-finclaide-slug>/google-service-account.json
+```
+
+The file must contain the raw JSON object, not the path to the file and not a
+Home Assistant secret reference. The add-on mounts this directory at `/config`,
+so `google_service_account_file: google-service-account.json` resolves to:
+
+```text
+/config/google-service-account.json
+```
+
+inside the add-on.
 
 ### Local workbook file
 
-1. Put `Budget.xlsx` into the add-on config directory.
+1. Put `Budget.xlsx` into the same add-on config directory described above.
 2. Set `budget_source` to `local_file`.
 3. Set `local_workbook_file` if the filename is not `Budget.xlsx`.
 

@@ -3,6 +3,7 @@
 ## 0.1.2
 
 - Allow `remote_workbook_url` to stay blank unless remote URL mode is selected
+- Document the exact Home Assistant service account JSON setup flow
 
 ## 0.1.1
 
