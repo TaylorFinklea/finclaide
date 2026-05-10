@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.2
+
+- Allow `remote_workbook_url` to stay blank unless remote URL mode is selected
+
 ## 0.1.1
 
 - Add optional port 8098 private API for MCP clients over LAN/VPN/Tailscale

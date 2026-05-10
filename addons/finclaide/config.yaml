@@ -2,7 +2,7 @@ name: Finclaide
 slug: finclaide
 description: Private YNAB and Google Sheets finance dashboard with Home Assistant ingress support.
 url: https://github.com/TaylorFinklea/finclaide
-version: "0.1.1"
+version: "0.1.2"
 startup: application
 boot: auto
 backup: hot
@@ -47,7 +47,7 @@ schema:
   budget_source: list(local_file|remote_url|google_sheets)
   budget_sheet_name: str
   local_workbook_file: str
-  remote_workbook_url: "url?"
+  remote_workbook_url: "str?"
   google_file_id: "str?"
   google_service_account_file: str
   scheduled_refresh_enabled: bool
