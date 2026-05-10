@@ -55,7 +55,7 @@ RUN python -m pip install --upgrade pip \
     && mkdir -p /config /data /etc/finclaide \
     && rm -f /etc/nginx/conf.d/default.conf
 
-EXPOSE 8099
+EXPOSE 8098 8099
 
 HEALTHCHECK --interval=30s --timeout=5s --retries=3 CMD curl -fsS http://127.0.0.1:8099/healthz >/dev/null || exit 1
 

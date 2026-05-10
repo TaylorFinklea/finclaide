@@ -128,6 +128,66 @@ def create_mcp_server(
         return api_client.reconcile()
 
     @server.tool(
+        name="get_reconcile_preview",
+        description=(
+            "Preview exact category mismatches between the active in-app plan and YNAB. "
+            "Returns exact matches, plan-only categories, YNAB-only categories, and suggested "
+            "rename matches. Use this before applying any reconcile remediation."
+        ),
+        annotations=READ_ONLY,
+        structured_output=True,
+    )
+    def get_reconcile_preview() -> dict[str, Any]:
+        require_health()
+        return api_client.get_reconcile_preview()
+
+    @server.tool(
+        name="create_plan_category_in_ynab",
+        description=(
+            "Create a missing YNAB category from an active-plan category. Use for a plan-only "
+            "row from get_reconcile_preview(). The app verifies the row exists, writes YNAB, "
+            "syncs, and attempts reconcile."
+        ),
+        annotations=OPERATIONAL,
+        structured_output=True,
+    )
+    def create_plan_category_in_ynab(
+        group_name: str,
+        category_name: str,
+    ) -> dict[str, Any]:
+        require_health()
+        return api_client.apply_plan_to_ynab(
+            operation="create_category",
+            target_group_name=group_name,
+            target_category_name=category_name,
+        )
+
+    @server.tool(
+        name="rename_ynab_category_to_plan",
+        description=(
+            "Rename or move an existing YNAB category so it matches a plan category. Use only "
+            "after get_reconcile_preview() shows a suggested pair. source_* is the current "
+            "YNAB group/category; target_* is the active-plan group/category to keep."
+        ),
+        annotations=OPERATIONAL,
+        structured_output=True,
+    )
+    def rename_ynab_category_to_plan(
+        source_group_name: str,
+        source_category_name: str,
+        target_group_name: str,
+        target_category_name: str,
+    ) -> dict[str, Any]:
+        require_health()
+        return api_client.apply_plan_to_ynab(
+            operation="rename_category",
+            source_group_name=source_group_name,
+            source_category_name=source_category_name,
+            target_group_name=target_group_name,
+            target_category_name=target_category_name,
+        )
+
+    @server.tool(
         name="refresh_all",
         description="Run import, YNAB sync, then reconcile, and return the latest status and summary.",
         annotations=OPERATIONAL,
@@ -297,11 +357,11 @@ def create_mcp_server(
     def reconciliation_latest_resource() -> str:
         require_health()
         status = api_client.get_status()
-        summary = api_client.get_summary()
+        preview = api_client.get_reconcile_preview()
         payload = {
             "run_at": status.get("last_reconcile_at"),
             "status": status.get("last_reconcile_status"),
-            "mismatches": summary.get("mismatches", []),
+            "preview": preview,
         }
         return _json_text(payload)
 
@@ -388,9 +448,10 @@ def create_mcp_server(
                 content=TextContent(
                     type="text",
                     text=(
-                        "Use get_status() and get_summary() to inspect the latest reconciliation state. "
-                        "If mismatches exist, list each missing exact match and recommend the YNAB group/category "
-                        "changes needed to make reconcile() pass cleanly."
+                        "Use get_status() and get_reconcile_preview() to inspect the latest reconciliation state. "
+                        "If mismatches exist, list each source-choice decision: use YNAB (update the plan), "
+                        "create_plan_category_in_ynab(), or rename_ynab_category_to_plan(). Do not apply "
+                        "write tools unless the operator explicitly asks you to remediate."
                     ),
                 ),
             )

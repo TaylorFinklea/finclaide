@@ -64,6 +64,32 @@ class FinclaideApiClient:
     def reconcile(self) -> dict[str, Any]:
         return self._request_json("POST", "/reconcile")
 
+    def get_reconcile_preview(self) -> dict[str, Any]:
+        return self._request_json("GET", "/reconcile/preview")
+
+    def apply_plan_to_ynab(
+        self,
+        *,
+        operation: str,
+        target_group_name: str,
+        target_category_name: str,
+        source_group_name: str | None = None,
+        source_category_name: str | None = None,
+    ) -> dict[str, Any]:
+        body: dict[str, Any] = {
+            "operation": operation,
+            "target": {
+                "group_name": target_group_name,
+                "category_name": target_category_name,
+            },
+        }
+        if source_group_name is not None or source_category_name is not None:
+            body["source"] = {
+                "group_name": source_group_name,
+                "category_name": source_category_name,
+            }
+        return self._request_json("POST", "/reconcile/apply-plan-to-ynab", json=body)
+
     def get_summary(self, month: str | None = None) -> dict[str, Any]:
         params = {"month": month} if month else None
         return self._request_json("GET", "/reports/summary", params=params)

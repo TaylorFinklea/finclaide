@@ -8,7 +8,8 @@ Finclaide is a private finance dashboard for one YNAB budget plus a spreadsheet-
 - Google Sheets and Google Drive-hosted `.xlsx` budget import
 - YNAB sync and strict reconcile workflow
 - Scheduled refresh every N minutes
-- Private API can stay disabled by default
+- Private API can stay disabled by default; when enabled, it is available on
+  port `8098` for bearer-token MCP clients over LAN/VPN/Tailscale
 
 ## Setup
 
@@ -40,4 +41,5 @@ Finclaide is a private finance dashboard for one YNAB budget plus a spreadsheet-
 - The add-on stores its database in `/data/finclaide.db`.
 - The Google/remote workbook cache is stored in `/data/Budget.google.xlsx`.
 - The dashboard uses Home Assistant ingress. You normally do not need to expose a separate port.
-- If `enable_private_api` is `false`, `/api/*` is blocked at the ingress proxy.
+- If `enable_private_api` is `false`, `/api/*` is blocked at both the ingress proxy and the private API port.
+- To use MCP from another machine, enable `enable_private_api`, set a strong `api_token`, expose port `8098` in the add-on network settings, and point MCP at `http://<home-assistant-tailscale-name>:8098/api`.

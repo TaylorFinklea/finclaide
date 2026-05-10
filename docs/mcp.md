@@ -42,6 +42,9 @@ Core tools:
 - `import_budget` — reload workbook into SQLite
 - `sync_ynab` — pull YNAB deltas
 - `reconcile` — verify budget matches YNAB
+- `get_reconcile_preview` — preview exact-match mismatches and suggested rename pairs
+- `create_plan_category_in_ynab` — create a YNAB category from a plan-only row
+- `rename_ynab_category_to_plan` — rename/move a YNAB category to match a plan row
 - `refresh_all` — import + sync + reconcile in one call
 
 Analytics tools:
@@ -77,18 +80,34 @@ Add this to `~/.codex/config.toml`:
 
 ```toml
 [mcp_servers.finclaide]
-command = "/Users/tfinklea/git/finclaide/.venv/bin/finclaide-mcp"
-cwd = "/Users/tfinklea/git/finclaide"
+command = "/path/to/finclaide/.venv/bin/finclaide-mcp"
+cwd = "/path/to/finclaide"
 ```
 
 If you prefer the module form:
 
 ```toml
 [mcp_servers.finclaide]
-command = "/Users/tfinklea/git/finclaide/.venv/bin/python"
+command = "/path/to/finclaide/.venv/bin/python"
 args = ["-m", "finclaide.mcp_server"]
-cwd = "/Users/tfinklea/git/finclaide"
+cwd = "/path/to/finclaide"
 ```
+
+## Home Assistant Add-on Setup
+
+When Finclaide runs as the Home Assistant add-on, enable the add-on's
+private API and set a strong `api_token`. Point MCP at the private API
+address you expose over Tailscale:
+
+```toml
+[mcp_servers.finclaide]
+command = "/path/to/finclaide/.venv/bin/finclaide-mcp"
+cwd = "/path/to/finclaide"
+env = { FINCLAIDE_API_BASE_URL = "http://homeassistant.local:8098/api", FINCLAIDE_HEALTH_URL = "http://homeassistant.local:8098/healthz", FINCLAIDE_API_TOKEN = "replace-with-addon-api-token" }
+```
+
+Do not commit the real `FINCLAIDE_API_TOKEN`; keep it in your local MCP
+client config or shell environment.
 
 ## Claude Desktop Setup
 
@@ -98,8 +117,8 @@ Add this to `~/Library/Application Support/Claude/claude_desktop_config.json`:
 {
   "mcpServers": {
     "finclaide": {
-      "command": "/Users/tfinklea/git/finclaide/.venv/bin/finclaide-mcp",
-      "cwd": "/Users/tfinklea/git/finclaide"
+      "command": "/path/to/finclaide/.venv/bin/finclaide-mcp",
+      "cwd": "/path/to/finclaide"
     }
   }
 }
@@ -111,9 +130,9 @@ Module form:
 {
   "mcpServers": {
     "finclaide": {
-      "command": "/Users/tfinklea/git/finclaide/.venv/bin/python",
+      "command": "/path/to/finclaide/.venv/bin/python",
       "args": ["-m", "finclaide.mcp_server"],
-      "cwd": "/Users/tfinklea/git/finclaide"
+      "cwd": "/path/to/finclaide"
     }
   }
 }

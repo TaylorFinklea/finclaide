@@ -34,7 +34,7 @@ configuration:
     description: Refresh cadence in minutes.
   enable_private_api:
     name: Enable Private API
-    description: Expose `/api/*` through ingress for bearer-token clients.
+    description: Expose `/api/*` through ingress and port 8098 for bearer-token clients.
   api_token:
     name: Private API Token
     description: Bearer token required if the private API is enabled.

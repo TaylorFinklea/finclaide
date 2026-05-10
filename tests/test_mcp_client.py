@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+
 import httpx
 import pytest
 
@@ -82,3 +84,51 @@ def test_mcp_client_handles_non_json_errors():
         client.get_status()
 
     assert excinfo.value.payload == {"error": "boom"}
+
+
+def test_mcp_client_reconcile_remediation_routes():
+    captured: list[dict[str, object]] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured.append({
+            "method": request.method,
+            "path": request.url.path,
+            "body": json.loads(request.content) if request.content else None,
+        })
+        if request.url.path == "/api/reconcile/preview":
+            return httpx.Response(200, json={"counts": {"missing_in_ynab": 1}})
+        return httpx.Response(200, json={"operation": "rename_category"})
+
+    client = FinclaideApiClient(
+        MCPConfig(
+            api_base_url="http://finclaide.test/api",
+            api_token="secret-token",
+            health_url="http://finclaide.test/healthz",
+        ),
+        transport=httpx.MockTransport(handler),
+    )
+
+    assert client.get_reconcile_preview() == {"counts": {"missing_in_ynab": 1}}
+    assert client.apply_plan_to_ynab(
+        operation="rename_category",
+        source_group_name="Bills",
+        source_category_name="Phon",
+        target_group_name="Bills",
+        target_category_name="Phone",
+    ) == {"operation": "rename_category"}
+    assert captured == [
+        {
+            "method": "GET",
+            "path": "/api/reconcile/preview",
+            "body": None,
+        },
+        {
+            "method": "POST",
+            "path": "/api/reconcile/apply-plan-to-ynab",
+            "body": {
+                "operation": "rename_category",
+                "source": {"group_name": "Bills", "category_name": "Phon"},
+                "target": {"group_name": "Bills", "category_name": "Phone"},
+            },
+        },
+    ]

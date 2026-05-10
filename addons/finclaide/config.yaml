@@ -13,6 +13,10 @@ panel_title: Finclaide
 panel_icon: mdi:finance
 panel_admin: true
 watchdog: http://[HOST]:[PORT:8099]/healthz
+ports:
+  8098/tcp: null
+ports_description:
+  8098/tcp: Private bearer-token API for MCP clients over LAN/VPN/Tailscale.
 arch:
   - amd64
   - aarch64

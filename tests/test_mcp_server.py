@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import os
 import threading
 from pathlib import Path
@@ -39,6 +40,36 @@ def _mock_handler(request: httpx.Request) -> httpx.Response:
         return httpx.Response(200, json={"transaction_count": 11})
     if path == "/api/reconcile":
         return httpx.Response(200, json={"mismatch_count": 0})
+    if path == "/api/reconcile/preview":
+        return httpx.Response(200, json={
+            "counts": {"exact": 2, "missing_in_ynab": 1, "extra_in_ynab": 1},
+            "exact_matches": [],
+            "missing_in_ynab": [{
+                "group_name": "Bills",
+                "category_name": "Phone",
+                "suggested_match": None,
+            }],
+            "extra_in_ynab": [{
+                "group_name": "Bills",
+                "category_name": "Phon",
+                "suggested_match": {
+                    "group_name": "Bills",
+                    "category_name": "Phone",
+                    "confidence": 0.95,
+                    "plan_category_id": None,
+                },
+            }],
+        })
+    if path == "/api/reconcile/apply-plan-to-ynab":
+        payload = json.loads(request.content)
+        return httpx.Response(200, json={
+            "target": "ynab",
+            "operation": payload["operation"],
+            "action": {"kind": payload["operation"]},
+            "ynab_sync": {"transaction_count": 11},
+            "reconcile": {"mismatch_count": 0},
+            "reconcile_error": None,
+        })
     # Analytics routes
     if path == "/api/analytics/compare":
         return httpx.Response(200, json={"month_a": "2026-02", "month_b": "2026-03", "categories": [], "totals": {}})
@@ -78,6 +109,9 @@ async def test_mcp_server_lists_tools_resources_and_prompts():
         "import_budget",
         "sync_ynab",
         "reconcile",
+        "get_reconcile_preview",
+        "create_plan_category_in_ynab",
+        "rename_ynab_category_to_plan",
         "refresh_all",
         "compare_months",
         "spending_trends",
@@ -118,6 +152,9 @@ async def test_mcp_server_reads_resources_and_prompts():
     recent_contents = await server.read_resource("finclaide://transactions/recent")
     assert '"date": "2026-03-15"' in recent_contents[0].content
 
+    reconcile_contents = await server.read_resource("finclaide://reconciliation/latest")
+    assert '"missing_in_ynab": 1' in reconcile_contents[0].content
+
     health_contents = await server.read_resource("finclaide://health")
     assert '"overall_status": "healthy"' in health_contents[0].content
 
@@ -142,6 +179,23 @@ async def test_mcp_server_tool_outputs_and_refresh_order():
         if path == "/api/reconcile":
             call_order.append("reconcile")
             return httpx.Response(200, json={"mismatch_count": 0})
+        if path == "/api/reconcile/preview":
+            return httpx.Response(200, json={
+                "counts": {"exact": 2, "missing_in_ynab": 1, "extra_in_ynab": 1},
+                "exact_matches": [],
+                "missing_in_ynab": [{"group_name": "Bills", "category_name": "Phone"}],
+                "extra_in_ynab": [],
+            })
+        if path == "/api/reconcile/apply-plan-to-ynab":
+            payload = json.loads(request.content)
+            return httpx.Response(200, json={
+                "target": "ynab",
+                "operation": payload["operation"],
+                "action": {"kind": payload["operation"]},
+                "ynab_sync": {"transaction_count": 11},
+                "reconcile": {"mismatch_count": 0},
+                "reconcile_error": None,
+            })
         if path == "/api/status":
             return httpx.Response(200, json={"last_reconcile_status": "success"})
         if path == "/api/reports/summary":
@@ -154,6 +208,26 @@ async def test_mcp_server_tool_outputs_and_refresh_order():
 
     _, summary = await server.call_tool("get_summary", {"month": "2026-03"})
     assert summary["month"] == "2026-03"
+
+    _, preview = await server.call_tool("get_reconcile_preview", {})
+    assert preview["counts"]["missing_in_ynab"] == 1
+
+    _, create_result = await server.call_tool(
+        "create_plan_category_in_ynab",
+        {"group_name": "Bills", "category_name": "Phone"},
+    )
+    assert create_result["operation"] == "create_category"
+
+    _, rename_result = await server.call_tool(
+        "rename_ynab_category_to_plan",
+        {
+            "source_group_name": "Bills",
+            "source_category_name": "Phon",
+            "target_group_name": "Bills",
+            "target_category_name": "Phone",
+        },
+    )
+    assert rename_result["operation"] == "rename_category"
 
     _, refresh = await server.call_tool("refresh_all", {"month": "2026-03"})
     assert call_order == ["import", "sync", "reconcile"]

@@ -3,7 +3,7 @@
 **Status**: Code complete on `svelte-migration` branch (2026-04-20).
 Awaiting manual smoke before merge.
 **Owner**: Claude (tier3_owner)
-**Approved plan**: `/Users/tfinklea/.claude/plans/delightful-tinkering-boole.md`
+**Approved plan**: `~/.claude/plans/delightful-tinkering-boole.md`
 **Commits** (on `svelte-migration`, not pushed):
 
 - `69cc2e4` — SvelteKit project skeleton
@@ -91,7 +91,7 @@ visual regressions intended.
 
 ## Verification
 
-- Backend: `cd /Users/tfinklea/git/finclaide && . .venv/bin/activate &&
+- Backend: `cd /path/to/finclaide && . .venv/bin/activate &&
   python -m pytest -q` → 101/101.
 - Frontend: `cd frontend && npm run check` → 0 errors / 0 warnings
   across 4233 files.

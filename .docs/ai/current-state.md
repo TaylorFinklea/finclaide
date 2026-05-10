@@ -10,6 +10,40 @@ identical to `main`; safe to delete once origin is pushed.
 
 ## Last Session Summary
 
+**Date**: 2026-05-10 (MCP expansion + Home Assistant publish prep)
+
+Finclaide MCP now exposes reconcile remediation tools that mirror the app's
+source-choice workflow:
+
+- `get_reconcile_preview` returns the exact-match diff and suggestions.
+- `create_plan_category_in_ynab` creates a YNAB category from a plan-only row.
+- `rename_ynab_category_to_plan` renames/moves a YNAB category to the plan
+  category the operator chose to keep.
+
+Home Assistant add-on publish prep:
+- Add-on can expose a token-protected private API on mapped port `8098` for
+  MCP clients on a trusted LAN/VPN/Tailscale network.
+- Existing ingress UI remains on `8099`; `/api/*` is still disabled unless
+  `enable_private_api` is true and a non-empty `api_token` is configured.
+- `docs/mcp.md` documents local and add-on MCP setup with generic paths and
+  placeholder tokens only.
+
+Repo hygiene:
+- Removed tracked local absolute user-home paths from examples and handoff
+  notes.
+- `BUDGET_XLSX_HOST_PATH` examples now use `./Budget.xlsx` instead of a
+  personal Downloads path.
+- Audit found no tracked `.env`, database, workbook, PNG, or real token files.
+  Local `.env` and `.local/finclaide.db` are present but ignored by git.
+
+Verification:
+- `.venv/bin/pytest tests/test_mcp_server.py tests/test_mcp_client.py` →
+  **15/15 passed**.
+- `bash -n addons/finclaide/run.sh` → passed.
+- `ruby -e "require 'yaml'; ..."` add-on config/translation parse → passed.
+
+---
+
 **Date**: 2026-05-10 (Reconcile remediation — choose source and write YNAB)
 
 Operations reconcile preview now supports source-choice remediation for

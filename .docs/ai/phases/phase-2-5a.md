@@ -3,7 +3,7 @@
 **Status**: Complete (2026-04-19)
 **Owner**: Claude (tier3_owner)
 **Commits**: `761d387`, `121089e`, `0159407`
-**Approved spec**: `/Users/tfinklea/.claude/plans/delightful-tinkering-boole.md`
+**Approved spec**: `~/.claude/plans/delightful-tinkering-boole.md`
 
 ## Goal
 

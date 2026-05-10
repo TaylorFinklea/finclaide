@@ -2,6 +2,19 @@
 
 > Architecture decision records. Append-only — one entry per decision.
 
+## [2026-05-10] Home Assistant add-on exposes a separate private API port for MCP
+
+**Context**: The add-on UI is served through Home Assistant ingress, but MCP
+clients need direct bearer-token API access from the operator's trusted
+Tailscale network.
+**Decision**: Keep ingress UI on `8099` and add a separate optional mapped
+port `8098` for `/api/*` plus `/healthz`. The port is useful only when
+`enable_private_api` is true and `api_token` is non-empty; otherwise nginx
+returns 404 for `/api/*`.
+**Rationale**: This preserves fail-closed defaults while avoiding reliance on
+Home Assistant ingress headers for local MCP clients. The API remains protected
+by the app's bearer-token auth, and exposure is an explicit add-on option.
+
 ## [2026-05-10] Reconcile remediation can write YNAB, but not delete it
 
 **Context**: Reconcile preview already shows exact category-name mismatches
