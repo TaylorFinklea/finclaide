@@ -3,7 +3,19 @@
 
   export type EditorSelection =
     | { mode: 'edit'; planId: number; category: PlanCategory }
-    | { mode: 'create'; planId: number; block: BlockKey }
+    | {
+        mode: 'create'
+        planId: number
+        block: BlockKey
+        // Optional initial values for the create form. Used when the empty-
+        // inflow banner opens the sheet pre-filled as an income row.
+        prefill?: Partial<{
+          group_name: string
+          category_name: string
+          kind: 'inflow' | 'outflow'
+          tithe_percent: string
+        }>
+      }
     | null
 </script>
 
@@ -40,6 +52,8 @@
     group_name: string
     category_name: string
     block: BlockKey
+    kind: 'inflow' | 'outflow'
+    tithe_percent: string
     planned_dollars: string
     annual_target_dollars: string
     due_month: string
@@ -52,6 +66,8 @@
       group_name: '',
       category_name: '',
       block,
+      kind: 'outflow',
+      tithe_percent: '',
       planned_dollars: '0.00',
       annual_target_dollars: '0.00',
       due_month: '',
@@ -65,6 +81,8 @@
       group_name: category.group_name,
       category_name: category.category_name,
       block: category.block,
+      kind: category.kind,
+      tithe_percent: category.tithe_percent === null ? '' : String(category.tithe_percent),
       planned_dollars: (category.planned_milliunits / 1000).toFixed(2),
       annual_target_dollars: (category.annual_target_milliunits / 1000).toFixed(2),
       due_month: category.due_month === null ? '' : String(category.due_month),
@@ -90,7 +108,19 @@
   $effect(() => {
     if (!selection) return
     confirmingDelete = false
-    form = selection.mode === 'edit' ? fromCategory(selection.category) : emptyForm(selection.block)
+    if (selection.mode === 'edit') {
+      form = fromCategory(selection.category)
+      return
+    }
+    const base = emptyForm(selection.block)
+    const prefill = selection.prefill ?? {}
+    form = {
+      ...base,
+      group_name: prefill.group_name ?? base.group_name,
+      category_name: prefill.category_name ?? base.category_name,
+      kind: prefill.kind ?? base.kind,
+      tithe_percent: prefill.tithe_percent ?? base.tithe_percent,
+    }
   })
 
   const queryClient = useQueryClient()
@@ -157,12 +187,22 @@
     }
     const notes = form.notes.trim() === '' ? null : form.notes
 
+    const tithePercent = form.tithe_percent.trim() === '' ? null : Number(form.tithe_percent)
+    if (
+      tithePercent !== null &&
+      (!Number.isFinite(tithePercent) || tithePercent < 0 || tithePercent > 100)
+    ) {
+      toast.error('Tithe percent must be between 0 and 100, or blank.')
+      return
+    }
     if (selection.mode === 'create') {
       $createMutationStore.mutate({
         plan_id: selection.planId,
         group_name: form.group_name.trim(),
         category_name: form.category_name.trim(),
         block: form.block,
+        kind: form.kind,
+        tithe_percent: tithePercent,
         planned_milliunits: planned,
         annual_target_milliunits: annual,
         due_month: due,
@@ -173,6 +213,8 @@
 
     const payload: UpdatePlanCategoryInput = {
       plan_id: selection.planId,
+      kind: form.kind,
+      tithe_percent: tithePercent,
       planned_milliunits: planned,
       annual_target_milliunits: annual,
       due_month: due,
@@ -244,6 +286,20 @@
               {/each}
             </select>
           </div>
+          <label class="flex items-start gap-2 rounded-md border border-border/40 bg-muted/20 p-3 text-sm">
+            <input
+              type="checkbox"
+              class="mt-0.5"
+              checked={form.kind === 'inflow'}
+              onchange={(e) => (form.kind = (e.currentTarget as HTMLInputElement).checked ? 'inflow' : 'outflow')}
+            />
+            <span>
+              <span class="font-medium text-foreground">This row is income (inflow)</span>
+              <span class="block text-xs text-muted-foreground">
+                Income rows feed the available pool that the cascade subtracts from. Leave unchecked for everyday spending.
+              </span>
+            </span>
+          </label>
           <div class="grid gap-2 md:grid-cols-2">
             <div class="grid gap-2">
               <label class="text-label" for="plan-category-planned">Planned ($)</label>
@@ -266,6 +322,31 @@
                 bind:value={form.annual_target_dollars}
               />
             </div>
+          </div>
+          <div class="grid gap-2">
+            <label class="text-label" for="plan-category-tithe">
+              Tithe percent of inflows in this block (optional)
+            </label>
+            <div class="flex items-center gap-2">
+              <Input
+                id="plan-category-tithe"
+                type="number"
+                min="0"
+                max="100"
+                step="0.01"
+                placeholder="e.g. 10"
+                class="w-32"
+                bind:value={form.tithe_percent}
+              />
+              <span class="text-sm text-muted-foreground">%</span>
+            </div>
+            <p class="text-xs text-muted-foreground">
+              Tithes ONLY the inflows in this row's own block — so a 10% tithe on a Monthly
+              row computes from monthly inflows (e.g. regular paychecks), not yearly inflows
+              like Tax Return. To tithe yearly income, add a separate row in the One-time or
+              Annual block. Leave blank for a fixed amount; manual edits to the planned
+              amount above are reverted on the next inflow change.
+            </p>
           </div>
           <div class="grid gap-2">
             <label class="text-label" for="plan-category-due">Due month (1-12, optional)</label>

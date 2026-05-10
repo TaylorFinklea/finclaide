@@ -79,6 +79,18 @@ def cashflow_recommendations():
     )
 
 
+@analytics_api.get("/cashflow/rebalance-prompts")
+@require_bearer_token
+def cashflow_rebalance_prompts():
+    months = int(request.args.get("months", "12"))
+    return jsonify(
+        _container().analytics.cash_flow_rebalance_prompts(
+            months=months,
+            as_of_month=request.args.get("as_of_month"),
+        )
+    )
+
+
 @analytics_api.get("/anomalies")
 @require_bearer_token
 def anomalies():

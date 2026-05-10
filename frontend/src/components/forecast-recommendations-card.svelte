@@ -1,7 +1,7 @@
 <script lang="ts">
   import { goto } from '$app/navigation'
   import { createMutation, useQueryClient } from '@tanstack/svelte-query'
-  import { ArrowRight, LoaderCircle, Lightbulb, Telescope, Wand2 } from 'lucide-svelte'
+  import { ArrowRight, LoaderCircle, Lightbulb, Scale, Telescope, Wand2 } from 'lucide-svelte'
   import { toast } from 'svelte-sonner'
 
   import Button from '$components/ui/button.svelte'
@@ -126,6 +126,16 @@
                 {/if}
               </div>
               <div class="flex shrink-0 gap-2">
+                <Button
+                  variant="outline"
+                  class="border-border/60"
+                  disabled={$applyMutation.isPending}
+                  onclick={() => goto(withBasePath('/planning'))}
+                  title="Open the planning page; if applying this rec would deficit the cascade, a paired rebalance suggestion is waiting there."
+                >
+                  <Scale class="h-3.5 w-3.5" aria-hidden="true" />
+                  Rebalance
+                </Button>
                 <Button
                   variant="outline"
                   class="border-border/60"

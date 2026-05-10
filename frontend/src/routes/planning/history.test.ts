@@ -30,6 +30,8 @@ function makeCategory(
 ): PlanCategory {
   return {
     plan_id: 1,
+    kind: 'outflow',
+    tithe_percent: null,
     planned_milliunits: 50000,
     annual_target_milliunits: 0,
     due_month: null,

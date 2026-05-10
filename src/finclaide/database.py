@@ -163,8 +163,10 @@ CREATE TABLE IF NOT EXISTS plan_categories (
     group_name TEXT NOT NULL,
     category_name TEXT NOT NULL,
     block TEXT NOT NULL CHECK (block IN ('monthly','annual','one_time','stipends','savings')),
+    kind TEXT NOT NULL DEFAULT 'outflow' CHECK (kind IN ('inflow','outflow')),
     planned_milliunits INTEGER NOT NULL DEFAULT 0,
     annual_target_milliunits INTEGER NOT NULL DEFAULT 0,
+    tithe_percent REAL CHECK (tithe_percent IS NULL OR (tithe_percent >= 0 AND tithe_percent <= 100)),
     due_month INTEGER CHECK (due_month IS NULL OR due_month BETWEEN 1 AND 12),
     notes TEXT,
     created_at TEXT NOT NULL,
@@ -218,8 +220,10 @@ SELECT
     pc.group_name,
     pc.category_name,
     pc.block,
+    pc.kind,
     pc.planned_milliunits,
     pc.annual_target_milliunits,
+    pc.tithe_percent,
     pc.due_month,
     NULL AS formula_text,
     NULL AS source_cell,
@@ -276,6 +280,12 @@ class Database:
         # installs already have it from SCHEMA_SQL; pre-2.5c installs get
         # the ALTER TABLE here.
         self._migrate_plans_add_label_column()
+        # Add the `kind` column on plan_categories for inflow/outflow.
+        # Idempotent — fresh installs get it from SCHEMA_SQL; existing
+        # installs get the ALTER TABLE + backfill here.
+        self._migrate_plan_categories_add_kind_column()
+        # Add the `tithe_percent` column for inflow-linked auto-recompute.
+        self._migrate_plan_categories_add_tithe_percent_column()
         with self.connect() as connection:
             connection.executescript(SCHEMA_SQL)
             connection.execute(
@@ -362,6 +372,64 @@ class Database:
         finally:
             connection.close()
 
+    def _migrate_plan_categories_add_tithe_percent_column(self) -> None:
+        """Add nullable `tithe_percent` (REAL) to plan_categories so a row can
+        be linked to a percentage of total inflow. Idempotent — exits if the
+        column already exists, or if the table doesn't exist yet."""
+        self.db_path.parent.mkdir(parents=True, exist_ok=True)
+        connection = sqlite3.connect(self.db_path)
+        try:
+            connection.row_factory = sqlite3.Row
+            cols = connection.execute(
+                "PRAGMA table_info(plan_categories)"
+            ).fetchall()
+            if not cols:
+                return
+            if any(col["name"] == "tithe_percent" for col in cols):
+                return
+            # CHECK constraint added in SCHEMA_SQL on fresh installs; ALTER ADD
+            # COLUMN can't add a CHECK on existing tables in older SQLite, so
+            # validation is enforced at the service layer.
+            connection.execute(
+                "ALTER TABLE plan_categories ADD COLUMN tithe_percent REAL"
+            )
+            connection.commit()
+        finally:
+            connection.close()
+
+    def _migrate_plan_categories_add_kind_column(self) -> None:
+        """Add `kind` to plan_categories for inflow/outflow classification.
+        Idempotent — exits if the column already exists, or if the table
+        doesn't exist yet (fresh install; SCHEMA_SQL creates it with the
+        column). Backfills rows in groups named 'Monthly Income' or
+        'Yearly Income' as inflow on first run."""
+        self.db_path.parent.mkdir(parents=True, exist_ok=True)
+        connection = sqlite3.connect(self.db_path)
+        try:
+            connection.row_factory = sqlite3.Row
+            cols = connection.execute(
+                "PRAGMA table_info(plan_categories)"
+            ).fetchall()
+            if not cols:
+                return
+            if any(col["name"] == "kind" for col in cols):
+                return
+            # SQLite ALTER ADD COLUMN with a constant default is cheap and
+            # avoids a table rebuild. The CHECK constraint is enforced on
+            # subsequent writes; existing rows take the DEFAULT.
+            connection.execute(
+                "ALTER TABLE plan_categories ADD COLUMN "
+                "kind TEXT NOT NULL DEFAULT 'outflow' "
+                "CHECK (kind IN ('inflow','outflow'))"
+            )
+            connection.execute(
+                "UPDATE plan_categories SET kind = 'inflow' "
+                "WHERE group_name IN ('Monthly Income', 'Yearly Income')"
+            )
+            connection.commit()
+        finally:
+            connection.close()
+
     def _hydrate_plan_from_latest_import_if_empty(self) -> None:
         """If the new plans table is empty but the legacy budget_imports has
         data, create an active plan from the most recent import. Idempotent —
@@ -399,13 +467,20 @@ class Database:
             connection.execute(
                 """
                 INSERT INTO plan_categories(
-                    plan_id, group_name, category_name, block,
-                    planned_milliunits, annual_target_milliunits, due_month,
+                    plan_id, group_name, category_name, block, kind,
+                    planned_milliunits, annual_target_milliunits,
+                    tithe_percent, due_month,
                     notes, created_at, updated_at
                 )
                 SELECT
                     ?, group_name, category_name, block,
-                    planned_milliunits, annual_target_milliunits, due_month,
+                    CASE
+                        WHEN group_name IN ('Monthly Income', 'Yearly Income')
+                            THEN 'inflow'
+                        ELSE 'outflow'
+                    END,
+                    planned_milliunits, annual_target_milliunits,
+                    NULL, due_month,
                     NULL, ?, ?
                 FROM planned_categories
                 WHERE import_id = ?

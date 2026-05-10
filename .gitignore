@@ -10,3 +10,4 @@ build/
 .local/
 .playwright-mcp/
 .superpowers/
+/*.png

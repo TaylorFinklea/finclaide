@@ -10,6 +10,38 @@ identical to `main`; safe to delete once origin is pushed.
 
 ## Last Session Summary
 
+**Date**: 2026-05-10 (Cash-flow cascade, inflows, and rebalance prompts)
+
+Planning now models cash-flow balance directly:
+
+- Plan categories have `kind` (`inflow` / `outflow`) plus optional
+  `tithe_percent`.
+- Existing databases migrate safely; income-named groups backfill to inflow
+  and older plan snapshots restore as outflow when the new fields are absent.
+- Budget imports classify income groups as inflow and keep unclassified income
+  rows out of the cascade.
+- Tithe-linked rows recompute from inflows in the same block only, so monthly
+  tithe rows follow monthly income and one-time income can be handled
+  separately.
+- Planning UI shows a cash-flow cascade, cadence toggle, no-income prompt,
+  inline block editing, balance-to-zero allocation into Savings, and paired
+  rebalance suggestions.
+- Analytics exposes cash-flow rebalance prompts for overrun recommendations
+  that would push the plan negative, plus standalone current-deficit prompts.
+
+Repo hygiene:
+- Root-level generated browser screenshots are ignored via `/*.png`.
+- Secret scan found only placeholders/runtime variable names; local `.env` and
+  `.local/finclaide.db` remain ignored.
+
+Verification:
+- `.venv/bin/pytest` -> **282/282 passed**.
+- `npm test -- --run` -> **390/390 passed**.
+- `npm run check` -> **0 errors / 0 warnings**.
+- `git diff --check` -> passed.
+
+---
+
 **Date**: 2026-05-10 (MCP expansion + Home Assistant publish prep)
 
 Finclaide MCP now exposes reconcile remediation tools that mirror the app's

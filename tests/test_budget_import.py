@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from finclaide.budget_sheet import BudgetImporter
+from finclaide.budget_sheet import BudgetImporter, PlannedCategoryRow
 from finclaide.database import Database
 from finclaide.errors import DataIntegrityError
 from tests.workbook_builder import build_budget_workbook
@@ -36,7 +36,10 @@ def test_import_budget_supports_current_layout(tmp_path: Path):
 
     summary = BudgetImporter(database).import_budget(workbook, "2026 Budget")
 
-    assert summary["row_count"] == 13
+    # 13 outflow rows + 2 inflow rows (Salary, Bonus) = 15. Inflow rows are
+    # captured under the 'Monthly Income' / 'Yearly Income' groups so the
+    # planning page cascade has an income pool to subtract from.
+    assert summary["row_count"] == 15
     with database.connect() as connection:
         planned_rows = connection.execute(
             """
@@ -58,6 +61,76 @@ def test_import_budget_supports_current_layout(tmp_path: Path):
         and row["due_month"] == 2
         for row in planned_rows
     )
+
+
+def test_import_tags_income_groups_as_inflow(tmp_path: Path):
+    """Importer should classify rows in 'Monthly Income' / 'Yearly Income'
+    groups as kind='inflow' so the planning page cascade has an income pool
+    without manual data entry."""
+    workbook = build_budget_workbook(tmp_path / "Budget.xlsx", layout="current")
+    database = Database(tmp_path / "test.db")
+    database.initialize()
+    BudgetImporter(database).import_budget(workbook, "2026 Budget")
+
+    with database.connect() as connection:
+        rows = connection.execute(
+            """
+            SELECT group_name, category_name, kind
+            FROM plan_categories
+            ORDER BY id
+            """
+        ).fetchall()
+    by_name = {row["category_name"]: dict(row) for row in rows}
+    assert by_name["Salary"]["kind"] == "inflow"
+    assert by_name["Bonus"]["kind"] == "inflow"
+    assert by_name["Rent"]["kind"] == "outflow"
+    assert by_name["S Stipend"]["kind"] == "outflow"
+
+
+def test_extract_sum_range_parses_basic_formula():
+    """Helper used by the validator to identify which rows are inside the
+    cached SUM. Plain `=SUM(F10:F61)` should yield the column/row tuple."""
+    parsed = BudgetImporter._extract_sum_range("=SUM(F10:F61)")
+    assert parsed == ("F", 10, "F", 61)
+
+
+def test_extract_sum_range_handles_whitespace_and_lowercase():
+    parsed = BudgetImporter._extract_sum_range("= sum( G8 : G51 )")
+    assert parsed == ("G", 8, "G", 51)
+
+
+def test_extract_sum_range_returns_none_for_non_sum():
+    assert BudgetImporter._extract_sum_range("=AVERAGE(B5:B10)") is None
+    assert BudgetImporter._extract_sum_range(None) is None
+
+
+def test_rows_outside_range_flags_offenders():
+    """A parsed row whose source_cell row number falls outside the cached
+    SUM range should be returned so the validator can name it in the error."""
+    rows = [
+        PlannedCategoryRow(
+            group_name="Yearly Income",
+            category_name="Feb - Valentines Day",
+            block="annual",
+            source_cell="F9",
+            planned_milliunits=33333,
+            annual_target_milliunits=400000,
+            due_month=2,
+            formula_text=None,
+        ),
+        PlannedCategoryRow(
+            group_name="Yearly",
+            category_name="Mar - Adobe Lightroom",
+            block="annual",
+            source_cell="F17",
+            planned_milliunits=20000,
+            annual_target_milliunits=240000,
+            due_month=3,
+            formula_text=None,
+        ),
+    ]
+    offenders = BudgetImporter._rows_outside_range(rows, ("F", 10, "F", 61))
+    assert [r.source_cell for r in offenders] == ["F9"]
 
 
 def test_import_budget_ignores_labeled_income_rows_outside_monthly_total_range(tmp_path: Path):

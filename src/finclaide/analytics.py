@@ -826,6 +826,268 @@ class AnalyticsService:
             "recommendations": recommendations[:10],
         }
 
+    def cash_flow_rebalance_prompts(
+        self,
+        *,
+        months: int = 12,
+        as_of_month: str | None = None,
+    ) -> dict[str, Any]:
+        """Pair every calibration rec that would push the cascade leftover
+        below zero with a compensating decrease drawn from a cushion
+        category. Also surface a standalone 'cascade currently red' prompt
+        when the operator's hand-edited plan is itself unbalanced.
+
+        Outputs prompts shaped for the UI:
+            kind: 'rec_paired' | 'cascade_deficit'
+            increase: {category_id, group, name, current_milli, suggested_milli, delta_milli} | None
+            decrease: same shape | None
+            delta_milli: int (absolute amount being moved)
+            rationale: str
+            cushion_status: 'found' | 'none_available'
+
+        Cushion picker order:
+          1) `savings` block outflow with planned >= delta (largest first).
+          2) Discretionary `monthly` outflow whose 6-month run-rate is at
+             least delta + $25 below its plan (slack proven by actuals).
+          3) Otherwise emit the prompt with cushion=None and
+             cushion_status='none_available' — never guess.
+
+        Tithe-linked rows (`tithe_percent IS NOT NULL`) and rows in fixed
+        groups are off-limits as cushions to avoid silently editing
+        formula-driven or operator-authoritative amounts (excluding the
+        savings block, which is the cushion *by design*).
+        """
+        rec_payload = self.cash_flow_recommendations(
+            months=months,
+            as_of_month=as_of_month,
+        )
+        as_of_label = rec_payload["as_of_month"]
+        recs = rec_payload["recommendations"]
+
+        with self.database.connect() as conn:
+            cascade_leftover = self._compute_cascade_leftover(conn)
+            cushion_rows = conn.execute(
+                """
+                SELECT pc.id, pc.group_name, pc.category_name, pc.block,
+                       pc.planned_milliunits, pc.tithe_percent
+                FROM plan_categories pc
+                JOIN plans p ON p.id = pc.plan_id
+                WHERE p.status = 'active'
+                  AND pc.kind = 'outflow'
+                  AND pc.tithe_percent IS NULL
+                """
+            ).fetchall()
+
+        reference = _month_reference(as_of_month)
+        run_rates = self._six_month_run_rates(reference)
+
+        # Pre-bucket cushion candidates so each prompt picks deterministically
+        # without re-scanning the plan. Order within each bucket is by
+        # planned amount descending (savings) or by slack descending
+        # (discretionary) so the largest cushion goes first.
+        savings_pool: list[dict[str, Any]] = []
+        slack_pool: list[dict[str, Any]] = []
+        for row in cushion_rows:
+            grp = row["group_name"] or ""
+            name = row["category_name"] or ""
+            block = row["block"]
+            planned = int(row["planned_milliunits"] or 0)
+            entry = {
+                "id": int(row["id"]),
+                "group_name": grp,
+                "category_name": name,
+                "block": block,
+                "planned_milliunits": planned,
+            }
+            if block == "savings" and planned > 0:
+                savings_pool.append(entry)
+                continue
+            if block == "monthly" and not _is_fixed_group(grp):
+                rate = run_rates.get((grp, name))
+                if rate is None:
+                    continue
+                slack = planned - rate
+                if slack <= 0:
+                    continue
+                entry["slack_milliunits"] = slack
+                slack_pool.append(entry)
+        savings_pool.sort(
+            key=lambda e: e["planned_milliunits"], reverse=True
+        )
+        slack_pool.sort(
+            key=lambda e: e["slack_milliunits"], reverse=True
+        )
+
+        def _make_cushion(
+            entry: dict[str, Any],
+            delta_milli: int,
+            source: str,
+            available: int,
+        ) -> dict[str, Any]:
+            applied = min(delta_milli, available)
+            return {
+                "category_id": entry["id"],
+                "group_name": entry["group_name"],
+                "category_name": entry["category_name"],
+                "block": entry["block"],
+                "current_milli": entry["planned_milliunits"],
+                "suggested_milli": entry["planned_milliunits"] - applied,
+                "delta_milli": -applied,
+                "source": source,
+                "covers_full_delta": applied >= delta_milli,
+            }
+
+        def pick_cushion(delta_milli: int) -> dict[str, Any] | None:
+            # Prefer the smallest savings row that fully covers the delta —
+            # drains a single cushion rather than overspending the largest.
+            full_savings = [
+                e for e in savings_pool if e["planned_milliunits"] >= delta_milli
+            ]
+            if full_savings:
+                pick = min(full_savings, key=lambda e: e["planned_milliunits"])
+                return _make_cushion(
+                    pick, delta_milli, "savings", pick["planned_milliunits"]
+                )
+            # Same logic for slack discretionary.
+            full_slack = [
+                e for e in slack_pool
+                if e["slack_milliunits"] >= delta_milli + 25_000
+            ]
+            if full_slack:
+                pick = min(full_slack, key=lambda e: e["slack_milliunits"])
+                return _make_cushion(
+                    pick, delta_milli, "slack", pick["planned_milliunits"]
+                )
+            # Partial fill: no single cushion fully covers; pick the
+            # biggest savings (or slack as fallback) so the operator
+            # makes the largest dent in one click and finishes manually.
+            if savings_pool:
+                pick = savings_pool[0]
+                return _make_cushion(
+                    pick, delta_milli, "savings", pick["planned_milliunits"]
+                )
+            if slack_pool:
+                pick = slack_pool[0]
+                # Apply at most the proven slack so we don't push the row
+                # below its run-rate.
+                return _make_cushion(
+                    pick, delta_milli, "slack", pick["slack_milliunits"]
+                )
+            return None
+
+        prompts: list[dict[str, Any]] = []
+
+        # (a) Calibration recs that would tip the cascade negative on apply.
+        for rec in recs:
+            delta = int(rec["monthly_delta_milliunits"])
+            if delta <= 0:
+                continue
+            if cascade_leftover - delta >= 0:
+                # Calibration alone keeps us positive — surface as a normal
+                # rec via the existing endpoint, not as a rebalance.
+                continue
+            increase = {
+                "category_id": rec["category"]["id"],
+                "group_name": rec["category"]["group_name"],
+                "category_name": rec["category"]["category_name"],
+                "block": rec["category"]["block"],
+                "current_milli": int(rec["current_planned_milliunits"]),
+                "suggested_milli": int(rec["suggested_planned_milliunits"]),
+                "delta_milli": delta,
+            }
+            cushion = pick_cushion(delta)
+            rationale = self._rebalance_rationale(
+                increase=increase,
+                cushion=cushion,
+                deficit_after_increase=delta - max(cascade_leftover, 0),
+            )
+            prompts.append({
+                "kind": "rec_paired",
+                "increase": increase,
+                "decrease": cushion,
+                "delta_milli": delta,
+                "rationale": rationale,
+                "cushion_status": "found" if cushion else "none_available",
+            })
+
+        # (b) Standalone deficit prompt — cascade is red right now from a
+        # hand-edited plan, no rec involved.
+        if cascade_leftover < -1000:
+            deficit = -cascade_leftover
+            cushion = pick_cushion(deficit)
+            rationale = (
+                f"Plan currently exceeds inflow by ${deficit / 1000:,.2f}/mo. "
+                f"{'Pull from ' + cushion['category_name'] + ' to balance.' if cushion else 'No automatic cushion available.'}"
+            )
+            prompts.append({
+                "kind": "cascade_deficit",
+                "increase": None,
+                "decrease": cushion,
+                "delta_milli": deficit,
+                "rationale": rationale,
+                "cushion_status": "found" if cushion else "none_available",
+            })
+
+        return {
+            "as_of_month": as_of_label,
+            "cascade_leftover_milliunits": cascade_leftover,
+            "prompts": prompts,
+        }
+
+    def _compute_cascade_leftover(self, connection) -> int:
+        """Server-side mirror of the JS cascade math: total inflow minus
+        total outflow on the active plan, in milliunits. Centralizes the
+        math so frontend and rebalance prompts agree to the milliunit."""
+        row = connection.execute(
+            """
+            SELECT
+                COALESCE(SUM(CASE WHEN pc.kind = 'inflow'
+                                  THEN pc.planned_milliunits ELSE 0 END), 0)
+                  AS inflow,
+                COALESCE(SUM(CASE WHEN pc.kind = 'outflow'
+                                  THEN pc.planned_milliunits ELSE 0 END), 0)
+                  AS outflow
+            FROM plan_categories pc
+            JOIN plans p ON p.id = pc.plan_id
+            WHERE p.status = 'active'
+            """
+        ).fetchone()
+        if row is None:
+            return 0
+        return int(row["inflow"] or 0) - int(row["outflow"] or 0)
+
+    @staticmethod
+    def _rebalance_rationale(
+        *,
+        increase: dict[str, Any],
+        cushion: dict[str, Any] | None,
+        deficit_after_increase: int,
+    ) -> str:
+        delta_dollars = increase["delta_milli"] / 1000
+        category = f"{increase['group_name']} / {increase['category_name']}"
+        if cushion is None:
+            return (
+                f"Raising {category} by ${delta_dollars:+,.2f}/mo would push the "
+                f"cascade ${deficit_after_increase / 1000:,.2f}/mo negative. "
+                f"No automatic cushion available — adjust manually."
+            )
+        cushion_label = (
+            f"{cushion['category_name']} (savings)"
+            if cushion["source"] == "savings"
+            else f"{cushion['category_name']} (running below plan)"
+        )
+        if cushion.get("covers_full_delta"):
+            return (
+                f"Raising {category} by ${delta_dollars:+,.2f}/mo; "
+                f"pull the same amount from {cushion_label} to keep the cascade balanced."
+            )
+        applied_dollars = -cushion["delta_milli"] / 1000
+        return (
+            f"Raising {category} by ${delta_dollars:+,.2f}/mo. "
+            f"{cushion_label} can only absorb ${applied_dollars:,.2f}/mo — "
+            f"applying covers part of the gap; close the rest manually."
+        )
+
     def _cash_starting_balance(self) -> int:
         """Sum of positive account balances on open, on-budget accounts.
         Credit-card accounts in YNAB typically carry negative balances

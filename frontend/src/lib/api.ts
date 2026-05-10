@@ -257,14 +257,18 @@ export const TransactionsPageSchema = z.object({
   offset: z.number(),
 })
 
+export const PlanCategoryKindSchema = z.enum(['inflow', 'outflow'])
+
 export const PlanCategorySchema = z.object({
   id: z.number(),
   plan_id: z.number(),
   group_name: z.string(),
   category_name: z.string(),
   block: z.enum(['monthly', 'annual', 'one_time', 'stipends', 'savings']),
+  kind: PlanCategoryKindSchema,
   planned_milliunits: z.number(),
   annual_target_milliunits: z.number(),
+  tithe_percent: z.number().nullable(),
   due_month: z.number().nullable(),
   notes: z.string().nullable(),
   created_at: z.string(),
@@ -734,6 +738,52 @@ export async function getCashflowRecommendations(opts: {
   )
 }
 
+// --- Phase 4 follow-up: rebalance prompts --------------------------------
+
+const RebalanceSideSchema = z.object({
+  category_id: z.number(),
+  group_name: z.string(),
+  category_name: z.string(),
+  block: z.string(),
+  current_milli: z.number(),
+  suggested_milli: z.number(),
+  delta_milli: z.number(),
+})
+const RebalanceCushionSchema = RebalanceSideSchema.extend({
+  source: z.enum(['savings', 'slack']),
+  covers_full_delta: z.boolean(),
+})
+export const RebalancePromptSchema = z.object({
+  kind: z.enum(['rec_paired', 'cascade_deficit']),
+  increase: RebalanceSideSchema.nullable(),
+  decrease: RebalanceCushionSchema.nullable(),
+  delta_milli: z.number(),
+  rationale: z.string(),
+  cushion_status: z.enum(['found', 'none_available']),
+})
+export type RebalancePrompt = z.infer<typeof RebalancePromptSchema>
+
+export const RebalancePromptsSchema = z.object({
+  as_of_month: z.string(),
+  cascade_leftover_milliunits: z.number(),
+  prompts: z.array(RebalancePromptSchema),
+})
+export type RebalancePrompts = z.infer<typeof RebalancePromptsSchema>
+
+export async function getRebalancePrompts(opts: {
+  months?: number
+  as_of_month?: string
+} = {}) {
+  const params = new URLSearchParams()
+  if (opts.months !== undefined) params.set('months', String(opts.months))
+  if (opts.as_of_month) params.set('as_of_month', opts.as_of_month)
+  const qs = params.toString()
+  return requestJson(
+    withBasePath(`/ui-api/analytics/cashflow/rebalance-prompts${qs ? `?${qs}` : ''}`),
+    RebalancePromptsSchema,
+  )
+}
+
 export const TrendCategorySchema = z.object({
   group_name: z.string(),
   category_name: z.string(),
@@ -880,13 +930,17 @@ export async function getActivePlan(year?: number) {
   return requestJson(withBasePath(`/ui-api/plan/active${search}`), ActivePlanResponseSchema)
 }
 
+export type PlanCategoryKind = z.infer<typeof PlanCategoryKindSchema>
+
 export type CreatePlanCategoryInput = {
   plan_id: number
   group_name: string
   category_name: string
   block: BlockKey
+  kind: PlanCategoryKind
   planned_milliunits: number
   annual_target_milliunits: number
+  tithe_percent?: number | null
   due_month: number | null
   notes: string | null
 }
@@ -904,6 +958,8 @@ export async function createPlanCategory(input: CreatePlanCategoryInput) {
 
 export type UpdatePlanCategoryInput = {
   plan_id: number
+  kind?: PlanCategoryKind
+  tithe_percent?: number | null
   planned_milliunits?: number
   annual_target_milliunits?: number
   due_month?: number | null

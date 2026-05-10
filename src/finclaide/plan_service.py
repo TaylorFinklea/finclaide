@@ -10,7 +10,15 @@ from finclaide.errors import DataIntegrityError, NotFoundError
 
 
 VALID_BLOCKS = {"monthly", "annual", "one_time", "stipends", "savings"}
-EDITABLE_FIELDS = {"planned_milliunits", "annual_target_milliunits", "due_month", "notes"}
+VALID_KINDS = {"inflow", "outflow"}
+EDITABLE_FIELDS = {
+    "planned_milliunits",
+    "annual_target_milliunits",
+    "due_month",
+    "notes",
+    "kind",
+    "tithe_percent",
+}
 VALID_REVISION_SOURCES = {
     "ui_create",
     "ui_update",
@@ -80,6 +88,8 @@ class PlanService:
         notes = fields.get("notes")
         if notes is not None:
             notes = str(notes)
+        kind = _coerce_kind(fields.get("kind", "outflow"))
+        tithe_percent = _coerce_tithe_percent(fields.get("tithe_percent"))
 
         now = utc_now()
         try:
@@ -88,19 +98,22 @@ class PlanService:
                 cursor = connection.execute(
                     """
                     INSERT INTO plan_categories(
-                        plan_id, group_name, category_name, block,
-                        planned_milliunits, annual_target_milliunits, due_month,
+                        plan_id, group_name, category_name, block, kind,
+                        planned_milliunits, annual_target_milliunits,
+                        tithe_percent, due_month,
                         notes, created_at, updated_at
                     )
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
                         plan_id,
                         group_name,
                         category_name,
                         block,
+                        kind,
                         planned_milliunits,
                         annual_target_milliunits,
+                        tithe_percent,
                         due_month,
                         notes,
                         now,
@@ -108,6 +121,11 @@ class PlanService:
                     ),
                 )
                 new_id = int(cursor.lastrowid)
+                # Recompute when this row is itself a tithe row (so its
+                # initial planned reflects the percent), or when this row
+                # is an inflow that affects the inflow total.
+                if tithe_percent is not None or kind == "inflow":
+                    _recompute_tithes(connection, plan_id, now)
                 self._touch_plan(connection, plan_id, now)
                 row = connection.execute(
                     "SELECT * FROM plan_categories WHERE id = ?", (new_id,)
@@ -145,6 +163,10 @@ class PlanService:
                 updates[key] = _coerce_due_month(fields[key])
             elif key == "notes":
                 updates[key] = None if fields[key] is None else str(fields[key])
+            elif key == "kind":
+                updates[key] = _coerce_kind(fields[key])
+            elif key == "tithe_percent":
+                updates[key] = _coerce_tithe_percent(fields[key])
         if not updates:
             raise DataIntegrityError(
                 f"No editable fields supplied. Editable: {sorted(EDITABLE_FIELDS)}."
@@ -172,6 +194,19 @@ class PlanService:
                 """,
                 params,
             )
+            # If the change touches anything that feeds into the tithe
+            # formula — the inflow total (any inflow row's planned), the
+            # row's kind (which decides whether it counts toward inflow),
+            # or the row's tithe_percent itself — recompute every tithe
+            # row in this plan within the same transaction.
+            row_kind_changed = "kind" in updates and updates["kind"] != before["kind"]
+            inflow_planned_changed = (
+                "planned_milliunits" in updates
+                and (before["kind"] == "inflow" or updates.get("kind") == "inflow")
+            )
+            tithe_percent_changed = "tithe_percent" in updates
+            if row_kind_changed or inflow_planned_changed or tithe_percent_changed:
+                _recompute_tithes(connection, plan_id, now)
             self._touch_plan(connection, plan_id, now)
             row = connection.execute(
                 "SELECT * FROM plan_categories WHERE id = ?", (category_id,)
@@ -203,6 +238,11 @@ class PlanService:
                 "DELETE FROM plan_categories WHERE plan_id = ? AND id = ?",
                 (plan_id, category_id),
             )
+            # Removing an inflow shrinks the pool that tithe rows compute
+            # against; refresh those rows so the planned amounts stay
+            # consistent with the new total.
+            if before["kind"] == "inflow":
+                _recompute_tithes(connection, plan_id, now)
             self._touch_plan(connection, plan_id, now)
             self._record_revision(
                 connection,
@@ -340,19 +380,22 @@ class PlanService:
                 connection.execute(
                     """
                     INSERT INTO plan_categories(
-                        plan_id, group_name, category_name, block,
-                        planned_milliunits, annual_target_milliunits, due_month,
+                        plan_id, group_name, category_name, block, kind,
+                        planned_milliunits, annual_target_milliunits,
+                        tithe_percent, due_month,
                         notes, created_at, updated_at
                     )
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
                         plan_id,
                         category["group_name"],
                         category["category_name"],
                         category["block"],
+                        category.get("kind", "outflow"),
                         category["planned_milliunits"],
                         category["annual_target_milliunits"],
+                        category.get("tithe_percent"),
                         category["due_month"],
                         category["notes"],
                         category["created_at"],
@@ -412,13 +455,15 @@ class PlanService:
                 connection.execute(
                     """
                     INSERT INTO plan_categories(
-                        plan_id, group_name, category_name, block,
-                        planned_milliunits, annual_target_milliunits, due_month,
+                        plan_id, group_name, category_name, block, kind,
+                        planned_milliunits, annual_target_milliunits,
+                        tithe_percent, due_month,
                         notes, created_at, updated_at
                     )
                     SELECT
-                        ?, group_name, category_name, block,
-                        planned_milliunits, annual_target_milliunits, due_month,
+                        ?, group_name, category_name, block, kind,
+                        planned_milliunits, annual_target_milliunits,
+                        tithe_percent, due_month,
                         notes, ?, ?
                     FROM plan_categories
                     WHERE plan_id = ?
@@ -1040,8 +1085,8 @@ def read_plan_categories_snapshot(connection, plan_id: int) -> list[dict[str, An
     transactions without round-tripping through PlanService."""
     rows = connection.execute(
         """
-        SELECT id, plan_id, group_name, category_name, block,
-               planned_milliunits, annual_target_milliunits,
+        SELECT id, plan_id, group_name, category_name, block, kind,
+               planned_milliunits, annual_target_milliunits, tithe_percent,
                due_month, notes, created_at, updated_at
         FROM plan_categories
         WHERE plan_id = ?
@@ -1134,6 +1179,12 @@ def _summary_for_update(before, updates: dict[str, Any]) -> str:
             parts.append(f"due_month {old_value!r} → {new_value!r}")
         elif key == "notes":
             parts.append("notes updated")
+        elif key == "kind":
+            parts.append(f"kind {old_value} → {new_value}")
+        elif key == "tithe_percent":
+            old_text = "off" if old_value is None else f"{old_value}%"
+            new_text = "off" if new_value is None else f"{new_value}%"
+            parts.append(f"tithe {old_text} → {new_text}")
     if not parts:
         return f"Updated {label} (no field-level diff)"
     return f"{label}: {', '.join(parts)}"
@@ -1169,14 +1220,20 @@ def _shape_plan_payload(plan_row, category_rows) -> dict[str, Any]:
 
 
 def _row_to_dict(row) -> dict[str, Any]:
+    keys = row.keys() if hasattr(row, "keys") else []
     return {
         "id": row["id"],
         "plan_id": row["plan_id"],
         "group_name": row["group_name"],
         "category_name": row["category_name"],
         "block": row["block"],
+        # Snapshots taken before the kind migration shipped won't carry the
+        # column; restore those as the default 'outflow' so older revisions
+        # remain restorable.
+        "kind": row["kind"] if "kind" in keys else "outflow",
         "planned_milliunits": row["planned_milliunits"],
         "annual_target_milliunits": row["annual_target_milliunits"],
+        "tithe_percent": row["tithe_percent"] if "tithe_percent" in keys else None,
         "due_month": row["due_month"],
         "notes": row["notes"],
         "created_at": row["created_at"],
@@ -1218,3 +1275,76 @@ def _coerce_due_month(value: Any) -> int | None:
     if coerced < 1 or coerced > 12:
         raise DataIntegrityError("Field 'due_month' must be between 1 and 12.")
     return coerced
+
+
+def _coerce_kind(value: Any) -> str:
+    if value is None:
+        return "outflow"
+    text = str(value).strip()
+    if text not in VALID_KINDS:
+        raise DataIntegrityError(
+            f"Field 'kind' must be one of: {sorted(VALID_KINDS)}."
+        )
+    return text
+
+
+def _coerce_tithe_percent(value: Any) -> float | None:
+    if value is None or value == "":
+        return None
+    try:
+        coerced = float(value)
+    except (TypeError, ValueError) as error:
+        raise DataIntegrityError(
+            "Field 'tithe_percent' must be a number 0-100 or null."
+        ) from error
+    if coerced < 0 or coerced > 100:
+        raise DataIntegrityError(
+            "Field 'tithe_percent' must be between 0 and 100."
+        )
+    return coerced
+
+
+def _recompute_tithes(connection, plan_id: int, now: str) -> None:
+    """Recompute planned_milliunits for every row in this plan that has a
+    `tithe_percent` set. A tithe row tithes only its OWN block's inflows —
+    so a tithe row in `monthly` is computed from monthly inflows (e.g. a
+    regular paycheck), and a tithe row in `one_time` would be computed from
+    one-time/yearly inflows. This matches the user's mental model where
+    irregular yearly income (tax refund, bonus) is tithed separately as it
+    arrives rather than as a fixed monthly draw on the cascade.
+    Idempotent — safe to call after any change that could affect block
+    inflow totals or a row's `tithe_percent`."""
+    tithe_rows = connection.execute(
+        """
+        SELECT id, block, tithe_percent, planned_milliunits
+        FROM plan_categories
+        WHERE plan_id = ? AND tithe_percent IS NOT NULL
+        """,
+        (plan_id,),
+    ).fetchall()
+    if not tithe_rows:
+        return
+    block_inflows: dict[str, int] = {}
+    for inflow_row in connection.execute(
+        """
+        SELECT block, COALESCE(SUM(planned_milliunits), 0) AS total
+        FROM plan_categories
+        WHERE plan_id = ? AND kind = 'inflow'
+        GROUP BY block
+        """,
+        (plan_id,),
+    ).fetchall():
+        block_inflows[inflow_row["block"]] = int(inflow_row["total"])
+    for row in tithe_rows:
+        same_block_inflow = block_inflows.get(row["block"], 0)
+        new_planned = int(round(same_block_inflow * float(row["tithe_percent"]) / 100.0))
+        if new_planned == int(row["planned_milliunits"]):
+            continue
+        connection.execute(
+            """
+            UPDATE plan_categories
+            SET planned_milliunits = ?, updated_at = ?
+            WHERE id = ?
+            """,
+            (new_planned, now, row["id"]),
+        )

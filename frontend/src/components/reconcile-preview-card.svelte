@@ -126,6 +126,7 @@
         group_name: args.group,
         category_name: args.name,
         block: inferBlock(args.group),
+        kind: 'outflow',
         planned_milliunits: 0,
         annual_target_milliunits: 0,
         due_month: null,

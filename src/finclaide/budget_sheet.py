@@ -20,6 +20,29 @@ from finclaide.money import to_milliunits
 from finclaide.months import parse_due_month
 
 
+INFLOW_GROUP_NAMES = frozenset({"Monthly Income", "Yearly Income"})
+
+# Match a contiguous SUM range like =SUM(F10:F61) so the validator can
+# diagnose which parsed rows fall outside the cached SUM and surface them in
+# the error.
+_SUM_RANGE_PATTERN = re.compile(
+    r"=\s*SUM\s*\(\s*([A-Z]+)(\d+)\s*:\s*([A-Z]+)(\d+)\s*\)",
+    re.IGNORECASE,
+)
+_SOURCE_CELL_PATTERN = re.compile(r"^([A-Z]+)(\d+)$")
+
+
+@dataclass(frozen=True)
+class _TotalCellInfo:
+    cached_value: Any
+    cell_ref: str
+    formula_text: str | None
+
+
+def _kind_for_group(group_name: str) -> str:
+    return "inflow" if group_name in INFLOW_GROUP_NAMES else "outflow"
+
+
 @dataclass(frozen=True)
 class PlannedCategoryRow:
     group_name: str
@@ -30,6 +53,7 @@ class PlannedCategoryRow:
     annual_target_milliunits: int
     due_month: int | None
     formula_text: str | None
+    kind: str = "outflow"
 
 
 class BudgetImporter:
@@ -204,17 +228,18 @@ class BudgetImporter:
             connection.execute(
                 """
                 INSERT INTO plan_categories(
-                    plan_id, group_name, category_name, block,
+                    plan_id, group_name, category_name, block, kind,
                     planned_milliunits, annual_target_milliunits, due_month,
                     notes, created_at, updated_at
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, NULL, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?)
                 """,
                 (
                     new_plan_id,
                     row.group_name,
                     row.category_name,
                     row.block,
+                    row.kind,
                     row.planned_milliunits,
                     row.annual_target_milliunits,
                     row.due_month,
@@ -228,7 +253,12 @@ class BudgetImporter:
         rows: list[PlannedCategoryRow] = []
         current_group: str | None = None
         first_data_row = self._formula_range_start_row(sheet_formula, "A", "B", "B53") or 2
-        for row_number in range(2, sheet_formula.max_row + 1):
+        # Iterate from row 1 so a 'Monthly Income' header in A1 can register as
+        # a group. Outflow rows must still be inside the SUM range so the
+        # cached total reconciles in _validate_totals; inflow rows under a
+        # known income group can live above the SUM range (which is how
+        # current sheets store paychecks).
+        for row_number in range(1, sheet_formula.max_row + 1):
             name_cell = f"A{row_number}"
             amount_cell = f"B{row_number}"
             name_value = self._text_value(sheet_formula[name_cell].value)
@@ -240,7 +270,8 @@ class BudgetImporter:
             if amount_value in (None, ""):
                 current_group = name_value
                 continue
-            if row_number < first_data_row:
+            is_inflow_group = current_group in INFLOW_GROUP_NAMES
+            if row_number < first_data_row and not is_inflow_group:
                 continue
             if current_group is None:
                 continue
@@ -255,6 +286,7 @@ class BudgetImporter:
                     annual_target_milliunits=to_milliunits(amount_value),
                     due_month=None,
                     formula_text=formula_text,
+                    kind=_kind_for_group(current_group),
                 )
             )
         return rows
@@ -262,7 +294,10 @@ class BudgetImporter:
     def _parse_yearly_block(self, sheet_formula, sheet_cached) -> list[PlannedCategoryRow]:
         rows: list[PlannedCategoryRow] = []
         current_group: str | None = None
-        for row_number in range(2, sheet_formula.max_row + 1):
+        # Iterate from row 1 so a 'Yearly Income' header in D1 can register
+        # as a group. Without this, irregular inflows (Bonus, Tax Return,
+        # etc.) get filtered out and never reach the cascade.
+        for row_number in range(1, sheet_formula.max_row + 1):
             name_cell = f"D{row_number}"
             total_cell = f"E{row_number}"
             due_cell = f"F{row_number}"
@@ -296,6 +331,7 @@ class BudgetImporter:
                     annual_target_milliunits=to_milliunits(total_value),
                     due_month=parse_due_month(due_value) or parse_due_month(name_value),
                     formula_text=self._formula_text(sheet_formula[source_cell].value),
+                    kind=_kind_for_group(current_group),
                 )
             )
         return rows
@@ -339,6 +375,7 @@ class BudgetImporter:
                     annual_target_milliunits=to_milliunits(amount_value),
                     due_month=None,
                     formula_text=self._formula_text(sheet_formula[amount_cell].value),
+                    kind=_kind_for_group(current_group),
                 )
             )
         return rows
@@ -349,61 +386,170 @@ class BudgetImporter:
         sheet_cached,
         rows: list[PlannedCategoryRow],
     ) -> None:
-        totals = {
-            "monthly": sum(row.planned_milliunits for row in rows if row.block == "monthly"),
-            "annual": sum(
-                row.planned_milliunits
-                for row in rows
-                if row.block in {"annual", "one_time"}
-            ),
-            "stipends": sum(row.planned_milliunits for row in rows if row.block == "stipends"),
-            "savings": sum(row.planned_milliunits for row in rows if row.block == "savings"),
+        # Compare cached SUM cells against outflow rows only. Income rows
+        # under 'Monthly Income' / 'Yearly Income' groups live above the
+        # SUM range in the source sheet and so are not part of those totals.
+        outflow_rows = [row for row in rows if row.kind == "outflow"]
+        block_specs = {
+            "monthly": {
+                "row_blocks": {"monthly"},
+                "label_columns": ["A"],
+                "amount_columns": ["B"],
+                "legacy_cell": "B53",
+            },
+            "annual": {
+                "row_blocks": {"annual", "one_time"},
+                "label_columns": ["D", "E", "F"],
+                "amount_columns": ["E", "F", "G"],
+                "legacy_cell": "G53",
+            },
+            "stipends": {
+                "row_blocks": {"stipends"},
+                "label_columns": ["H", "I"],
+                "amount_columns": ["I", "J"],
+                "legacy_cell": "J53",
+            },
+            "savings": {
+                "row_blocks": {"savings"},
+                "label_columns": ["K", "L"],
+                "amount_columns": ["L", "M"],
+                "legacy_cell": "M53",
+            },
         }
-        expected = {
-            "monthly": to_milliunits(
-                self._required_total_value(
-                    sheet_formula,
-                    sheet_cached,
-                    label_columns=["A"],
-                    amount_columns=["B"],
-                    legacy_cell="B53",
+        mismatches: list[str] = []
+        for name, spec in block_specs.items():
+            block_rows = [row for row in outflow_rows if row.block in spec["row_blocks"]]
+            parsed_total = sum(row.planned_milliunits for row in block_rows)
+            total_info = self._total_cell_info(
+                sheet_formula,
+                sheet_cached,
+                label_columns=spec["label_columns"],
+                amount_columns=spec["amount_columns"],
+                legacy_cell=spec["legacy_cell"],
+            )
+            expected_total = to_milliunits(total_info.cached_value)
+            if abs(parsed_total - expected_total) <= self.TOTAL_TOLERANCE_MILLIUNITS:
+                continue
+            mismatches.append(
+                self._format_total_mismatch(
+                    block_name=name,
+                    parsed_total=parsed_total,
+                    expected_total=expected_total,
+                    total_info=total_info,
+                    block_rows=block_rows,
                 )
-            ),
-            "annual": to_milliunits(
-                self._required_total_value(
-                    sheet_formula,
-                    sheet_cached,
-                    label_columns=["D", "E", "F"],
-                    amount_columns=["E", "F", "G"],
-                    legacy_cell="G53",
-                )
-            ),
-            "stipends": to_milliunits(
-                self._required_total_value(
-                    sheet_formula,
-                    sheet_cached,
-                    label_columns=["H", "I"],
-                    amount_columns=["I", "J"],
-                    legacy_cell="J53",
-                )
-            ),
-            "savings": to_milliunits(
-                self._required_total_value(
-                    sheet_formula,
-                    sheet_cached,
-                    label_columns=["K", "L"],
-                    amount_columns=["L", "M"],
-                    legacy_cell="M53",
-                )
-            ),
-        }
-        mismatches = [
-            f"{name}: expected {expected[name]}, got {totals[name]}"
-            for name in totals
-            if abs(totals[name] - expected[name]) > self.TOTAL_TOLERANCE_MILLIUNITS
-        ]
+            )
         if mismatches:
-            raise DataIntegrityError("Budget totals do not match cached formulas: " + "; ".join(mismatches))
+            raise DataIntegrityError(
+                "Budget totals do not match cached formulas:\n  " + "\n  ".join(mismatches)
+            )
+
+    def _format_total_mismatch(
+        self,
+        *,
+        block_name: str,
+        parsed_total: int,
+        expected_total: int,
+        total_info: "_TotalCellInfo",
+        block_rows: list[PlannedCategoryRow],
+    ) -> str:
+        diff_milli = parsed_total - expected_total
+        sum_range = self._extract_sum_range(total_info.formula_text)
+        out_of_range = (
+            self._rows_outside_range(block_rows, sum_range) if sum_range else []
+        )
+        cached_dollars = total_info.cached_value
+        parsed_dollars = parsed_total / 1000
+        diff_dollars = diff_milli / 1000
+        formula_label = (
+            f"{total_info.cell_ref} {total_info.formula_text or '(no formula)'}"
+        )
+        msg = (
+            f"{block_name}: cached {formula_label} = ${cached_dollars:,.2f} "
+            f"vs parsed ${parsed_dollars:,.2f} "
+            f"(diff ${diff_dollars:+,.2f})."
+        )
+        if out_of_range:
+            details = "; ".join(
+                f"{row.source_cell} {row.group_name}/{row.category_name} "
+                f"(${row.planned_milliunits / 1000:,.2f}/mo)"
+                for row in out_of_range
+            )
+            msg += (
+                f" Parsed rows outside the SUM range: {details}. "
+                f"Fix: widen the SUM in {total_info.cell_ref} to include them, "
+                f"or move them out of the block column."
+            )
+        elif sum_range is None:
+            msg += " (Could not parse SUM range from the cached formula.)"
+        return msg
+
+    @staticmethod
+    def _extract_sum_range(formula: str | None) -> tuple[str, int, str, int] | None:
+        if not formula:
+            return None
+        match = _SUM_RANGE_PATTERN.search(formula)
+        if not match:
+            return None
+        start_col, start_row, end_col, end_row = match.groups()
+        try:
+            return start_col, int(start_row), end_col, int(end_row)
+        except ValueError:
+            return None
+
+    @staticmethod
+    def _rows_outside_range(
+        block_rows: list[PlannedCategoryRow],
+        sum_range: tuple[str, int, str, int],
+    ) -> list[PlannedCategoryRow]:
+        _, start_row, _, end_row = sum_range
+        offenders: list[PlannedCategoryRow] = []
+        for row in block_rows:
+            match = _SOURCE_CELL_PATTERN.match(row.source_cell or "")
+            if not match:
+                continue
+            row_number = int(match.group(2))
+            if row_number < start_row or row_number > end_row:
+                offenders.append(row)
+        return offenders
+
+    def _total_cell_info(
+        self,
+        sheet_formula,
+        sheet_cached,
+        *,
+        label_columns: list[str],
+        amount_columns: list[str],
+        legacy_cell: str,
+    ) -> "_TotalCellInfo":
+        for row_number in range(1, sheet_formula.max_row + 1):
+            if not any(
+                self._text_value(sheet_formula[f"{column}{row_number}"].value) == "Total"
+                for column in label_columns
+            ):
+                continue
+            for amount_column in amount_columns:
+                cell_ref = f"{amount_column}{row_number}"
+                formula_value = sheet_formula[cell_ref].value
+                cached_value = sheet_cached[cell_ref].value
+                if isinstance(formula_value, str) and formula_value.startswith("="):
+                    if cached_value is None:
+                        raise DataIntegrityError(
+                            f"Missing cached formula result in {cell_ref}."
+                        )
+                    return _TotalCellInfo(
+                        cached_value=cached_value,
+                        cell_ref=cell_ref,
+                        formula_text=formula_value,
+                    )
+        # Fall back to the legacy fixed cell.
+        cached = self._required_cached_value(sheet_formula, sheet_cached, legacy_cell)
+        formula = sheet_formula[legacy_cell].value
+        return _TotalCellInfo(
+            cached_value=cached,
+            cell_ref=legacy_cell,
+            formula_text=formula if isinstance(formula, str) else None,
+        )
 
     def _required_total_value(
         self,

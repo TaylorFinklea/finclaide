@@ -2,6 +2,17 @@
 
 > Architecture decision records. Append-only — one entry per decision.
 
+## [2026-05-10] Tithe rows compute from same-block inflows only
+
+**Context**: Planning now distinguishes inflow and outflow categories and can
+link an outflow row to a percentage of income via `tithe_percent`.
+**Decision**: A tithe-linked row recomputes from inflow rows in its own block
+only. Monthly tithe rows use monthly inflows; one-time or annual inflows
+require their own tithe row if the operator wants them automated.
+**Rationale**: This keeps recurring monthly cash-flow math predictable and
+does not turn irregular income into an implicit monthly obligation. The rule
+is deterministic, tested, and visible in the planning sheet helper text.
+
 ## [2026-05-10] Home Assistant add-on exposes a separate private API port for MCP
 
 **Context**: The add-on UI is served through Home Assistant ingress, but MCP

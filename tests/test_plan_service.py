@@ -377,3 +377,337 @@ def test_editor_writes_during_busy_import_do_not_deadlock(populated_app):
             },
         )
     assert result["category_name"] == "Phone"
+
+
+# --- inflow/outflow kind ------------------------------------------------
+
+
+def test_create_category_defaults_kind_to_outflow(populated_app):
+    service = _plan_service(populated_app)
+    plan_id = service.get_active_plan()["plan"]["id"]
+    created = service.create_category(
+        plan_id,
+        {
+            "group_name": "Bills",
+            "category_name": "Streaming",
+            "block": "monthly",
+            "planned_milliunits": 25000,
+        },
+    )
+    assert created["kind"] == "outflow"
+
+
+def test_create_category_with_kind_inflow_round_trips(populated_app):
+    service = _plan_service(populated_app)
+    plan_id = service.get_active_plan()["plan"]["id"]
+    created = service.create_category(
+        plan_id,
+        {
+            "group_name": "Monthly Income",
+            "category_name": "Side gig",
+            "block": "monthly",
+            "planned_milliunits": 200000,
+            "kind": "inflow",
+        },
+    )
+    assert created["kind"] == "inflow"
+    plan = service.get_active_plan()
+    fetched = next(
+        c for c in plan["blocks"]["monthly"] if c["category_name"] == "Side gig"
+    )
+    assert fetched["kind"] == "inflow"
+
+
+def test_create_category_rejects_invalid_kind(populated_app):
+    service = _plan_service(populated_app)
+    plan_id = service.get_active_plan()["plan"]["id"]
+    with pytest.raises(DataIntegrityError, match="kind"):
+        service.create_category(
+            plan_id,
+            {
+                "group_name": "Bills",
+                "category_name": "Bad",
+                "block": "monthly",
+                "kind": "neither",
+            },
+        )
+
+
+def test_update_category_can_flip_kind(populated_app):
+    service = _plan_service(populated_app)
+    plan = service.get_active_plan()
+    plan_id = plan["plan"]["id"]
+    target = plan["blocks"]["monthly"][0]
+    assert target["kind"] == "outflow"
+    updated = service.update_category(plan_id, target["id"], {"kind": "inflow"})
+    assert updated["kind"] == "inflow"
+    flipped_back = service.update_category(plan_id, target["id"], {"kind": "outflow"})
+    assert flipped_back["kind"] == "outflow"
+
+
+def test_kind_migration_backfills_income_groups(tmp_path: Path):
+    """A pre-2.5* database (no `kind` column) should gain the column on
+    Database.initialize() with rows in 'Monthly Income' / 'Yearly Income'
+    groups backfilled to 'inflow' and everything else 'outflow'."""
+    db_path = tmp_path / "pre_migration.db"
+    # Build a plan_categories table without `kind` to mirror the older schema.
+    raw = sqlite3.connect(db_path)
+    raw.executescript(
+        """
+        CREATE TABLE plans (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            plan_year INTEGER NOT NULL,
+            name TEXT NOT NULL,
+            status TEXT NOT NULL,
+            source TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            archived_at TEXT,
+            source_import_id INTEGER
+        );
+        CREATE TABLE plan_categories (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            plan_id INTEGER NOT NULL,
+            group_name TEXT NOT NULL,
+            category_name TEXT NOT NULL,
+            block TEXT NOT NULL,
+            planned_milliunits INTEGER NOT NULL DEFAULT 0,
+            annual_target_milliunits INTEGER NOT NULL DEFAULT 0,
+            due_month INTEGER,
+            notes TEXT,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        );
+        INSERT INTO plans VALUES (1, 2026, 'Test', 'active', 'imported',
+                                  '2026-01-01', '2026-01-01', NULL, NULL);
+        INSERT INTO plan_categories
+            (plan_id, group_name, category_name, block,
+             planned_milliunits, annual_target_milliunits, due_month, notes,
+             created_at, updated_at)
+        VALUES
+            (1, 'Monthly Income', 'Salary',  'monthly',  300000, 0, NULL, NULL,
+             '2026-01-01', '2026-01-01'),
+            (1, 'Yearly Income',  'Bonus',   'one_time', 100000, 0, NULL, NULL,
+             '2026-01-01', '2026-01-01'),
+            (1, 'Bills',          'Rent',    'monthly',  100000, 0, NULL, NULL,
+             '2026-01-01', '2026-01-01'),
+            (1, 'Stipends',       'Lunch',   'stipends',   5000, 0, NULL, NULL,
+             '2026-01-01', '2026-01-01');
+        """
+    )
+    raw.commit()
+    raw.close()
+
+    Database(db_path).initialize()
+
+    raw = sqlite3.connect(db_path)
+    raw.row_factory = sqlite3.Row
+    rows = {
+        row["category_name"]: row["kind"]
+        for row in raw.execute(
+            "SELECT category_name, kind FROM plan_categories"
+        )
+    }
+    raw.close()
+    assert rows["Salary"] == "inflow"
+    assert rows["Bonus"] == "inflow"
+    assert rows["Rent"] == "outflow"
+    assert rows["Lunch"] == "outflow"
+
+
+def test_setting_tithe_percent_recomputes_planned(populated_app):
+    """Setting `tithe_percent` on a row links its planned_milliunits to the
+    current total inflow. The planned amount snaps to the computed value as
+    soon as the percent is set."""
+    service = _plan_service(populated_app)
+    plan = service.get_active_plan()
+    plan_id = plan["plan"]["id"]
+    inflow = service.create_category(
+        plan_id,
+        {
+            "group_name": "Monthly Income",
+            "category_name": "Salary",
+            "block": "monthly",
+            "planned_milliunits": 1000000,  # $1,000
+            "kind": "inflow",
+        },
+    )
+    target = next(c for c in plan["blocks"]["monthly"] if c["category_name"] != "Rent")
+    # Pick any outflow row and link it to 10% of inflow.
+    target = plan["blocks"]["monthly"][0]
+    updated = service.update_category(
+        plan_id, target["id"], {"tithe_percent": 10.0}
+    )
+    assert updated["tithe_percent"] == 10.0
+    assert updated["planned_milliunits"] == 100000  # 10% of $1,000
+
+
+def test_inflow_change_recomputes_all_tithe_rows(populated_app):
+    """Updating any inflow row's planned_milliunits should refresh every
+    row that has a tithe_percent set."""
+    service = _plan_service(populated_app)
+    plan = service.get_active_plan()
+    plan_id = plan["plan"]["id"]
+    inflow = service.create_category(
+        plan_id,
+        {
+            "group_name": "Monthly Income",
+            "category_name": "Salary",
+            "block": "monthly",
+            "planned_milliunits": 1000000,
+            "kind": "inflow",
+        },
+    )
+    target = plan["blocks"]["monthly"][0]
+    service.update_category(plan_id, target["id"], {"tithe_percent": 10.0})
+    # Bump the inflow.
+    service.update_category(plan_id, inflow["id"], {"planned_milliunits": 2000000})
+    refreshed = service.get_active_plan()
+    flipped = next(
+        c for c in refreshed["blocks"]["monthly"] if c["id"] == target["id"]
+    )
+    assert flipped["planned_milliunits"] == 200000  # 10% of $2,000
+
+
+def test_clearing_tithe_percent_freezes_planned_value(populated_app):
+    """Setting tithe_percent back to None should stop auto-recomputing —
+    subsequent inflow changes leave the row's planned_milliunits alone."""
+    service = _plan_service(populated_app)
+    plan = service.get_active_plan()
+    plan_id = plan["plan"]["id"]
+    inflow = service.create_category(
+        plan_id,
+        {
+            "group_name": "Monthly Income",
+            "category_name": "Salary",
+            "block": "monthly",
+            "planned_milliunits": 1000000,
+            "kind": "inflow",
+        },
+    )
+    target = plan["blocks"]["monthly"][0]
+    service.update_category(plan_id, target["id"], {"tithe_percent": 10.0})
+    # Clear the link; planned should be preserved.
+    service.update_category(plan_id, target["id"], {"tithe_percent": None})
+    # Now bump inflow — target should NOT auto-update.
+    service.update_category(plan_id, inflow["id"], {"planned_milliunits": 2000000})
+    final = service.get_active_plan()
+    frozen = next(c for c in final["blocks"]["monthly"] if c["id"] == target["id"])
+    assert frozen["tithe_percent"] is None
+    assert frozen["planned_milliunits"] == 100000  # last computed value, not 200000
+
+
+def test_deleting_inflow_recomputes_tithes(populated_app):
+    service = _plan_service(populated_app)
+    plan = service.get_active_plan()
+    plan_id = plan["plan"]["id"]
+    inflow = service.create_category(
+        plan_id,
+        {
+            "group_name": "Monthly Income",
+            "category_name": "Salary",
+            "block": "monthly",
+            "planned_milliunits": 1000000,
+            "kind": "inflow",
+        },
+    )
+    target = plan["blocks"]["monthly"][0]
+    service.update_category(plan_id, target["id"], {"tithe_percent": 10.0})
+    service.delete_category(plan_id, inflow["id"])
+    final = service.get_active_plan()
+    rezeroed = next(c for c in final["blocks"]["monthly"] if c["id"] == target["id"])
+    assert rezeroed["planned_milliunits"] == 0  # no inflow → 10% of $0 = $0
+
+
+def test_tithe_only_tithes_same_block_inflows(populated_app):
+    """A tithe row computes from inflows IN ITS OWN BLOCK only — irregular
+    yearly income (block=one_time) should not affect a monthly tithe. The
+    user tithes monthly paychecks here; yearly inflows are tithed manually
+    when they actually arrive."""
+    service = _plan_service(populated_app)
+    plan = service.get_active_plan()
+    plan_id = plan["plan"]["id"]
+    # Monthly inflow (paycheck-like).
+    monthly_inflow = service.create_category(
+        plan_id,
+        {
+            "group_name": "Monthly Income",
+            "category_name": "Salary",
+            "block": "monthly",
+            "planned_milliunits": 1000000,  # $1,000
+            "kind": "inflow",
+        },
+    )
+    # One-time inflow (yearly income, e.g. tax refund).
+    yearly_inflow = service.create_category(
+        plan_id,
+        {
+            "group_name": "Yearly Income",
+            "category_name": "Tax Return",
+            "block": "one_time",
+            "planned_milliunits": 500000,  # $500/mo equivalent
+            "kind": "inflow",
+        },
+    )
+    # Monthly tithe row — should pick up monthly inflow ONLY.
+    target = plan["blocks"]["monthly"][0]
+    updated = service.update_category(
+        plan_id, target["id"], {"tithe_percent": 10.0}
+    )
+    assert updated["planned_milliunits"] == 100000  # 10% of $1,000 monthly only
+    # Bumping the yearly inflow should NOT change the monthly tithe.
+    service.update_category(
+        plan_id, yearly_inflow["id"], {"planned_milliunits": 5000000}
+    )
+    refreshed = service.get_active_plan()
+    isolated = next(
+        c for c in refreshed["blocks"]["monthly"] if c["id"] == target["id"]
+    )
+    assert isolated["planned_milliunits"] == 100000  # still 10% of monthly inflow
+
+
+def test_tithe_percent_rejects_out_of_range(populated_app):
+    service = _plan_service(populated_app)
+    plan = service.get_active_plan()
+    plan_id = plan["plan"]["id"]
+    target = plan["blocks"]["monthly"][0]
+    with pytest.raises(DataIntegrityError, match="tithe_percent"):
+        service.update_category(plan_id, target["id"], {"tithe_percent": 150.0})
+    with pytest.raises(DataIntegrityError, match="tithe_percent"):
+        service.update_category(plan_id, target["id"], {"tithe_percent": -1})
+
+
+def test_kind_migration_is_idempotent(tmp_path: Path):
+    """Running initialize() twice on a freshly-migrated db must not error,
+    and must preserve the kind values set by user edits made in between."""
+    db = Database(tmp_path / "f.db")
+    db.initialize()
+    with db.connect() as connection:
+        connection.execute(
+            """
+            INSERT INTO plans(plan_year, name, status, source,
+                              created_at, updated_at)
+            VALUES (2026, 'Test', 'active', 'imported',
+                    '2026-01-01', '2026-01-01')
+            """
+        )
+        plan_id = connection.execute("SELECT last_insert_rowid() AS id").fetchone()["id"]
+        connection.execute(
+            """
+            INSERT INTO plan_categories(plan_id, group_name, category_name,
+                                        block, kind, planned_milliunits,
+                                        annual_target_milliunits, due_month,
+                                        notes, created_at, updated_at)
+            VALUES (?, 'Bills', 'Manual income', 'monthly', 'inflow',
+                    50000, 0, NULL, NULL, '2026-01-01', '2026-01-01')
+            """,
+            (plan_id,),
+        )
+
+    db.initialize()  # second pass — must be a no-op for kind values
+
+    with db.connect() as connection:
+        kind = connection.execute(
+            "SELECT kind FROM plan_categories WHERE category_name = 'Manual income'"
+        ).fetchone()["kind"]
+    assert kind == "inflow"
