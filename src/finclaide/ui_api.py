@@ -84,6 +84,33 @@ def reconcile_preview():
     return jsonify(_container().reconcile.preview())
 
 
+@ui_api.post("/reconcile/apply-plan-to-ynab")
+@require_ui_write_request
+def reconcile_apply_plan_to_ynab():
+    body = request.get_json(silent=True) or {}
+    operation = body.get("operation")
+    target = body.get("target") or {}
+    source = body.get("source") or {}
+    if operation not in {"create_category", "rename_category"}:
+        return jsonify({"error": "operation must be create_category or rename_category"}), 400
+    if not target.get("group_name") or not target.get("category_name"):
+        return jsonify({"error": "target requires group_name and category_name"}), 400
+    if operation == "rename_category" and (
+        not source.get("group_name") or not source.get("category_name")
+    ):
+        return jsonify({"error": "source requires group_name and category_name"}), 400
+    container = _container()
+    with container.operation_lock.guard("reconcile_remediation"):
+        result = container.reconcile.apply_plan_to_ynab(
+            operation=operation,
+            group_name=target["group_name"],
+            category_name=target["category_name"],
+            source_group_name=source.get("group_name"),
+            source_category_name=source.get("category_name"),
+        )
+    return jsonify(result)
+
+
 @ui_api.get("/summary")
 @require_same_origin
 def summary():

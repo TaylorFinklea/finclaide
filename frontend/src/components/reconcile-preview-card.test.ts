@@ -11,6 +11,7 @@ const apiMocks = vi.hoisted(() => ({
   createPlanCategory: vi.fn(),
   updatePlanCategory: vi.fn(),
   deletePlanCategory: vi.fn(),
+  applyPlanToYnab: vi.fn(),
 }))
 
 vi.mock('$lib/api', async () => {
@@ -102,7 +103,7 @@ describe('ReconcilePreviewCard actions', () => {
     for (const mock of Object.values(apiMocks)) mock.mockReset()
   })
 
-  it('renders Rename button for an extra_in_ynab item with a high-confidence suggestion', () => {
+  it('renders source-choice buttons for an extra_in_ynab item with a high-confidence suggestion', () => {
     const preview = previewWith({
       extra: [
         {
@@ -120,12 +121,13 @@ describe('ReconcilePreviewCard actions', () => {
     renderPage(ReconcilePreviewCard as never, {
       pageProps: { preview, plan: PLAN, isLoading: false, isError: false, error: null } as never,
     })
-    expect(screen.getByRole('button', { name: /Rename/i })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /Use YNAB/i })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /Use plan/i })).toBeInTheDocument()
     expect(screen.getByText(/22nd - Claude/i)).toBeInTheDocument()
     expect(screen.getByText(/95% confidence/i)).toBeInTheDocument()
   })
 
-  it('clicking Rename calls updatePlanCategory with the matched plan id', async () => {
+  it('clicking Use YNAB calls updatePlanCategory with the matched plan id', async () => {
     apiMocks.updatePlanCategory.mockResolvedValue({})
     const preview = previewWith({
       extra: [
@@ -144,13 +146,50 @@ describe('ReconcilePreviewCard actions', () => {
     renderPage(ReconcilePreviewCard as never, {
       pageProps: { preview, plan: PLAN, isLoading: false, isError: false, error: null } as never,
     })
-    await userEvent.click(screen.getByRole('button', { name: /Rename/i }))
+    await userEvent.click(screen.getByRole('button', { name: /Use YNAB/i }))
     await waitFor(() => {
       expect(apiMocks.updatePlanCategory).toHaveBeenCalledTimes(1)
     })
     const [categoryId, body] = apiMocks.updatePlanCategory.mock.calls[0]
     expect(categoryId).toBe(100)
     expect(body.rename).toEqual({ group_name: 'Bills', category_name: '23rd - Claude' })
+  })
+
+  it('clicking Use plan asks the backend to rename the YNAB category', async () => {
+    apiMocks.applyPlanToYnab.mockResolvedValue({
+      target: 'ynab',
+      operation: 'rename_category',
+      action: {},
+      ynab_sync: {},
+      reconcile: { mismatch_count: 0 },
+      reconcile_error: null,
+    })
+    const preview = previewWith({
+      extra: [
+        {
+          group_name: 'Bills',
+          category_name: '23rd - Claude',
+          suggested_match: {
+            group_name: 'Bills',
+            category_name: '22nd - Claude',
+            confidence: 0.95,
+            plan_category_id: 100,
+          },
+        },
+      ],
+    })
+    renderPage(ReconcilePreviewCard as never, {
+      pageProps: { preview, plan: PLAN, isLoading: false, isError: false, error: null } as never,
+    })
+    await userEvent.click(screen.getByRole('button', { name: /Use plan/i }))
+    await waitFor(() => {
+      expect(apiMocks.applyPlanToYnab).toHaveBeenCalledTimes(1)
+    })
+    expect(apiMocks.applyPlanToYnab.mock.calls[0][0]).toEqual({
+      operation: 'rename_category',
+      source: { group_name: 'Bills', category_name: '23rd - Claude' },
+      target: { group_name: 'Bills', category_name: '22nd - Claude' },
+    })
   })
 
   it('renders Add to plan for an extra item without a suggestion', () => {
@@ -166,7 +205,7 @@ describe('ReconcilePreviewCard actions', () => {
     renderPage(ReconcilePreviewCard as never, {
       pageProps: { preview, plan: PLAN, isLoading: false, isError: false, error: null } as never,
     })
-    expect(screen.queryByRole('button', { name: /Rename/i })).toBeNull()
+    expect(screen.queryByRole('button', { name: /Use YNAB/i })).toBeNull()
     expect(screen.getByRole('button', { name: /Add to plan/i })).toBeInTheDocument()
   })
 
@@ -220,6 +259,37 @@ describe('ReconcilePreviewCard actions', () => {
     const [categoryId, planId] = apiMocks.deletePlanCategory.mock.calls[0]
     expect(categoryId).toBe(101)
     expect(planId).toBe(4)
+  })
+
+  it('clicking Create in YNAB asks the backend to create the missing category', async () => {
+    apiMocks.applyPlanToYnab.mockResolvedValue({
+      target: 'ynab',
+      operation: 'create_category',
+      action: {},
+      ynab_sync: {},
+      reconcile: { mismatch_count: 0 },
+      reconcile_error: null,
+    })
+    const preview = previewWith({
+      missing: [
+        {
+          group_name: 'Bills',
+          category_name: 'Phone',
+          suggested_match: null,
+        },
+      ],
+    })
+    renderPage(ReconcilePreviewCard as never, {
+      pageProps: { preview, plan: PLAN, isLoading: false, isError: false, error: null } as never,
+    })
+    await userEvent.click(screen.getByRole('button', { name: /Create in YNAB/i }))
+    await waitFor(() => {
+      expect(apiMocks.applyPlanToYnab).toHaveBeenCalledTimes(1)
+    })
+    expect(apiMocks.applyPlanToYnab.mock.calls[0][0]).toEqual({
+      operation: 'create_category',
+      target: { group_name: 'Bills', category_name: 'Phone' },
+    })
   })
 
   it('clicking Delete on a non-zero plan category opens the confirm modal', async () => {

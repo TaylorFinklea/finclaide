@@ -10,7 +10,7 @@ from typing import Any
 
 from finclaide.config import AppConfig
 from finclaide.database import Database, utc_now
-from finclaide.errors import DataIntegrityError
+from finclaide.errors import ConfigError, DataIntegrityError
 from finclaide.locking import OperationLock
 
 
@@ -105,6 +105,7 @@ def _previous_month_label(month: str) -> str:
 @dataclass
 class ReconciliationService:
     database: Database
+    ynab_sync: Any | None = None
 
     def preview(self) -> dict[str, Any]:
         with self.database.connect() as connection:
@@ -338,6 +339,215 @@ class ReconciliationService:
                 finished_at=finished_at or utc_now(),
             )
             raise
+
+    def apply_plan_to_ynab(
+        self,
+        *,
+        operation: str,
+        group_name: str,
+        category_name: str,
+        source_group_name: str | None = None,
+        source_category_name: str | None = None,
+    ) -> dict[str, Any]:
+        """Apply the active plan's category shape to YNAB, then refresh.
+
+        Supported operations:
+        - create_category: create the plan category in YNAB.
+        - rename_category: rename/move an existing YNAB category to match
+          the plan category.
+        """
+        started_at = utc_now()
+        try:
+            if self.ynab_sync is None or self.ynab_sync.client is None:
+                raise ConfigError("YNAB_ACCESS_TOKEN must be configured before remediating YNAB.")
+            plan_id = self.ynab_sync.config.ynab_plan_id
+            if not plan_id:
+                raise ConfigError("YNAB_PLAN_ID must be configured before remediating YNAB.")
+
+            with self.database.connect() as connection:
+                plan_row = connection.execute(
+                    """
+                    SELECT pc.id, pc.group_name, pc.category_name
+                    FROM plan_categories pc
+                    JOIN plans p ON p.id = pc.plan_id
+                    WHERE p.status = 'active'
+                      AND pc.group_name = ?
+                      AND pc.category_name = ?
+                    LIMIT 1
+                    """,
+                    (group_name, category_name),
+                ).fetchone()
+                if plan_row is None:
+                    raise DataIntegrityError(
+                        f"Cannot apply plan to YNAB: '{group_name} / {category_name}' is not in the active plan."
+                    )
+
+                existing_target = self._ynab_category(connection, group_name, category_name)
+                target_group = self._ynab_group(connection, group_name)
+
+                if operation == "rename_category":
+                    if source_group_name is None or source_category_name is None:
+                        raise DataIntegrityError(
+                            "rename_category requires source_group_name and source_category_name."
+                        )
+                    source = self._ynab_category(
+                        connection,
+                        source_group_name,
+                        source_category_name,
+                    )
+                    if source is None:
+                        raise DataIntegrityError(
+                            f"Cannot rename YNAB category: '{source_group_name} / {source_category_name}' was not found."
+                        )
+                    if existing_target is not None and existing_target["id"] != source["id"]:
+                        raise DataIntegrityError(
+                            f"Cannot rename YNAB category: '{group_name} / {category_name}' already exists in YNAB."
+                        )
+                    source_category_id = str(source["id"])
+                elif operation == "create_category":
+                    source_category_id = None
+                    if existing_target is not None:
+                        return self._finish_ynab_remediation(
+                            started_at=started_at,
+                            operation=operation,
+                            action={
+                                "kind": "already_exists",
+                                "group_name": group_name,
+                                "category_name": category_name,
+                            },
+                        )
+                else:
+                    raise DataIntegrityError(f"Unsupported reconcile remediation operation: {operation}")
+
+            client = self.ynab_sync.client
+            if target_group is None:
+                target_group = client.create_category_group(plan_id, group_name)
+            target_group_id = str(target_group["id"])
+
+            if operation == "rename_category":
+                assert source_category_id is not None
+                ynab_category = client.update_category(
+                    plan_id,
+                    source_category_id,
+                    name=category_name,
+                    category_group_id=target_group_id,
+                )
+                action = {
+                    "kind": "renamed_category",
+                    "from": {
+                        "group_name": source_group_name,
+                        "category_name": source_category_name,
+                    },
+                    "to": {
+                        "group_name": group_name,
+                        "category_name": category_name,
+                    },
+                    "ynab_category_id": ynab_category.get("id", source_category_id),
+                    "ynab_group_id": target_group_id,
+                }
+            else:
+                ynab_category = client.create_category(
+                    plan_id,
+                    name=category_name,
+                    category_group_id=target_group_id,
+                )
+                action = {
+                    "kind": "created_category",
+                    "group_name": group_name,
+                    "category_name": category_name,
+                    "ynab_category_id": ynab_category.get("id"),
+                    "ynab_group_id": target_group_id,
+                }
+
+            return self._finish_ynab_remediation(
+                started_at=started_at,
+                operation=operation,
+                action=action,
+            )
+        except Exception as error:
+            self.database.record_run(
+                source="reconcile_remediation",
+                status="failed",
+                details={
+                    "target": "ynab",
+                    "operation": operation,
+                    "group_name": group_name,
+                    "category_name": category_name,
+                    "error": str(error),
+                },
+                started_at=started_at,
+                finished_at=utc_now(),
+            )
+            raise
+
+    def _finish_ynab_remediation(
+        self,
+        *,
+        started_at: str,
+        operation: str,
+        action: dict[str, Any],
+    ) -> dict[str, Any]:
+        if self.ynab_sync is None:
+            raise ConfigError("YNAB sync service is not configured.")
+        sync_result = self.ynab_sync.sync()
+        reconcile_result: dict[str, Any] | None = None
+        reconcile_error: dict[str, Any] | None = None
+        try:
+            reconcile_result = self.reconcile()
+        except DataIntegrityError as error:
+            reconcile_error = {"kind": "application_error", "message": str(error)}
+
+        payload = {
+            "target": "ynab",
+            "operation": operation,
+            "action": action,
+            "ynab_sync": sync_result,
+            "reconcile": reconcile_result,
+            "reconcile_error": reconcile_error,
+        }
+        self.database.record_run(
+            source="reconcile_remediation",
+            status="success",
+            details=payload,
+            started_at=started_at,
+            finished_at=utc_now(),
+        )
+        return payload
+
+    def _ynab_group(self, connection: Any, group_name: str) -> Any | None:
+        return connection.execute(
+            """
+            SELECT id, name
+            FROM category_groups
+            WHERE deleted = 0
+              AND hidden = 0
+              AND name = ?
+            LIMIT 1
+            """,
+            (group_name,),
+        ).fetchone()
+
+    def _ynab_category(
+        self,
+        connection: Any,
+        group_name: str,
+        category_name: str,
+    ) -> Any | None:
+        return connection.execute(
+            """
+            SELECT c.id, c.group_id, c.group_name, c.name
+            FROM categories c
+            JOIN category_groups g ON g.id = c.group_id
+            WHERE c.deleted = 0
+              AND c.hidden = 0
+              AND g.deleted = 0
+              AND g.hidden = 0
+              AND c.group_name = ?
+              AND c.name = ?
+            LIMIT 1
+            """,
+            (group_name, category_name),
+        ).fetchone()
 
 
 @dataclass

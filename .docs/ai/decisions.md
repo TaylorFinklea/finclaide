@@ -2,6 +2,19 @@
 
 > Architecture decision records. Append-only — one entry per decision.
 
+## [2026-05-10] Reconcile remediation can write YNAB, but not delete it
+
+**Context**: Reconcile preview already shows exact category-name mismatches
+and can repair the in-app plan. Operator asked to choose which source wins
+and have the app apply the fix through YNAB / Sheets connections.
+**Decision**: Add YNAB-side create and rename remediation, but do not add
+delete/hide for unmatched YNAB-only categories in this slice. After each
+YNAB write, sync the YNAB mirror and attempt reconcile. Sheets remains a
+publish/export artifact, not a reconcile-time mutation target.
+**Rationale**: Create/rename are reversible enough and map directly to exact
+match remediation. Deleting or hiding YNAB categories can affect historical
+transactions and budget behavior, so it needs a separate explicit design.
+
 ## [2026-04-04] Tiered backlog with Codex as tier3_owner
 
 **Context**: Setting up standardized AI handoff docs across repos.

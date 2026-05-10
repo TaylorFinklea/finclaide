@@ -34,6 +34,7 @@ def create_app(
     database.initialize()
     operation_lock = OperationLock()
     ynab_client = YNABClient(config.ynab_access_token, transport=ynab_transport) if config.ynab_access_token else None
+    ynab_sync = YNABSyncService(config=config, database=database, client=ynab_client)
 
     services = ServiceContainer(
         config=config,
@@ -44,8 +45,8 @@ def create_app(
             transport=budget_transport,
             access_token_provider=budget_access_token_provider,
         ),
-        ynab_sync=YNABSyncService(config=config, database=database, client=ynab_client),
-        reconcile=ReconciliationService(database=database),
+        ynab_sync=ynab_sync,
+        reconcile=ReconciliationService(database=database, ynab_sync=ynab_sync),
         reports=ReportService(config=config, database=database, operation_lock=operation_lock),
         analytics=AnalyticsService(config=config, database=database, operation_lock=operation_lock),
         review=None,

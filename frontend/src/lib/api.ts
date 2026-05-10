@@ -425,6 +425,45 @@ export async function getReconcilePreview() {
   return requestJson(withBasePath('/ui-api/reconcile/preview'), ReconcilePreviewSchema)
 }
 
+export const ReconcileApplyPlanToYnabResponseSchema = z.object({
+  target: z.literal('ynab'),
+  operation: z.enum(['create_category', 'rename_category']),
+  action: z.record(z.string(), z.any()),
+  ynab_sync: z.record(z.string(), z.any()),
+  reconcile: z.record(z.string(), z.any()).nullable(),
+  reconcile_error: z
+    .object({
+      kind: z.string(),
+      message: z.string(),
+    })
+    .nullable(),
+})
+
+export type ReconcileApplyPlanToYnabResponse = z.infer<
+  typeof ReconcileApplyPlanToYnabResponseSchema
+>
+
+export type ApplyPlanToYnabInput = {
+  operation: 'create_category' | 'rename_category'
+  target: { group_name: string; category_name: string }
+  source?: { group_name: string; category_name: string }
+}
+
+export async function applyPlanToYnab(input: ApplyPlanToYnabInput) {
+  return requestJson(
+    withBasePath('/ui-api/reconcile/apply-plan-to-ynab'),
+    ReconcileApplyPlanToYnabResponseSchema,
+    {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Finclaide-UI': '1',
+      },
+      body: JSON.stringify(input),
+    },
+  )
+}
+
 export type TransactionsParams = {
   since?: string
   until?: string

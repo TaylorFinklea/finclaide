@@ -27,6 +27,7 @@ def app_factory(tmp_path: Path):
         google_sheets_file_id: str | None = None,
         categories_fixture: str = "categories.json",
         transactions_fixture: str = "transactions_initial.json",
+        ynab_transport: httpx.BaseTransport | None = None,
         budget_transport: httpx.BaseTransport | None = None,
         budget_access_token_provider=None,
         scheduled_refresh_enabled: bool = False,
@@ -51,7 +52,8 @@ def app_factory(tmp_path: Path):
                 "host": "127.0.0.1",
                 "port": 8050,
             },
-            ynab_transport=make_transport(
+            ynab_transport=ynab_transport
+            or make_transport(
                 categories_fixture=categories_fixture,
                 transactions_fixture=transactions_fixture,
             ),

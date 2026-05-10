@@ -139,8 +139,10 @@ Goal: app becomes canonical for the plan; spreadsheet is an exported artifact.
 - [ ] Standalone pages for `analytics/trends`, `projection`, `anomalies`,
       `recommendations`, `aggregate` — currently consumed only by the weekly
       review composer.
-- [ ] Reconcile **suggested mappings** (follow-up to Phase 1 preview) —
-      ranked rename candidates with explicit confirm; no silent aliasing.
+- [x] Reconcile **suggested mappings** (follow-up to Phase 1 preview) —
+      ranked rename candidates with explicit source-choice remediation;
+      plan-side fixes stay local, plan-wins fixes can create/rename YNAB
+      categories and then sync/reconcile. No silent aliasing.
 - [ ] Configurable thresholds: replace scattered magic numbers
       (`analytics.py:185, 467, 609, 666, 682-683`; `services.py:656, 668,
       830, 866, 872, 1051`) with a single configurable `THRESHOLDS` source.

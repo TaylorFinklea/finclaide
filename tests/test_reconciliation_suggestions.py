@@ -7,11 +7,15 @@ unicode replacement chars dropped, case-folded). Same-group matches
 get a +0.1 ratio bonus."""
 from __future__ import annotations
 
+import json
+from copy import deepcopy
 from pathlib import Path
 
+import httpx
 import pytest
 
 from finclaide.services import _normalize_for_match, _score_match
+from tests.support import load_fixture
 from tests.workbook_builder import build_budget_workbook
 
 
@@ -64,6 +68,88 @@ def _seed_ynab_category(
             """,
             (cat_id, group_id, group_name, name),
         )
+
+
+class StatefulYnabTransport(httpx.MockTransport):
+    def __init__(self) -> None:
+        self.plan = load_fixture("plan.json")
+        self.accounts = load_fixture("accounts.json")
+        self.transactions = load_fixture("transactions_initial.json")
+        self.categories = deepcopy(load_fixture("categories.json"))
+        self.requests: list[httpx.Request] = []
+        super().__init__(self._handler)
+
+    def _handler(self, request: httpx.Request) -> httpx.Response:
+        self.requests.append(request)
+        path = request.url.path
+        if path == "/v1/plans/plan-123":
+            return httpx.Response(200, json=self.plan)
+        if path == "/v1/plans/plan-123/accounts":
+            return httpx.Response(200, json=self.accounts)
+        if path == "/v1/plans/plan-123/categories" and request.method == "GET":
+            return httpx.Response(200, json=self.categories)
+        if path == "/v1/plans/plan-123/transactions":
+            return httpx.Response(200, json=self.transactions)
+        if path == "/v1/plans/plan-123/categories" and request.method == "POST":
+            body = request.read()
+            payload = json.loads(body)
+            category = payload["category"]
+            group = self._group_by_id(category["category_group_id"])
+            created = {
+                "id": f"cat-created-{len(group['categories']) + 1}",
+                "name": category["name"],
+                "hidden": False,
+                "deleted": False,
+                "balance": 0,
+            }
+            group["categories"].append(created)
+            return httpx.Response(201, json={"data": {"category": created}})
+        if path == "/v1/plans/plan-123/category_groups" and request.method == "POST":
+            body = request.read()
+            payload = json.loads(body)
+            created = {
+                "id": f"grp-created-{len(self.categories['data']['category_groups']) + 1}",
+                "name": payload["category_group"]["name"],
+                "hidden": False,
+                "deleted": False,
+                "categories": [],
+            }
+            self.categories["data"]["category_groups"].append(created)
+            return httpx.Response(201, json={"data": {"category_group": created}})
+        if path.startswith("/v1/plans/plan-123/categories/") and request.method == "PATCH":
+            category_id = path.rsplit("/", 1)[1]
+            body = request.read()
+            payload = json.loads(body)
+            updates = payload["category"]
+            category = self._category_by_id(category_id)
+            target_group = self._group_by_id(updates["category_group_id"])
+            current_group = self._group_for_category(category_id)
+            if current_group["id"] != target_group["id"]:
+                current_group["categories"].remove(category)
+                target_group["categories"].append(category)
+            category["name"] = updates["name"]
+            return httpx.Response(200, json={"data": {"category": category}})
+        return httpx.Response(404, json={"error": "not_found", "path": path})
+
+    def _group_by_id(self, group_id: str) -> dict:
+        for group in self.categories["data"]["category_groups"]:
+            if group["id"] == group_id:
+                return group
+        raise AssertionError(f"group not found: {group_id}")
+
+    def _category_by_id(self, category_id: str) -> dict:
+        for group in self.categories["data"]["category_groups"]:
+            for category in group["categories"]:
+                if category["id"] == category_id:
+                    return category
+        raise AssertionError(f"category not found: {category_id}")
+
+    def _group_for_category(self, category_id: str) -> dict:
+        for group in self.categories["data"]["category_groups"]:
+            for category in group["categories"]:
+                if category["id"] == category_id:
+                    return group
+        raise AssertionError(f"category group not found: {category_id}")
 
 
 # --- normalization + scoring (pure unit) ----------------------------------
@@ -249,3 +335,98 @@ def test_missing_in_ynab_carries_suggestion_pointing_at_ynab_name(
     # not at a plan id (the row's own id is implicit).
     assert suggestion["category_name"] == "Vacation"
     assert suggestion["plan_category_id"] is None
+
+
+def test_apply_plan_to_ynab_renames_suggested_ynab_category(
+    app_factory, ui_headers, tmp_path: Path,
+):
+    workbook = build_budget_workbook(tmp_path / "Budget.xlsx")
+    transport = StatefulYnabTransport()
+    app = app_factory(workbook_path=workbook, ynab_transport=transport)
+    client = app.test_client()
+    services = app.extensions["finclaide"]
+    _seed(client, {"Authorization": "Bearer test-token"})
+
+    _rename_plan_category_via_db(
+        services.database,
+        from_group="Yearly",
+        from_name="Vacation",
+        to_group="Yearly",
+        to_name="Vaction",
+    )
+
+    response = client.post(
+        "/ui-api/reconcile/apply-plan-to-ynab",
+        headers=ui_headers,
+        json={
+            "operation": "rename_category",
+            "source": {"group_name": "Yearly", "category_name": "Vacation"},
+            "target": {"group_name": "Yearly", "category_name": "Vaction"},
+        },
+    )
+
+    payload = response.get_json()
+    patch_request = next(
+        request
+        for request in transport.requests
+        if request.method == "PATCH"
+        and request.url.path == "/v1/plans/plan-123/categories/cat-vacation"
+    )
+    assert response.status_code == 200
+    assert payload["action"]["kind"] == "renamed_category"
+    assert payload["reconcile"]["mismatch_count"] == 0
+    assert json.loads(patch_request.content)["category"] == {
+        "name": "Vaction",
+        "category_group_id": "grp-yearly",
+    }
+
+
+def test_apply_plan_to_ynab_creates_missing_ynab_category(
+    app_factory, ui_headers, tmp_path: Path,
+):
+    workbook = build_budget_workbook(tmp_path / "Budget.xlsx")
+    transport = StatefulYnabTransport()
+    app = app_factory(workbook_path=workbook, ynab_transport=transport)
+    client = app.test_client()
+    _seed(client, {"Authorization": "Bearer test-token"})
+
+    active_plan = client.get("/ui-api/plan/active").get_json()
+    client.post(
+        "/ui-api/plan/categories",
+        headers=ui_headers,
+        json={
+            "plan_id": active_plan["plan"]["id"],
+            "group_name": "Expenses",
+            "category_name": "Homeschool",
+            "block": "monthly",
+            "kind": "outflow",
+            "planned_milliunits": 0,
+            "annual_target_milliunits": 0,
+            "due_month": None,
+            "notes": None,
+        },
+    )
+
+    response = client.post(
+        "/ui-api/reconcile/apply-plan-to-ynab",
+        headers=ui_headers,
+        json={
+            "operation": "create_category",
+            "target": {"group_name": "Expenses", "category_name": "Homeschool"},
+        },
+    )
+
+    payload = response.get_json()
+    post_request = next(
+        request
+        for request in transport.requests
+        if request.method == "POST"
+        and request.url.path == "/v1/plans/plan-123/categories"
+    )
+    assert response.status_code == 200
+    assert payload["action"]["kind"] == "created_category"
+    assert payload["reconcile"]["mismatch_count"] == 0
+    assert json.loads(post_request.content)["category"] == {
+        "name": "Homeschool",
+        "category_group_id": "grp-expenses",
+    }

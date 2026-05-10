@@ -1,7 +1,7 @@
 <script lang="ts">
   import { Dialog as DialogPrimitive } from 'bits-ui'
   import { createMutation, useQueryClient } from '@tanstack/svelte-query'
-  import { LoaderCircle, Plus, ScanSearch, Trash2, Wand2 } from 'lucide-svelte'
+  import { CloudUpload, LoaderCircle, Plus, ScanSearch, Trash2, Wand2 } from 'lucide-svelte'
   import { toast } from 'svelte-sonner'
 
   import Button from '$components/ui/button.svelte'
@@ -19,6 +19,7 @@
     createPlanCategory,
     deletePlanCategory,
     getErrorMessage,
+    applyPlanToYnab,
     updatePlanCategory,
     type ActivePlanResponse,
     type PlanCategory,
@@ -152,8 +153,24 @@
     onError: (e) => toast.error(`Delete failed: ${getErrorMessage(e)}`),
   })
 
+  const applyPlanToYnabMutation = createMutation({
+    mutationFn: applyPlanToYnab,
+    onSuccess: async (data) => {
+      if (data.reconcile_error) {
+        toast.success(`Updated YNAB. ${data.reconcile_error.message}`)
+      } else {
+        toast.success('Updated YNAB and reconcile now passes.')
+      }
+      await invalidateAll()
+    },
+    onError: (e) => toast.error(`YNAB update failed: ${getErrorMessage(e)}`),
+  })
+
   let busy = $derived(
-    $renameMutation.isPending || $addMutation.isPending || $deleteMutation.isPending,
+    $renameMutation.isPending ||
+      $addMutation.isPending ||
+      $deleteMutation.isPending ||
+      $applyPlanToYnabMutation.isPending,
   )
 
   // ------- coalesce reciprocal pairs --------------------------------------
@@ -194,6 +211,23 @@
 
   function handleAdd(row: ReconcilePreviewEntry) {
     $addMutation.mutate({ group: row.group_name, name: row.category_name })
+  }
+
+  function handleUsePlanForRename(row: ReconcilePreviewEntry) {
+    const sm = row.suggested_match
+    if (!sm) return
+    $applyPlanToYnabMutation.mutate({
+      operation: 'rename_category',
+      source: { group_name: row.group_name, category_name: row.category_name },
+      target: { group_name: sm.group_name, category_name: sm.category_name },
+    })
+  }
+
+  function handleCreateInYnab(row: ReconcilePreviewEntry) {
+    $applyPlanToYnabMutation.mutate({
+      operation: 'create_category',
+      target: { group_name: row.group_name, category_name: row.category_name },
+    })
   }
 
   function handleDelete(row: ReconcilePreviewEntry) {
@@ -308,7 +342,16 @@
                         onclick={() => handleRename(row)}
                       >
                         {#if $renameMutation.isPending}<LoaderCircle class="h-3.5 w-3.5 animate-spin" />{:else}<Wand2 class="h-3.5 w-3.5" />{/if}
-                        Rename
+                        Use YNAB
+                      </Button>
+                      <Button
+                        variant="outline"
+                        class="border-cyan-300/30 text-cyan-50 hover:bg-cyan-500/10"
+                        disabled={busy || !plan}
+                        onclick={() => handleUsePlanForRename(row)}
+                      >
+                        {#if $applyPlanToYnabMutation.isPending}<LoaderCircle class="h-3.5 w-3.5 animate-spin" />{:else}<CloudUpload class="h-3.5 w-3.5" />{/if}
+                        Use plan
                       </Button>
                     {/if}
                     <Button
@@ -355,6 +398,15 @@
                 >
                   {#if $deleteMutation.isPending}<LoaderCircle class="h-3.5 w-3.5 animate-spin" />{:else}<Trash2 class="h-3.5 w-3.5" />{/if}
                   Delete from plan
+                </Button>
+                <Button
+                  variant="outline"
+                  class="border-cyan-300/30 text-cyan-50 hover:bg-cyan-500/10"
+                  disabled={busy || !plan}
+                  onclick={() => handleCreateInYnab(row)}
+                >
+                  {#if $applyPlanToYnabMutation.isPending}<LoaderCircle class="h-3.5 w-3.5 animate-spin" />{:else}<CloudUpload class="h-3.5 w-3.5" />{/if}
+                  Create in YNAB
                 </Button>
               </li>
             {/each}

@@ -10,6 +10,54 @@ identical to `main`; safe to delete once origin is pushed.
 
 ## Last Session Summary
 
+**Date**: 2026-05-10 (Reconcile remediation — choose source and write YNAB)
+
+Operations reconcile preview now supports source-choice remediation for
+category mismatches:
+
+- **Use YNAB** keeps the existing plan-side behavior: rename the in-app plan
+  row to match the YNAB category.
+- **Use plan** on a suggested rename writes the plan name/group back to YNAB
+  via `PATCH /plans/{plan_id}/categories/{category_id}`, then syncs YNAB and
+  attempts reconcile.
+- **Create in YNAB** on an unmatched plan-only row creates the missing YNAB
+  category under the matching YNAB group, creating the group first if needed,
+  then syncs and attempts reconcile.
+
+Backend changes:
+- `YNABClient` gained `create_category_group`, `create_category`, and
+  `update_category`.
+- `ReconciliationService.apply_plan_to_ynab()` verifies the active plan row
+  and current YNAB mirror state before mutating YNAB, records
+  `reconcile_remediation` runs, syncs, and returns any remaining reconcile
+  error as payload instead of treating unrelated still-open mismatches as a
+  failed button click.
+- New write endpoints:
+  `POST /api/reconcile/apply-plan-to-ynab` and
+  `POST /ui-api/reconcile/apply-plan-to-ynab`.
+
+Frontend changes:
+- `reconcile-preview-card.svelte` now renders **Use YNAB** and **Use plan**
+  buttons for high-confidence rename pairs, plus **Create in YNAB** for
+  plan-only rows.
+- `frontend/src/lib/api.ts` has the typed `applyPlanToYnab()` client.
+
+Tests:
+- Host backend: `.venv/bin/pytest` → **281/281 passed**.
+- Frontend: `npm test -- --run` → **390/390 passed**.
+- Frontend typecheck: `npm run check` → **0 errors / 0 warnings**.
+- Docker `make test` still fails for environment/runtime drift unrelated to
+  this patch: stale built frontend vs fallback assertion, env token override
+  in `test_config`, and `/app/.venv/bin/python` missing for MCP stdio.
+
+Out of scope:
+- Deleting or hiding unmatched YNAB-only categories from YNAB. The safe
+  current action remains **Add to plan**.
+- Direct Sheets mutation as part of reconcile; Sheets remains a publish/export
+  artifact.
+
+---
+
 **Date**: 2026-05-04 (Phase 4 Slice 2 — Plan-calibration recommendations)
 
 Slice 2 layers actionable recommendations onto Slice 1's forecast view.

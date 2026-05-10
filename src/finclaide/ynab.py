@@ -56,6 +56,53 @@ class YNABClient:
         payload = self._request_json("GET", f"/plans/{plan_id}/transactions", params=params)
         return payload["data"]
 
+    def create_category_group(self, plan_id: str, name: str) -> dict[str, Any]:
+        payload = self._request_json(
+            "POST",
+            f"/plans/{plan_id}/category_groups",
+            json={"category_group": {"name": name}},
+        )
+        return payload["data"]["category_group"]
+
+    def update_category(
+        self,
+        plan_id: str,
+        category_id: str,
+        *,
+        name: str,
+        category_group_id: str,
+    ) -> dict[str, Any]:
+        payload = self._request_json(
+            "PATCH",
+            f"/plans/{plan_id}/categories/{category_id}",
+            json={
+                "category": {
+                    "name": name,
+                    "category_group_id": category_group_id,
+                },
+            },
+        )
+        return payload["data"]["category"]
+
+    def create_category(
+        self,
+        plan_id: str,
+        *,
+        name: str,
+        category_group_id: str,
+    ) -> dict[str, Any]:
+        payload = self._request_json(
+            "POST",
+            f"/plans/{plan_id}/categories",
+            json={
+                "category": {
+                    "name": name,
+                    "category_group_id": category_group_id,
+                },
+            },
+        )
+        return payload["data"]["category"]
+
     def _request_json(self, method: str, path: str, **kwargs: Any) -> dict[str, Any]:
         response = self._client.request(method, path, **kwargs)
         response.raise_for_status()
