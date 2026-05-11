@@ -45,15 +45,22 @@ def _expected_hosts() -> set[str]:
     return {host for host in hosts if host}
 
 
+def _is_ingress_request() -> bool:
+    return bool(
+        request.headers.get("X-Ingress-Path")
+        or request.headers.get("X-Forwarded-Prefix")
+    )
+
+
 def require_same_origin(handler: Callable[..., Response]):
     @wraps(handler)
     def wrapped(*args: Any, **kwargs: Any):
         origin = _request_origin()
         origin_host = _request_origin_host(origin)
-        if origin_host and origin_host not in _expected_hosts():
+        if origin_host and origin_host not in _expected_hosts() and not _is_ingress_request():
             return jsonify({"error": "forbidden"}), 403
         fetch_site = request.headers.get("Sec-Fetch-Site", "")
-        if fetch_site and fetch_site not in {"same-origin", "none"}:
+        if fetch_site and fetch_site not in {"same-origin", "same-site", "none"}:
             return jsonify({"error": "forbidden"}), 403
         return handler(*args, **kwargs)
 

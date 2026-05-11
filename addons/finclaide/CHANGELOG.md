@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.5
+
+- Accept Home Assistant ingress UI writes even when the add-on sees an internal proxy host
+
 ## 0.1.4
 
 - Allow legitimate Home Assistant ingress UI writes when HTTPS terminates before the add-on
