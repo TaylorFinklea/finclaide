@@ -25,6 +25,22 @@ Finclaide is a private finance dashboard for one YNAB budget plus a spreadsheet-
 4. Share the sheet/file with the service account email as a viewer.
 5. Put the service account JSON file into the add-on config directory.
 
+For a Google Sheet URL like:
+
+```text
+https://docs.google.com/spreadsheets/d/1AbCdEfGhIjKlMnOpQrStUvWxYz/edit
+```
+
+the `google_file_id` is:
+
+```text
+1AbCdEfGhIjKlMnOpQrStUvWxYz
+```
+
+If `google_file_id` is blank, the add-on cannot start in `google_sheets`
+mode. Either fill it in or switch `budget_source` to `local_file` or
+`remote_url`.
+
 Home Assistant may not create the add-on config directory automatically.
 From the Terminal & SSH add-on, find the real add-on slug:
 

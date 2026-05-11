@@ -2,7 +2,7 @@ name: Finclaide
 slug: finclaide
 description: Private YNAB and Google Sheets finance dashboard with Home Assistant ingress support.
 url: https://github.com/TaylorFinklea/finclaide
-version: "0.1.2"
+version: "0.1.3"
 startup: application
 boot: auto
 backup: hot

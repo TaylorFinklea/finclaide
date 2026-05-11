@@ -116,7 +116,9 @@ case "${FINCLAIDE_BUDGET_SOURCE}" in
     [[ -n "$google_service_account_file" ]] || google_service_account_file="google-service-account.json"
     export FINCLAIDE_GOOGLE_SERVICE_ACCOUNT_PATH="/config/${google_service_account_file}"
     export FINCLAIDE_GOOGLE_SHEETS_FILE_ID="$(read_option '.google_file_id')"
-    require_value "google_file_id" "${FINCLAIDE_GOOGLE_SHEETS_FILE_ID}"
+    if [[ -z "${FINCLAIDE_GOOGLE_SHEETS_FILE_ID}" ]]; then
+      fail "Missing required add-on option: google_file_id. For Google Sheets mode, paste the file ID from the Sheet/Drive URL; for Sheets it is the long value between /d/ and /edit. Or switch budget_source to local_file or remote_url."
+    fi
     [[ -f "${FINCLAIDE_GOOGLE_SERVICE_ACCOUNT_PATH}" ]] || fail "Google service account JSON not found at ${FINCLAIDE_GOOGLE_SERVICE_ACCOUNT_PATH}."
     ;;
   *)

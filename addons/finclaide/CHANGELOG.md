@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.1.3
+
+- Clarify where to find the required Google Sheet/Drive file ID
+- Make the startup error for missing `google_file_id` actionable
+
 ## 0.1.2
 
 - Allow `remote_workbook_url` to stay blank unless remote URL mode is selected

@@ -19,7 +19,7 @@ configuration:
     description: Direct `.xlsx` export URL used when remote URL mode is selected.
   google_file_id:
     name: Google File ID
-    description: Google Sheets or Drive file ID for the planning workbook.
+    description: Required for Google Sheets mode. Use the long ID in the Sheet/Drive URL; for Sheets it is between `/d/` and `/edit`.
   google_service_account_file:
     name: Google Service Account File
     description: JSON credential filename inside the add-on config directory.
