@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from functools import wraps
 from typing import Any, Callable
+from urllib.parse import urlparse
 
 from flask import Blueprint, Response, current_app, jsonify, request, send_file
 
@@ -25,15 +26,31 @@ def _request_origin() -> str:
     return request.headers.get("Origin", "").rstrip("/")
 
 
-def _expected_origin() -> str:
-    return request.host_url.rstrip("/")
+def _request_origin_host(origin: str) -> str:
+    if not origin:
+        return ""
+    parsed = urlparse(origin)
+    return parsed.netloc.lower()
+
+
+def _expected_hosts() -> set[str]:
+    hosts = {
+        value.split(",", 1)[0].strip().lower()
+        for value in {
+            request.host,
+            request.headers.get("X-Forwarded-Host", ""),
+        }
+        if value
+    }
+    return {host for host in hosts if host}
 
 
 def require_same_origin(handler: Callable[..., Response]):
     @wraps(handler)
     def wrapped(*args: Any, **kwargs: Any):
         origin = _request_origin()
-        if origin and origin != _expected_origin():
+        origin_host = _request_origin_host(origin)
+        if origin_host and origin_host not in _expected_hosts():
             return jsonify({"error": "forbidden"}), 403
         fetch_site = request.headers.get("Sec-Fetch-Site", "")
         if fetch_site and fetch_site not in {"same-origin", "none"}:

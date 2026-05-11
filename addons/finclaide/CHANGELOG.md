@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.4
+
+- Allow legitimate Home Assistant ingress UI writes when HTTPS terminates before the add-on
+
 ## 0.1.3
 
 - Clarify where to find the required Google Sheet/Drive file ID

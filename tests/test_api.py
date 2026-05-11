@@ -409,6 +409,25 @@ def test_ui_api_rejects_cross_origin_and_missing_header(app_factory):
     assert missing_header.status_code == 403
 
 
+def test_ui_api_accepts_https_origin_behind_ingress_proxy(app_factory, ui_headers):
+    app = app_factory()
+    client = app.test_client()
+
+    response = client.post(
+        "/ui-api/operations/import-budget",
+        json={},
+        headers={
+            **ui_headers,
+            "Host": "home.example.test",
+            "Origin": "https://home.example.test",
+            "Sec-Fetch-Site": "same-origin",
+            "X-Ingress-Path": "/api/hassio_ingress/addon-token",
+        },
+    )
+
+    assert response.status_code == 200
+
+
 def test_refresh_all_returns_partial_payload_on_reconcile_failure(app_factory, auth_header, ui_headers, tmp_path: Path):
     workbook = build_budget_workbook(tmp_path / "Budget.xlsx")
     app = app_factory(workbook_path=workbook, categories_fixture="categories_missing_investments.json")
