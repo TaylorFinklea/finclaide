@@ -109,15 +109,22 @@ class ReconciliationService:
 
     def preview(self) -> dict[str, Any]:
         with self.database.connect() as connection:
+            plan_category_count = int(
+                connection.execute(
+                    "SELECT COUNT(*) AS count FROM v_latest_planned_categories"
+                ).fetchone()["count"]
+            )
+            if plan_category_count == 0:
+                raise DataIntegrityError("Cannot preview reconcile before importing a budget.")
+
             planned_rows = connection.execute(
                 """
                 SELECT group_name, category_name
                 FROM v_latest_planned_categories
+                WHERE kind = 'outflow'
                 ORDER BY group_name, category_name
                 """
             ).fetchall()
-            if not planned_rows:
-                raise DataIntegrityError("Cannot preview reconcile before importing a budget.")
 
             ynab_rows = connection.execute(
                 """
@@ -149,6 +156,7 @@ class ReconciliationService:
                 FROM plan_categories pc
                 JOIN plans p ON p.id = pc.plan_id
                 WHERE p.status = 'active'
+                  AND pc.kind = 'outflow'
                 """
             ).fetchall()
         plan_id_lookup = {
@@ -249,15 +257,22 @@ class ReconciliationService:
         finished_at: str | None = None
         try:
             with self.database.connect() as connection:
+                plan_category_count = int(
+                    connection.execute(
+                        "SELECT COUNT(*) AS count FROM v_latest_planned_categories"
+                    ).fetchone()["count"]
+                )
+                if plan_category_count == 0:
+                    raise DataIntegrityError("Cannot reconcile before importing a budget.")
+
                 planned_rows = connection.execute(
                     """
                     SELECT group_name, category_name
                     FROM v_latest_planned_categories
+                    WHERE kind = 'outflow'
                     ORDER BY group_name, category_name
                     """
                 ).fetchall()
-                if not planned_rows:
-                    raise DataIntegrityError("Cannot reconcile before importing a budget.")
 
                 for row in planned_rows:
                     category = connection.execute(
@@ -367,7 +382,7 @@ class ReconciliationService:
             with self.database.connect() as connection:
                 plan_row = connection.execute(
                     """
-                    SELECT pc.id, pc.group_name, pc.category_name
+                    SELECT pc.id, pc.group_name, pc.category_name, pc.kind
                     FROM plan_categories pc
                     JOIN plans p ON p.id = pc.plan_id
                     WHERE p.status = 'active'
@@ -380,6 +395,10 @@ class ReconciliationService:
                 if plan_row is None:
                     raise DataIntegrityError(
                         f"Cannot apply plan to YNAB: '{group_name} / {category_name}' is not in the active plan."
+                    )
+                if plan_row["kind"] != "outflow":
+                    raise DataIntegrityError(
+                        f"Cannot apply plan to YNAB: '{group_name} / {category_name}' is an income row. Income is planning context in Finclaide and is not reconciled to YNAB categories."
                     )
 
                 existing_target = self._ynab_category(connection, group_name, category_name)

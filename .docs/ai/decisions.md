@@ -2,6 +2,20 @@
 
 > Architecture decision records. Append-only — one entry per decision.
 
+## [2026-05-13] Income rows are Finclaide planning context, not YNAB category contracts
+
+**Context**: YNAB income actuals arrive as checking-account deposits and are
+not tied to savings/category allocation in the way Finclaide and the planning
+sheet model household cash flow.
+**Decision**: Only outflow plan rows participate in exact category-name
+reconciliation and YNAB-side remediation. Inflow rows stay in Finclaide/Sheets
+for planning and cascade math, but reconcile does not require or create
+matching YNAB categories for them.
+**Rationale**: YNAB remains source of truth for actual cash movement, while
+Finclaide owns the richer planning context. Requiring income categories to
+match YNAB would encode the wrong mental model and create false reconcile
+failures.
+
 ## [2026-05-10] Tithe rows compute from same-block inflows only
 
 **Context**: Planning now distinguishes inflow and outflow categories and can

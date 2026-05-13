@@ -293,6 +293,40 @@ def test_reconcile_preview_classifies_planned_categories(app_factory, auth_heade
     }
 
 
+def test_reconcile_ignores_inflow_plan_rows(app_factory, auth_header, tmp_path: Path):
+    workbook = build_budget_workbook(tmp_path / "Budget.xlsx")
+    app = app_factory(workbook_path=workbook)
+    client = app.test_client()
+    services = app.extensions["finclaide"]
+
+    client.post("/api/budget/import", headers=auth_header)
+    client.post("/api/ynab/sync", headers=auth_header)
+    plan = services.plan.get_active_plan()
+    services.plan.create_category(
+        plan["plan"]["id"],
+        {
+            "group_name": "Monthly Income",
+            "category_name": "Salary",
+            "block": "monthly",
+            "kind": "inflow",
+            "planned_milliunits": 1000000,
+        },
+    )
+
+    preview = client.get("/api/reconcile/preview", headers=auth_header).get_json()
+    missing = {
+        (item["group_name"], item["category_name"])
+        for item in preview["missing_in_ynab"]
+    }
+    assert ("Monthly Income", "Salary") not in missing
+    assert preview["counts"]["missing_in_ynab"] == 0
+
+    reconcile_response = client.post("/api/reconcile", headers=auth_header)
+
+    assert reconcile_response.status_code == 200
+    assert reconcile_response.get_json()["mismatch_count"] == 0
+
+
 def test_reconcile_preview_surfaces_missing_in_ynab(app_factory, auth_header, tmp_path: Path):
     workbook = build_budget_workbook(tmp_path / "Budget.xlsx")
     app = app_factory(

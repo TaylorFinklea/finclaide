@@ -10,6 +10,24 @@ identical to `main`; safe to delete once origin is pushed.
 
 ## Last Session Summary
 
+**Date**: 2026-05-13 (Income is planning context, not a YNAB category contract)
+
+Reconciliation now treats only `kind='outflow'` plan rows as YNAB category
+contracts:
+
+- Inflow rows remain in Finclaide/Sheets for planning, cascade, and
+  full-household context.
+- Reconcile preview and reconcile ignore inflow rows, so planned income like
+  Salary/Bonus does not require a matching YNAB category.
+- YNAB-side remediation rejects inflow rows with an explicit message instead
+  of creating income categories in YNAB.
+
+Verification:
+- `.venv/bin/pytest tests/test_api.py::test_reconcile_preview_classifies_planned_categories tests/test_api.py::test_reconcile_ignores_inflow_plan_rows tests/test_api.py::test_reconcile_preview_surfaces_missing_in_ynab tests/test_reconciliation_suggestions.py`
+  -> **13/13 passed**.
+
+---
+
 **Date**: 2026-05-10 (Cash-flow cascade, inflows, and rebalance prompts)
 
 Planning now models cash-flow balance directly:
