@@ -327,6 +327,53 @@ def test_reconcile_ignores_inflow_plan_rows(app_factory, auth_header, tmp_path: 
     assert reconcile_response.get_json()["mismatch_count"] == 0
 
 
+def test_reconcile_ignores_ynab_system_categories(app_factory, auth_header, tmp_path: Path):
+    workbook = build_budget_workbook(tmp_path / "Budget.xlsx")
+    app = app_factory(workbook_path=workbook)
+    client = app.test_client()
+    services = app.extensions["finclaide"]
+
+    client.post("/api/budget/import", headers=auth_header)
+    client.post("/api/ynab/sync", headers=auth_header)
+
+    with services.database.connect() as connection:
+        connection.execute(
+            """
+            INSERT OR IGNORE INTO category_groups(
+                id, plan_id, name, hidden, deleted, raw_json, updated_at
+            ) VALUES (
+                'grp-internal', 'plan-123', 'Internal Master Category',
+                0, 0, '{}', '2026-03-15T12:00:00+00:00'
+            )
+            """
+        )
+        connection.executemany(
+            """
+            INSERT INTO categories(
+                id, plan_id, group_id, group_name, name,
+                hidden, deleted, balance_milliunits, raw_json, updated_at
+            ) VALUES (
+                ?, 'plan-123', 'grp-internal', 'Internal Master Category', ?,
+                0, 0, 0, '{}', '2026-03-15T12:00:00+00:00'
+            )
+            """,
+            [
+                ("cat-ready-to-assign", "Inflow: Ready to Assign"),
+                ("cat-uncategorized", "Uncategorized"),
+            ],
+        )
+
+    response = client.get("/api/reconcile/preview", headers=auth_header)
+
+    assert response.status_code == 200
+    extras = {
+        (item["group_name"], item["category_name"])
+        for item in response.get_json()["extra_in_ynab"]
+    }
+    assert ("Internal Master Category", "Inflow: Ready to Assign") not in extras
+    assert ("Internal Master Category", "Uncategorized") not in extras
+
+
 def test_reconcile_preview_surfaces_missing_in_ynab(app_factory, auth_header, tmp_path: Path):
     workbook = build_budget_workbook(tmp_path / "Budget.xlsx")
     app = app_factory(

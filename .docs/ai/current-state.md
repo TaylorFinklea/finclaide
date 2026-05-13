@@ -10,6 +10,23 @@ identical to `main`; safe to delete once origin is pushed.
 
 ## Last Session Summary
 
+**Date**: 2026-05-13 (Ignore YNAB system categories across reconcile and Sheets)
+
+Finclaide now treats YNAB-owned system categories as non-manageable rows:
+
+- Reconcile preview and reconcile ignore `Internal Master Category`,
+  `Inflow: ...`, and `Uncategorized` rows from both plan and YNAB mirrors.
+- YNAB-side remediation refuses to create/rename those categories from a plan
+  row.
+- Budget import, workbook export, and Google Sheets publish share the same
+  filter, so system rows do not become local plan rows or get emitted back to
+  Sheets.
+
+Verification:
+- `.venv/bin/pytest` -> **288/288 passed**.
+
+---
+
 **Date**: 2026-05-13 (Income is planning context, not a YNAB category contract)
 
 Reconciliation now treats only `kind='outflow'` plan rows as YNAB category

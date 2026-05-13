@@ -2,6 +2,19 @@
 
 > Architecture decision records. Append-only — one entry per decision.
 
+## [2026-05-13] YNAB system categories are outside Finclaide management
+
+**Context**: YNAB can expose `Internal Master Category / Inflow: Ready to
+Assign` and `Internal Master Category / Uncategorized` in category lists.
+Those are YNAB accounting/system buckets, not household planning categories.
+**Decision**: Finclaide filters YNAB system categories from reconciliation,
+remediation, workbook import, workbook export, and Google Sheets publish.
+System categories are defined as rows in `Internal Master Category`, rows
+named `Uncategorized`, or rows whose category name starts with `Inflow:`.
+**Rationale**: Exact-match reconciliation should remain strict for real
+budget categories without forcing the operator to model YNAB internals in
+the household plan or accidentally write them back into Sheets.
+
 ## [2026-05-13] Income rows are Finclaide planning context, not YNAB category contracts
 
 **Context**: YNAB income actuals arrive as checking-account deposits and are

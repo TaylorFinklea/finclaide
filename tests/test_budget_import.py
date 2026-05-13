@@ -159,6 +159,32 @@ def test_import_budget_ignores_labeled_income_rows_outside_monthly_total_range(t
     )
 
 
+def test_import_budget_ignores_ynab_system_categories(tmp_path: Path):
+    workbook = build_budget_workbook(
+        tmp_path / "Budget.xlsx",
+        ynab_system_categories=True,
+    )
+    database = Database(tmp_path / "test.db")
+    database.initialize()
+
+    summary = BudgetImporter(database).import_budget(workbook, "2026 Budget")
+
+    assert summary["row_count"] == 11
+    with database.connect() as connection:
+        planned_rows = connection.execute(
+            """
+            SELECT group_name, category_name
+            FROM v_latest_planned_categories
+            ORDER BY id
+            """
+        ).fetchall()
+    planned_pairs = {
+        (row["group_name"], row["category_name"]) for row in planned_rows
+    }
+    assert ("Internal Master Category", "Inflow: Ready to Assign") not in planned_pairs
+    assert ("Internal Master Category", "Uncategorized") not in planned_pairs
+
+
 def test_import_budget_rejects_duplicate_categories(tmp_path: Path):
     workbook = build_budget_workbook(tmp_path / "Budget.xlsx", duplicate_category=True)
     database = Database(tmp_path / "test.db")

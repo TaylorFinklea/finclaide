@@ -8,6 +8,7 @@ from difflib import SequenceMatcher
 from pathlib import Path
 from typing import Any
 
+from finclaide.category_filters import is_ynab_system_category
 from finclaide.config import AppConfig
 from finclaide.database import Database, utc_now
 from finclaide.errors import ConfigError, DataIntegrityError
@@ -140,10 +141,14 @@ class ReconciliationService:
             ).fetchall()
 
         planned_set: set[tuple[str, str]] = {
-            (row["group_name"], row["category_name"]) for row in planned_rows
+            (row["group_name"], row["category_name"])
+            for row in planned_rows
+            if not is_ynab_system_category(row["group_name"], row["category_name"])
         }
         ynab_set: set[tuple[str, str]] = {
-            (row["group_name"], row["category_name"]) for row in ynab_rows
+            (row["group_name"], row["category_name"])
+            for row in ynab_rows
+            if not is_ynab_system_category(row["group_name"], row["category_name"])
         }
 
         # plan_id lookup: (group, name) → plan_categories.id, for active plan.
@@ -162,6 +167,7 @@ class ReconciliationService:
         plan_id_lookup = {
             (row["group_name"], row["category_name"]): int(row["id"])
             for row in plan_id_rows
+            if not is_ynab_system_category(row["group_name"], row["category_name"])
         }
 
         exact_matches = planned_set & ynab_set
@@ -275,6 +281,8 @@ class ReconciliationService:
                 ).fetchall()
 
                 for row in planned_rows:
+                    if is_ynab_system_category(row["group_name"], row["category_name"]):
+                        continue
                     category = connection.execute(
                         """
                         SELECT id
@@ -399,6 +407,10 @@ class ReconciliationService:
                 if plan_row["kind"] != "outflow":
                     raise DataIntegrityError(
                         f"Cannot apply plan to YNAB: '{group_name} / {category_name}' is an income row. Income is planning context in Finclaide and is not reconciled to YNAB categories."
+                    )
+                if is_ynab_system_category(group_name, category_name):
+                    raise DataIntegrityError(
+                        f"Cannot apply plan to YNAB: '{group_name} / {category_name}' is a YNAB system category and is not managed by Finclaide."
                     )
 
                 existing_target = self._ynab_category(connection, group_name, category_name)
@@ -1456,7 +1468,7 @@ class WeeklyReviewService:
         normalized_category = (category_name or "").strip().lower()
         if not normalized_group or not normalized_category:
             return "uncategorized"
-        if normalized_group == "internal master category" or normalized_category.startswith("inflow:"):
+        if is_ynab_system_category(group_name, category_name):
             return "uncategorized"
         if normalized_group == "payments":
             return "payment_flow"
