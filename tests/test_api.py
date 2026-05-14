@@ -672,22 +672,57 @@ def test_weekly_review_warns_when_budget_and_sync_are_missing(app_factory, auth_
     assert "no_budget_blocker" in blocker_kinds
 
 
-def test_weekly_review_deemphasizes_payment_flow_recommendations(app_factory, auth_header, tmp_path: Path):
+def test_weekly_review_suppresses_payment_flow_signals(app_factory, tmp_path: Path):
     workbook = build_budget_workbook(tmp_path / "Budget.xlsx")
     app = app_factory(workbook_path=workbook)
     client = app.test_client()
+    services = app.extensions["finclaide"]
 
-    client.post("/api/budget/import", headers=auth_header)
-    client.post("/api/ynab/sync", headers=auth_header)
-    client.post("/api/reconcile", headers=auth_header)
+    client.post("/api/budget/import", headers={"Authorization": "Bearer test-token"})
+    with services.database.connect() as connection:
+        plan_id = connection.execute(
+            "SELECT id FROM plans WHERE status = 'active'"
+        ).fetchone()["id"]
+        connection.execute(
+            """
+            INSERT INTO plan_categories(
+                plan_id, group_name, category_name, block, kind,
+                planned_milliunits, annual_target_milliunits, due_month,
+                notes, created_at, updated_at
+            )
+            VALUES (?, 'Payments', 'Card Payment', 'monthly', 'outflow',
+                    250000, 3000000, NULL, NULL,
+                    '2026-05-13T12:00:00+00:00',
+                    '2026-05-13T12:00:00+00:00')
+            """,
+            (plan_id,),
+        )
+        connection.executemany(
+            """
+            INSERT INTO transactions(
+                id, plan_id, account_id, date, payee_name, memo, cleared, approved,
+                category_id, category_name, group_name, amount_milliunits, deleted,
+                raw_json, updated_at
+            )
+            VALUES (?, 'plan-123', 'acct-checking', ?, 'Payment', NULL, 'cleared', 1,
+                    NULL, 'Card Payment', 'Payments', ?, 0, '{}',
+                    '2026-05-13T12:00:00+00:00')
+            """,
+            [
+                ("txn-payment-jan", "2026-01-05", -1_500_000),
+                ("txn-payment-feb", "2026-02-05", -1_500_000),
+                ("txn-payment-apr", "2026-04-05", -1_500_000),
+                ("txn-payment-may", "2026-05-05", -1_500_000),
+            ],
+        )
 
-    response = client.get("/api/review/weekly?month=2026-03", headers=auth_header)
-    payload = response.get_json()
+    payload = services.review.weekly(month="2026-05", now=date(2026, 5, 13))
 
-    assert response.status_code == 200
-    signal_classes = [item["signal_class"] for item in payload["recommendations"]]
-    if "payment_flow" in signal_classes:
-        assert signal_classes.index("core_spend") < signal_classes.index("payment_flow")
+    for section_name in ("changes", "overages", "anomalies", "recommendations"):
+        assert not any(
+            item["group_name"] == "Payments"
+            for item in payload[section_name]
+        ), section_name
 
 
 def test_weekly_review_changes_use_month_to_date_pace(app_factory, tmp_path: Path):

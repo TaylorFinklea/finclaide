@@ -262,3 +262,20 @@ invariant at the database level so the API can rely on `IntegrityError`
 for race-safe enforcement without app-side checks. Frontend sends
 `UNIQUE constraint failed: plans.status` and `plans.label` errors as
 human-readable `DataIntegrityError` messages from PlanService.
+
+## [2026-05-13] Weekly review ignores payment flow and respects accumulating fixed categories
+
+**Context**: Weekly review recommendations were treating lumpy fixed-category
+payments as a higher monthly run rate. Example: charitable giving or another
+fixed obligation may be planned monthly but paid every few months, so a catch-up
+payment should not imply the monthly plan is too low. Credit-card payment
+categories also appeared as spend signals even though their underlying card
+transactions are already categorized elsewhere.
+**Decision**: Budget recommendations skip `Payments` and `Credit Card Payments`
+entirely, and weekly-review overage/change/anomaly/recommendation sections
+suppress those payment-flow groups. For fixed monthly categories, an
+`increase_budget` recommendation is suppressed when year-to-date actual spend is
+covered by the monthly plan accrued through the review month.
+**Rationale**: The weekly review should highlight actionable budget behavior,
+not cash transfers or timing artifacts. Cash-flow modeling can still use
+payment-flow categories where bank-balance timing matters.

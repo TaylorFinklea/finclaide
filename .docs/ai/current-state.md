@@ -902,6 +902,17 @@ Weekly review archive (mentioned in the spec for Slice 3) was descoped —
 needs snapshot-storage schema; not justified now. Can land later if the
 operator wants to track review history.
 
+## Latest Review Model Adjustments
+
+- Budget-change recommendations now treat fixed monthly categories as
+  accumulating balances: if year-to-date spend is covered by the monthly
+  plan accrued through the review month, a lumpy payment does not produce
+  an "increase budget" recommendation.
+- Payment-flow groups (`Payments`, `Credit Card Payments`) are suppressed
+  from weekly-review spend signals. They remain available for cash-flow
+  modeling, but review/recommendation surfaces should use the underlying
+  categorized card transactions instead.
+
 ## Blockers
 
 - None.

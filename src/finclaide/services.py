@@ -10,7 +10,7 @@ from difflib import SequenceMatcher
 from pathlib import Path
 from typing import Any
 
-from finclaide.category_filters import is_ynab_system_category
+from finclaide.category_filters import is_payment_flow_category, is_ynab_system_category
 from finclaide.config import AppConfig
 from finclaide.database import Database, utc_now
 from finclaide.errors import ConfigError, DataIntegrityError
@@ -1428,6 +1428,8 @@ class WeeklyReviewService:
     def _overages(self, *, summary: dict[str, Any], month_label: str) -> list[dict[str, Any]]:
         items: list[dict[str, Any]] = []
         for group in summary["groups"]:
+            if is_payment_flow_category(group["group_name"]):
+                continue
             for category in group["categories"]:
                 variance = category["variance_milliunits"]
                 planned = category["planned_milliunits"]
@@ -1472,6 +1474,8 @@ class WeeklyReviewService:
         days_elapsed = int(comparison.get("days_elapsed") or 0)
         days_total = int(comparison.get("days_total") or 0)
         for category in comparison["categories"]:
+            if is_payment_flow_category(category["group_name"], category["category_name"]):
+                continue
             delta = category["delta_milliunits"]
             if abs(delta) < 75_000:
                 continue
@@ -1602,6 +1606,8 @@ class WeeklyReviewService:
     def _anomalies(self, *, anomalies: dict[str, Any], month_label: str) -> list[dict[str, Any]]:
         items: list[dict[str, Any]] = []
         for anomaly in anomalies["transaction_anomalies"]:
+            if is_payment_flow_category(anomaly["group_name"], anomaly["category_name"]):
+                continue
             if not anomaly["date"].startswith(month_label):
                 continue
             amount = abs(anomaly["amount_milliunits"])
@@ -1639,6 +1645,11 @@ class WeeklyReviewService:
     def _recommendations(self, *, recommendations: dict[str, Any]) -> list[dict[str, Any]]:
         items: list[dict[str, Any]] = []
         for recommendation in recommendations["recommendations"]:
+            if is_payment_flow_category(
+                recommendation["group_name"],
+                recommendation["category_name"],
+            ):
+                continue
             signal_class = self._signal_class(
                 recommendation["group_name"],
                 recommendation["category_name"],
@@ -1722,7 +1733,7 @@ class WeeklyReviewService:
             return "uncategorized"
         if is_ynab_system_category(group_name, category_name):
             return "uncategorized"
-        if normalized_group == "payments":
+        if is_payment_flow_category(group_name, category_name):
             return "payment_flow"
         if "reimbursement" in normalized_group or "reimbursement" in normalized_category:
             return "reimbursement_flow"
