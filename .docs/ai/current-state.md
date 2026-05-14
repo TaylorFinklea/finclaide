@@ -10,6 +10,28 @@ identical to `main`; safe to delete once origin is pushed.
 
 ## Last Session Summary
 
+**Date**: 2026-05-13 (Weekly review uses month-to-date pace)
+
+The Overview weekly review's "What Changed" column no longer compares an
+in-progress month against a full prior month:
+
+- Current-month review changes compare current month-to-date spend against
+  the same day range in the prior month.
+- Run-rate categories include a projected full-month amount and prior
+  full-month spend for context.
+- Scheduled/fixed bills and annual/one-time categories are not projected as
+  daily burn rates; their copy calls out the same-point comparison and prior
+  full-month value.
+- Not-yet-fired fixed bills with ordinal names such as `22nd - T-Mobile` are
+  suppressed from "down" change warnings before their due day.
+
+Verification:
+- `.venv/bin/pytest` -> **289/289 passed**.
+- `npm test -- --run src/routes/page.test.ts` -> **1/1 passed**.
+- `npm run check` -> **0 errors / 0 warnings**.
+
+---
+
 **Date**: 2026-05-13 (Ignore YNAB system categories across reconcile and Sheets)
 
 Finclaide now treats YNAB-owned system categories as non-manageable rows:

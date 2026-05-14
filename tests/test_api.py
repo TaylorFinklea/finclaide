@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import date
 from pathlib import Path
 
 import httpx
@@ -687,6 +688,49 @@ def test_weekly_review_deemphasizes_payment_flow_recommendations(app_factory, au
     signal_classes = [item["signal_class"] for item in payload["recommendations"]]
     if "payment_flow" in signal_classes:
         assert signal_classes.index("core_spend") < signal_classes.index("payment_flow")
+
+
+def test_weekly_review_changes_use_month_to_date_pace(app_factory, tmp_path: Path):
+    workbook = build_budget_workbook(tmp_path / "Budget.xlsx")
+    app = app_factory(workbook_path=workbook)
+    client = app.test_client()
+    services = app.extensions["finclaide"]
+
+    client.post("/api/budget/import", headers={"Authorization": "Bearer test-token"})
+    with services.database.connect() as connection:
+        connection.executemany(
+            """
+            INSERT INTO transactions(
+                id, plan_id, account_id, date, payee_name, memo, cleared, approved,
+                category_id, category_name, group_name, amount_milliunits, deleted,
+                raw_json, updated_at
+            )
+            VALUES (?, 'plan-123', 'acct-checking', ?, 'Test', NULL, 'cleared', 1,
+                    NULL, ?, ?, ?, 0, '{}', '2026-05-13T12:00:00+00:00')
+            """,
+            [
+                ("txn-apr-groceries", "2026-04-05", "Groceries", "Expenses", -1_200_000),
+                ("txn-may-groceries", "2026-05-05", "Groceries", "Expenses", -300_000),
+                ("txn-apr-phone", "2026-04-10", "22nd - T-Mobile", "Bills", -155_000),
+            ],
+        )
+
+    payload = services.review.weekly(month="2026-05", now=date(2026, 5, 13))
+
+    change_titles = [item["title"] for item in payload["changes"]]
+    assert any(
+        "Expenses / Groceries is down $900.00 month-to-date versus 2026-04" == title
+        for title in change_titles
+    )
+    assert not any("22nd - T-Mobile" in title for title in change_titles)
+    groceries = next(
+        item for item in payload["changes"]
+        if item["group_name"] == "Expenses" and item["category_name"] == "Groceries"
+    )
+    assert groceries["evidence"]["comparison_basis"] == "month_to_date"
+    assert groceries["evidence"]["days_elapsed"] == 13
+    assert groceries["evidence"]["projected_month_b_milliunits"] == 715385
+    assert "At this pace" in groceries["why_it_matters"]
 
 
 def test_budget_import_can_export_google_sheet_with_service_account(

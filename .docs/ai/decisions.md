@@ -2,6 +2,22 @@
 
 > Architecture decision records. Append-only — one entry per decision.
 
+## [2026-05-13] Weekly review changes compare month-to-date for active months
+
+**Context**: Comparing an in-progress month to the full prior month produced
+low-signal "down" warnings for ordinary timing effects, such as groceries
+being lower halfway through the month or bills not firing until their due day.
+**Decision**: For the active month, "What Changed" compares current
+month-to-date spend to the same day range in the prior month. Run-rate
+categories may show a projected full-month value, while scheduled bills and
+annual/one-time categories are not projected linearly. Fixed bills with an
+ordinal due day in the name are suppressed from "down" warnings before that
+day.
+**Rationale**: The review should answer practical questions: are we burning
+down faster or slower than expected, are we tracking differently from the same
+point last month, and is a category likely to finish meaningfully different.
+It should not alert on predictable calendar timing.
+
 ## [2026-05-13] YNAB system categories are outside Finclaide management
 
 **Context**: YNAB can expose `Internal Master Category / Inflow: Ready to

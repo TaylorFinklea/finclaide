@@ -225,7 +225,7 @@
         {/if}
       </CardHeader>
       <CardContent class="grid gap-4 xl:grid-cols-3">
-        {@render reviewColumn('What Changed', 'Month-over-month shifts worth sanity-checking.', review.changes, 'No material month-over-month changes crossed the review thresholds.', false)}
+        {@render reviewColumn('What Changed', 'Month-to-date shifts and full-month projections worth sanity-checking.', review.changes, 'No material pace changes crossed the review thresholds.', false)}
         {@render reviewColumn('Needs Attention', 'Current blockers, overages, and unusual spend.', attentionItems, 'Nothing urgent is crowding the current review window.', false)}
         {@render reviewColumn('Recommended Actions', 'Suggested next steps grounded in the latest plan and actuals.', actionItems, 'No budget changes are being recommended right now.', true)}
       </CardContent>

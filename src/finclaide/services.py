@@ -2,8 +2,10 @@ from __future__ import annotations
 
 import math
 import json
+import calendar
+import re
 from dataclasses import dataclass
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 from difflib import SequenceMatcher
 from pathlib import Path
 from typing import Any
@@ -1164,13 +1166,17 @@ class WeeklyReviewService:
     reports: ReportService
     analytics: Any
 
-    def weekly(self, month: str | None = None) -> dict[str, Any]:
+    def weekly(self, month: str | None = None, now: date | None = None) -> dict[str, Any]:
         summary = self.reports.summary(month=month)
         status = self.reports.status(include_recent_runs=True)
         month_label = summary["month"]
         prior_month = _previous_month_label(month_label)
         health = self.analytics.financial_health_check()
-        comparison = self.analytics.compare_months(prior_month, month_label)
+        comparison = self._comparison_for_review(
+            prior_month=prior_month,
+            month_label=month_label,
+            now=now or datetime.now(UTC).date(),
+        )
         anomalies = self.analytics.detect_anomalies(months=3, threshold_sigma=2.0, as_of_month=month_label)
         recommendations = self.analytics.budget_recommendations(as_of_month=month_label)
 
@@ -1221,6 +1227,163 @@ class WeeklyReviewService:
                 "categories_over_budget": recommendations["summary"]["categories_over_budget"],
                 "categories_under_budget": recommendations["summary"]["categories_under_budget"],
             },
+        }
+
+    def _comparison_for_review(
+        self,
+        *,
+        prior_month: str,
+        month_label: str,
+        now: date,
+    ) -> dict[str, Any]:
+        month_first = datetime.strptime(month_label, "%Y-%m").date()
+        month_first = date(month_first.year, month_first.month, 1)
+        month_days = calendar.monthrange(month_first.year, month_first.month)[1]
+        month_next = (
+            date(month_first.year + 1, 1, 1)
+            if month_first.month == 12
+            else date(month_first.year, month_first.month + 1, 1)
+        )
+
+        if now < month_first:
+            return {
+                "month_a": prior_month,
+                "month_b": month_label,
+                "comparison_basis": "future_month",
+                "days_elapsed": 0,
+                "days_total": month_days,
+                "categories": [],
+                "totals": {
+                    "month_a_milliunits": 0,
+                    "month_b_milliunits": 0,
+                    "delta_milliunits": 0,
+                },
+            }
+
+        if now >= month_next:
+            comparison = self.analytics.compare_months(prior_month, month_label)
+            comparison["comparison_basis"] = "full_month"
+            comparison["days_elapsed"] = month_days
+            comparison["days_total"] = month_days
+            metadata = self._planned_category_metadata()
+            for category in comparison["categories"]:
+                category["previous_full_month_milliunits"] = category["month_a_milliunits"]
+                category["projected_month_b_milliunits"] = category["month_b_milliunits"]
+                category.update(metadata.get((category["group_name"], category["category_name"]), {}))
+            return comparison
+
+        days_elapsed = now.day
+        prior_first = datetime.strptime(prior_month, "%Y-%m").date()
+        prior_first = date(prior_first.year, prior_first.month, 1)
+        prior_days = calendar.monthrange(prior_first.year, prior_first.month)[1]
+        prior_next = (
+            date(prior_first.year + 1, 1, 1)
+            if prior_first.month == 12
+            else date(prior_first.year, prior_first.month + 1, 1)
+        )
+        comparable_days = min(days_elapsed, prior_days)
+
+        current_mtd = self._spend_by_category(
+            start=month_first,
+            end=month_first + timedelta(days=days_elapsed),
+        )
+        prior_mtd = self._spend_by_category(
+            start=prior_first,
+            end=prior_first + timedelta(days=comparable_days),
+        )
+        prior_full = self._spend_by_category(start=prior_first, end=prior_next)
+        metadata = self._planned_category_metadata()
+
+        categories: list[dict[str, Any]] = []
+        total_prior_mtd = 0
+        total_current_mtd = 0
+        total_prior_full = 0
+        total_projected = 0
+        for group_name, category_name in sorted(
+            set(current_mtd) | set(prior_mtd) | set(prior_full)
+        ):
+            current = current_mtd.get((group_name, category_name), 0)
+            previous_same_point = prior_mtd.get((group_name, category_name), 0)
+            previous_full = prior_full.get((group_name, category_name), 0)
+            projected = round(current * month_days / days_elapsed) if days_elapsed else current
+            delta = current - previous_same_point
+            pct = (
+                round(delta / previous_same_point * 100, 1)
+                if previous_same_point
+                else None
+            )
+            category_payload = {
+                "group_name": group_name,
+                "category_name": category_name,
+                "month_a_milliunits": previous_same_point,
+                "month_b_milliunits": current,
+                "delta_milliunits": delta,
+                "delta_percent": pct,
+                "previous_full_month_milliunits": previous_full,
+                "projected_month_b_milliunits": projected,
+            }
+            category_payload.update(metadata.get((group_name, category_name), {}))
+            categories.append(category_payload)
+            total_prior_mtd += previous_same_point
+            total_current_mtd += current
+            total_prior_full += previous_full
+            total_projected += projected
+
+        return {
+            "month_a": prior_month,
+            "month_b": month_label,
+            "comparison_basis": "month_to_date",
+            "days_elapsed": days_elapsed,
+            "days_total": month_days,
+            "categories": categories,
+            "totals": {
+                "month_a_milliunits": total_prior_mtd,
+                "month_b_milliunits": total_current_mtd,
+                "delta_milliunits": total_current_mtd - total_prior_mtd,
+                "previous_full_month_milliunits": total_prior_full,
+                "projected_month_b_milliunits": total_projected,
+            },
+        }
+
+    def _spend_by_category(self, *, start: date, end: date) -> dict[tuple[str, str], int]:
+        with self.reports.database.connect() as connection:
+            rows = connection.execute(
+                """
+                SELECT
+                    COALESCE(c.group_name, t.group_name) AS group_name,
+                    COALESCE(c.name, t.category_name) AS category_name,
+                    SUM(CASE WHEN t.amount_milliunits < 0
+                             THEN -1 * t.amount_milliunits ELSE 0 END) AS spend_milliunits
+                FROM transactions t
+                LEFT JOIN categories c ON c.id = t.category_id
+                WHERE t.deleted = 0
+                  AND t.date >= ?
+                  AND t.date < ?
+                  AND COALESCE(c.group_name, t.group_name) IS NOT NULL
+                  AND COALESCE(c.name, t.category_name) IS NOT NULL
+                GROUP BY 1, 2
+                """,
+                (start.isoformat(), end.isoformat()),
+            ).fetchall()
+        return {
+            (row["group_name"], row["category_name"]): int(row["spend_milliunits"] or 0)
+            for row in rows
+        }
+
+    def _planned_category_metadata(self) -> dict[tuple[str, str], dict[str, Any]]:
+        with self.reports.database.connect() as connection:
+            rows = connection.execute(
+                """
+                SELECT group_name, category_name, block, due_month
+                FROM v_latest_planned_categories
+                """
+            ).fetchall()
+        return {
+            (row["group_name"], row["category_name"]): {
+                "block": row["block"],
+                "due_month": row["due_month"],
+            }
+            for row in rows
         }
 
     def _blockers(self, *, status: dict[str, Any], health: dict[str, Any]) -> list[dict[str, Any]]:
@@ -1305,9 +1468,20 @@ class WeeklyReviewService:
 
     def _changes(self, *, comparison: dict[str, Any]) -> list[dict[str, Any]]:
         items: list[dict[str, Any]] = []
+        basis = comparison.get("comparison_basis", "full_month")
+        days_elapsed = int(comparison.get("days_elapsed") or 0)
+        days_total = int(comparison.get("days_total") or 0)
         for category in comparison["categories"]:
             delta = category["delta_milliunits"]
             if abs(delta) < 75_000:
+                continue
+            if basis == "month_to_date" and self._is_unfired_fixed_bill(
+                group_name=category["group_name"],
+                category_name=category["category_name"],
+                current_milliunits=category["month_b_milliunits"],
+                delta_milliunits=delta,
+                day_of_month=days_elapsed,
+            ):
                 continue
             delta_percent = category["delta_percent"]
             direction = "up" if delta > 0 else "down"
@@ -1316,29 +1490,35 @@ class WeeklyReviewService:
                 if abs(delta) >= 250_000 or (delta_percent is not None and abs(delta_percent) >= 50)
                 else "info"
             )
+            title, why, recommended_action = self._change_copy(
+                comparison=comparison,
+                category=category,
+                direction=direction,
+                delta=delta,
+                basis=basis,
+                days_elapsed=days_elapsed,
+                days_total=days_total,
+            )
             items.append(
                 {
                     "kind": "month_change",
                     "signal_class": self._signal_class(category["group_name"], category["category_name"]),
                     "severity": severity,
-                    "title": (
-                        f"{category['group_name']} / {category['category_name']} is {direction} "
-                        f"{self._format_money(abs(delta))} versus {comparison['month_a']}"
-                    ),
-                    "why_it_matters": (
-                        f"{comparison['month_b']} spend was {self._format_money(category['month_b_milliunits'])}; "
-                        f"{comparison['month_a']} was {self._format_money(category['month_a_milliunits'])}."
-                    ),
-                    "recommended_action": (
-                        "Confirm whether this is a durable behavior change before adjusting the budget baseline."
-                    ),
+                    "title": title,
+                    "why_it_matters": why,
+                    "recommended_action": recommended_action,
                     "group_name": category["group_name"],
                     "category_name": category["category_name"],
                     "evidence": {
                         "month_a": comparison["month_a"],
                         "month_b": comparison["month_b"],
+                        "comparison_basis": basis,
+                        "days_elapsed": days_elapsed,
+                        "days_total": days_total,
                         "month_a_milliunits": category["month_a_milliunits"],
                         "month_b_milliunits": category["month_b_milliunits"],
+                        "previous_full_month_milliunits": category.get("previous_full_month_milliunits"),
+                        "projected_month_b_milliunits": category.get("projected_month_b_milliunits"),
                         "delta_milliunits": delta,
                         "delta_percent": delta_percent,
                     },
@@ -1346,6 +1526,78 @@ class WeeklyReviewService:
                 }
             )
         return sorted(items, key=self._priority_key)
+
+    def _change_copy(
+        self,
+        *,
+        comparison: dict[str, Any],
+        category: dict[str, Any],
+        direction: str,
+        delta: int,
+        basis: str,
+        days_elapsed: int,
+        days_total: int,
+    ) -> tuple[str, str, str]:
+        label = f"{category['group_name']} / {category['category_name']}"
+        if basis == "month_to_date":
+            previous_full = int(category.get("previous_full_month_milliunits") or 0)
+            if self._uses_linear_projection(category):
+                projected = int(category.get("projected_month_b_milliunits") or 0)
+                projection_sentence = (
+                    f"At this pace, {comparison['month_b']} projects to {self._format_money(projected)} "
+                    f"versus {comparison['month_a']} full-month spend of {self._format_money(previous_full)}."
+                )
+            else:
+                projection_sentence = (
+                    f"{comparison['month_a']} finished at {self._format_money(previous_full)}. "
+                    "This category is scheduled or one-time, so it is not projected as a daily run rate."
+                )
+            return (
+                f"{label} is {direction} {self._format_money(abs(delta))} month-to-date versus {comparison['month_a']}",
+                (
+                    f"Through day {days_elapsed} of {days_total}, {comparison['month_b']} spend is "
+                    f"{self._format_money(category['month_b_milliunits'])}; {comparison['month_a']} was "
+                    f"{self._format_money(category['month_a_milliunits'])} by the same point. "
+                    f"{projection_sentence}"
+                ),
+                "Use this as a pace check: decide whether the remaining month should stay on this trajectory or needs a course correction.",
+            )
+        return (
+            f"{label} is {direction} {self._format_money(abs(delta))} versus {comparison['month_a']}",
+            (
+                f"{comparison['month_b']} spend was {self._format_money(category['month_b_milliunits'])}; "
+                f"{comparison['month_a']} was {self._format_money(category['month_a_milliunits'])}."
+            ),
+            "Confirm whether this is a durable behavior change before adjusting the budget baseline.",
+        )
+
+    def _is_unfired_fixed_bill(
+        self,
+        *,
+        group_name: str,
+        category_name: str,
+        current_milliunits: int,
+        delta_milliunits: int,
+        day_of_month: int,
+    ) -> bool:
+        if delta_milliunits >= 0 or current_milliunits != 0:
+            return False
+        if group_name not in {"Bills", "Payments", "Credit Card Payments"}:
+            return False
+        due_day = self._due_day_from_category_name(category_name)
+        return due_day is not None and due_day > day_of_month
+
+    def _due_day_from_category_name(self, category_name: str) -> int | None:
+        match = re.match(r"^\s*(\d{1,2})(?:st|nd|rd|th)\b", category_name, re.IGNORECASE)
+        if match is None:
+            return None
+        day = int(match.group(1))
+        return day if 1 <= day <= 31 else None
+
+    def _uses_linear_projection(self, category: dict[str, Any]) -> bool:
+        if category.get("block") not in {"monthly", "stipends"}:
+            return False
+        return category["group_name"] not in {"Bills", "Payments", "Credit Card Payments"}
 
     def _anomalies(self, *, anomalies: dict[str, Any], month_label: str) -> list[dict[str, Any]]:
         items: list[dict[str, Any]] = []
