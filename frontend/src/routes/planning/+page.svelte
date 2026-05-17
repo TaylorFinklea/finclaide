@@ -85,18 +85,60 @@
   }
 
   type CascadeStep = { block: BlockKey; outflow: number; remaining_after: number }
-  type Cascade = { inflow: number; steps: CascadeStep[]; leftover: number }
+  type CascadeInflowStep = {
+    block: BlockKey
+    groupName: string
+    label: string
+    inflow: number
+  }
+  type Cascade = {
+    inflow: number
+    inflowByBlock: Record<BlockKey, number>
+    inflowSteps: CascadeInflowStep[]
+    steps: CascadeStep[]
+    leftover: number
+  }
+
+  function incomeGroupLabel(groupName: string, block: BlockKey): string {
+    const normalized = groupName.trim().toLowerCase()
+    if (normalized === 'monthly income') return 'Monthly income'
+    if (normalized === 'yearly income') return 'Annual income'
+    return `${BLOCK_LABELS[block]} income`
+  }
 
   function computeCascade(plan: ActivePlanResponse | undefined): Cascade | null {
     if (!plan) return null
     let inflow = 0
+    const inflowByBlock: Record<BlockKey, number> = {
+      monthly: 0, annual: 0, one_time: 0, stipends: 0, savings: 0,
+    }
     const outflowByBlock: Record<BlockKey, number> = {
       monthly: 0, annual: 0, one_time: 0, stipends: 0, savings: 0,
     }
     for (const block of BLOCK_ORDER) {
       for (const cat of plan.blocks[block]) {
-        if (cat.kind === 'inflow') inflow += cat.planned_milliunits
+        if (cat.kind === 'inflow') {
+          inflow += cat.planned_milliunits
+          inflowByBlock[block] += cat.planned_milliunits
+        }
         else outflowByBlock[block] += cat.planned_milliunits
+      }
+    }
+    const inflowSteps: CascadeInflowStep[] = []
+    for (const block of BLOCK_ORDER) {
+      const byGroup = new Map<string, number>()
+      for (const cat of plan.blocks[block]) {
+        if (cat.kind !== 'inflow') continue
+        byGroup.set(cat.group_name, (byGroup.get(cat.group_name) ?? 0) + cat.planned_milliunits)
+      }
+      for (const [groupName, groupInflow] of byGroup) {
+        if (groupInflow <= 0) continue
+        inflowSteps.push({
+          block,
+          groupName,
+          label: incomeGroupLabel(groupName, block),
+          inflow: groupInflow,
+        })
       }
     }
     const steps: CascadeStep[] = []
@@ -105,7 +147,7 @@
       running -= outflowByBlock[block]
       steps.push({ block, outflow: outflowByBlock[block], remaining_after: running })
     }
-    return { inflow, steps, leftover: running }
+    return { inflow, inflowByBlock, inflowSteps, steps, leftover: running }
   }
 
   function blockCascade(cascade: Cascade | null, block: BlockKey) {
@@ -319,12 +361,16 @@
   // resulting cascade leftover so you can what-if without leaving the page.
   let blockEditOpen = $state(false)
   let blockEditTarget: BlockKey | null = $state(null)
+  let blockEditKind = $state<'inflow' | 'outflow'>('outflow')
+  let blockEditGroupName: string | null = $state(null)
   let blockEditValues: Record<number, string> = $state({})
 
   let blockEditRows: PlanCategory[] = $derived.by(() => {
     if (!blockEditTarget || !displayedPlan) return []
     return displayedPlan.blocks[blockEditTarget].filter(
-      (c: PlanCategory) => c.kind === 'outflow',
+      (c: PlanCategory) =>
+        c.kind === blockEditKind &&
+        (blockEditKind === 'outflow' || blockEditGroupName === null || c.group_name === blockEditGroupName),
     )
   })
   let blockEditOldTotal = $derived(
@@ -338,7 +384,11 @@
   )
   let blockEditDelta = $derived(blockEditNewTotal - blockEditOldTotal)
   let blockEditNewLeftover = $derived(
-    cascade ? cascade.leftover - blockEditDelta : 0,
+    cascade
+      ? blockEditKind === 'inflow'
+        ? cascade.leftover + blockEditDelta
+        : cascade.leftover - blockEditDelta
+      : 0,
   )
   let blockEditValid = $derived(
     blockEditRows.every((r) => {
@@ -347,11 +397,13 @@
     }),
   )
 
-  function openBlockEdit(block: BlockKey) {
+  function openBlockEdit(block: BlockKey, kind: 'inflow' | 'outflow' = 'outflow', groupName: string | null = null) {
     if (!displayedPlan) return
-    const rows = displayedPlan.blocks[block].filter((c) => c.kind === 'outflow')
+    const rows = displayedPlan.blocks[block].filter(
+      (c) => c.kind === kind && (kind === 'outflow' || groupName === null || c.group_name === groupName),
+    )
     if (rows.length === 0) {
-      toast.error('No outflow rows in this block to adjust.')
+      toast.error(`No ${kind === 'inflow' ? 'income' : 'outflow'} rows in this block to adjust.`)
       return
     }
     const seed: Record<number, string> = {}
@@ -359,6 +411,8 @@
       seed[r.id] = (r.planned_milliunits / 1000).toFixed(2)
     })
     blockEditTarget = block
+    blockEditKind = kind
+    blockEditGroupName = groupName
     blockEditValues = seed
     blockEditOpen = true
   }
@@ -662,11 +716,24 @@
                 {formatMoney(cascade.inflow * cadenceMultiplier)} / {cadenceLabel}
               </span>
             </div>
+            {#each cascade.inflowSteps as step (`${step.block}-${step.groupName}`)}
+              <button
+                type="button"
+                class="-mx-2 flex w-full items-baseline justify-between rounded px-2 py-1 text-left transition-colors hover:bg-muted/30 focus:bg-muted/30 focus:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                onclick={() => openBlockEdit(step.block, 'inflow', step.groupName)}
+                aria-label={`Adjust ${step.label}`}
+              >
+                <span class="text-muted-foreground">+ {step.label}</span>
+                <span class="font-mono text-emerald-200">
+                  {formatMoney(step.inflow * cadenceMultiplier)} / {cadenceLabel}
+                </span>
+              </button>
+            {/each}
             {#each cascade.steps as step (step.block)}
               <button
                 type="button"
                 class="-mx-2 flex w-full items-baseline justify-between rounded px-2 py-1 text-left transition-colors hover:bg-muted/30 focus:bg-muted/30 focus:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-                onclick={() => openBlockEdit(step.block)}
+                onclick={() => openBlockEdit(step.block, 'outflow')}
                 aria-label={`Adjust ${BLOCK_LABELS[step.block]} block outflows`}
               >
                 <span class="text-muted-foreground">− {BLOCK_LABELS[step.block]}</span>
@@ -853,7 +920,11 @@
   <DialogContent>
     <DialogHeader>
       <DialogTitle>
-        Adjust {blockEditTarget ? BLOCK_LABELS[blockEditTarget] : ''} outflows
+        {#if blockEditKind === 'inflow'}
+          Adjust {blockEditGroupName ? incomeGroupLabel(blockEditGroupName, blockEditTarget ?? 'monthly') : 'income'}
+        {:else}
+          Adjust {blockEditTarget ? BLOCK_LABELS[blockEditTarget] : ''} outflows
+        {/if}
       </DialogTitle>
       <DialogDescription>
         Change any row's planned amount; the cascade leftover preview updates live so you
@@ -885,7 +956,9 @@
     </div>
     <div class="space-y-1.5 border-t border-border/30 pt-3 text-sm">
       <div class="flex items-baseline justify-between">
-        <span class="text-muted-foreground">Block total</span>
+        <span class="text-muted-foreground">
+          {blockEditKind === 'inflow' ? 'Income total' : 'Block total'}
+        </span>
         <span class="font-mono">
           {formatMoney(blockEditOldTotal)} → <span
             class={blockEditDelta === 0
@@ -901,9 +974,13 @@
         <span
           class="font-mono {blockEditDelta === 0
             ? 'text-muted-foreground'
-            : blockEditDelta < 0
-              ? 'text-emerald-300'
-              : 'text-rose-300'}"
+            : blockEditKind === 'inflow'
+              ? blockEditDelta > 0
+                ? 'text-emerald-300'
+                : 'text-rose-300'
+              : blockEditDelta < 0
+                ? 'text-emerald-300'
+                : 'text-rose-300'}"
         >
           {blockEditDelta > 0 ? '+' : ''}{formatMoney(blockEditDelta)}
         </span>
@@ -1105,4 +1182,3 @@
     </DialogFooter>
   </DialogContent>
 </DialogPrimitive.Root>
-

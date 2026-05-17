@@ -65,6 +65,15 @@ const planFixture: ActivePlanResponse = {
     ],
     annual: [
       makeCategory({
+        id: 19,
+        group_name: 'Yearly Income',
+        category_name: 'Bonus',
+        block: 'annual',
+        kind: 'inflow',
+        planned_milliunits: 250000,
+        annual_target_milliunits: 3000000,
+      }),
+      makeCategory({
         id: 20,
         group_name: 'Yearly',
         category_name: 'Insurance',
@@ -115,6 +124,27 @@ describe('PlanningPage', () => {
     expect(screen.getByRole('tab', { name: 'Savings' })).toBeInTheDocument()
     expect(await screen.findByText('Rent')).toBeInTheDocument()
     expect(await screen.findByText('Utilities')).toBeInTheDocument()
+  })
+
+  it('lets annual income be adjusted from the cash flow card', async () => {
+    renderPage(PlanningPage as never, { selectedMonth: '2026-04' })
+
+    await screen.findByText('Rent')
+    await userEvent.click(screen.getByRole('button', { name: /Adjust Annual income/i }))
+
+    const dialog = await screen.findByRole('dialog')
+    expect(within(dialog).getByText(/Adjust Annual income/i)).toBeInTheDocument()
+    const input = within(dialog).getByDisplayValue('250.00') as HTMLInputElement
+    await userEvent.clear(input)
+    await userEvent.type(input, '500.00')
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Apply' }))
+
+    await waitFor(() => {
+      expect(apiMocks.updatePlanCategory).toHaveBeenCalledWith(
+        19,
+        expect.objectContaining({ plan_id: 1, planned_milliunits: 500000 }),
+      )
+    })
   })
 
   it('opens the edit Sheet with prefilled values when a row is clicked', async () => {
