@@ -1,468 +1,286 @@
 <script lang="ts">
   import { browser } from '$app/environment'
   import { createQuery } from '@tanstack/svelte-query'
-  import { writable } from 'svelte/store'
-  import { AlertTriangle, ArrowDownUp, RefreshCcw, ShieldCheck } from 'lucide-svelte'
+  import { ChevronRight } from 'lucide-svelte'
 
-  import FailureCauseCard from '$components/failure-cause-card.svelte'
-  import GroupChart from '$components/group-chart.svelte'
-  import MetricCard from '$components/metric-card.svelte'
-  import MonthPaceCard from '$components/month-pace-card.svelte'
-  import StatusChip from '$components/status-chip.svelte'
-  import Card from '$components/ui/card.svelte'
-  import CardContent from '$components/ui/card-content.svelte'
-  import CardHeader from '$components/ui/card-header.svelte'
-  import CardTitle from '$components/ui/card-title.svelte'
-  import Skeleton from '$components/ui/skeleton.svelte'
-  import YearEndForecastCard from '$components/year-end-forecast-card.svelte'
+  import AttentionItem from '$components/quartz/attention-item.svelte'
+  import HighlightTile from '$components/quartz/highlight-tile.svelte'
+  import PlanVsActualRow from '$components/quartz/plan-vs-actual-row.svelte'
+  import RecommendationItem from '$components/quartz/recommendation-item.svelte'
+  import SectionHeading from '$components/quartz/section-heading.svelte'
+  import Tabs from '$components/quartz/tabs.svelte'
   import {
-    getMonthPace,
+    getCashflowTimeline,
     getStatus,
     getSummary,
     getWeeklyReview,
     getYearEndProjection,
-    type ReviewItem,
-    type StatusResponse,
   } from '$lib/api'
-  import { formatCompactMoney, formatDay, formatMoney, formatMonthLabel, formatRunAt } from '$lib/format'
+  import { accentForGroup } from '$lib/design/tokens'
+  import { formatCompactMoney, formatMoney, formatMonthLabel } from '$lib/format'
   import { monthStore } from '$lib/stores/month.svelte'
 
-  let month = $derived(monthStore.value)
+  type Tab = 'review' | 'pa' | 'cash' | 'transactions'
+  let tab = $state<Tab>('review')
 
-  const statusQuery = createQuery({ queryKey: ['status'], queryFn: getStatus, enabled: browser })
+  const tabs = [
+    { value: 'review' as const, label: 'Weekly review' },
+    { value: 'pa' as const, label: 'Plan vs actual' },
+    { value: 'cash' as const, label: 'Cash flow' },
+    { value: 'transactions' as const, label: 'Transactions' },
+  ]
 
-  const summaryOpts = writable({
-    queryKey: ['summary', monthStore.value],
-    queryFn: () => getSummary(monthStore.value),
+  const month = monthStore.value
+
+  const reviewQuery = createQuery({
+    queryKey: ['weekly-review', month],
+    queryFn: () => getWeeklyReview(month),
+    enabled: browser && !!month,
+  })
+  const summaryQuery = createQuery({
+    queryKey: ['summary', month],
+    queryFn: () => getSummary(month),
+    enabled: browser && !!month,
+  })
+  const statusQuery = createQuery({
+    queryKey: ['status'],
+    queryFn: getStatus,
     enabled: browser,
   })
-  const reviewOpts = writable({
-    queryKey: ['review', monthStore.value],
-    queryFn: () => getWeeklyReview(monthStore.value),
-    enabled: browser,
+  const projectionQuery = createQuery({
+    queryKey: ['projection', month],
+    queryFn: () => getYearEndProjection(month),
+    enabled: browser && !!month,
   })
-  const paceOpts = writable({
-    queryKey: ['analytics-pace', monthStore.value],
-    queryFn: () => getMonthPace(monthStore.value),
-    enabled: browser,
+  const cashflowQuery = createQuery({
+    queryKey: ['cashflow', month],
+    queryFn: () => getCashflowTimeline({ months: 12, as_of_month: month }),
+    enabled: browser && !!month,
   })
-  const projectionOpts = writable({
-    queryKey: ['analytics-projection', monthStore.value],
-    queryFn: () => getYearEndProjection(monthStore.value),
-    enabled: browser,
-  })
-  $effect(() => {
-    summaryOpts.set({
-      queryKey: ['summary', month],
-      queryFn: () => getSummary(month),
-      enabled: browser,
-    })
-    reviewOpts.set({
-      queryKey: ['review', month],
-      queryFn: () => getWeeklyReview(month),
-      enabled: browser,
-    })
-    paceOpts.set({
-      queryKey: ['analytics-pace', month],
-      queryFn: () => getMonthPace(month),
-      enabled: browser,
-    })
-    projectionOpts.set({
-      queryKey: ['analytics-projection', month],
-      queryFn: () => getYearEndProjection(month),
-      enabled: browser,
-    })
-  })
-  const summaryQuery = createQuery(summaryOpts)
-  const reviewQuery = createQuery(reviewOpts)
-  const paceQuery = createQuery(paceOpts)
-  const projectionQuery = createQuery(projectionOpts)
 
-  let summary = $derived($summaryQuery.data)
-  let status = $derived($statusQuery.data)
-  let review = $derived($reviewQuery.data)
+  function dayInfo(): { dayOfMonth: number; daysInMonth: number; weekday: string; weekNumber: number } {
+    const now = new Date()
+    const dayOfMonth = now.getDate()
+    const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate()
+    const weekday = now.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })
+    return { dayOfMonth, daysInMonth, weekday, weekNumber: Math.ceil(dayOfMonth / 7) }
+  }
+  const { dayOfMonth, daysInMonth, weekday, weekNumber } = dayInfo()
 
-  let annualCategories = $derived(
-    summary?.groups.flatMap((group) =>
-      group.categories
-        .filter((category) => category.due_month !== null)
-        .map((category) => ({ ...category, group_name: group.group_name })),
-    ) ?? [],
+  let planned = $derived<number>(
+    ($reviewQuery.data?.supporting_metrics?.planned_total_milliunits as number | undefined) ?? 0,
+  )
+  let actual = $derived<number>(
+    ($reviewQuery.data?.supporting_metrics?.actual_total_milliunits as number | undefined) ?? 0,
+  )
+  let pctOfPlan = $derived(planned > 0 ? ((actual / planned) * 100).toFixed(1) : '—')
+  let monthProgressPct = $derived(Math.round((dayOfMonth / daysInMonth) * 100))
+  let paceDelta = $derived(planned > 0 ? Math.round((actual / planned - dayOfMonth / daysInMonth) * 100) : 0)
+
+  let projectedClose = $derived<number>(
+    ($projectionQuery.data?.totals?.projected_annual_milliunits as number | undefined) ?? 0,
+  )
+  let projectedVariance = $derived<number>(
+    ($projectionQuery.data?.totals?.projected_variance_milliunits as number | undefined) ?? 0,
   )
 
-  let priorityItems = $derived(
-    review
-      ? review.blockers.length > 0
-        ? review.blockers.slice(0, 3)
-        : [...review.overages, ...review.changes, ...review.anomalies].slice(0, 3)
-      : [],
+  let cashflowMonths = $derived($cashflowQuery.data?.months ?? [])
+  let netThisMonth = $derived.by<number>(() => {
+    const m = cashflowMonths.find((row: any) => row.month === month) as any
+    return m ? m.inflow_milliunits - m.outflow_milliunits : 0
+  })
+  let netPrevMonth = $derived.by<number>(() => {
+    if (cashflowMonths.length < 2) return 0
+    const idx = cashflowMonths.findIndex((row: any) => row.month === month)
+    if (idx < 1) return 0
+    const p = cashflowMonths[idx - 1] as any
+    return p.inflow_milliunits - p.outflow_milliunits
+  })
+  let netMoMPct = $derived(
+    netPrevMonth !== 0
+      ? Math.round(((netThisMonth - netPrevMonth) / Math.abs(netPrevMonth)) * 100)
+      : 0,
   )
-  let attentionItems = $derived(
-    review ? [...review.blockers, ...review.overages, ...review.anomalies].slice(0, 3) : [],
-  )
-  let actionItems = $derived(review?.recommendations.slice(0, 3) ?? [])
 
-  function automationHealthStatus(s: StatusResponse) {
-    const schedule = s.scheduled_refresh
-    if (!schedule.enabled) return 'missing'
-    if (schedule.last_status === 'failed') return 'critical'
-    if (schedule.last_status === 'skipped') return 'warning'
-    if (s.actuals_freshness.status === 'critical' || s.plan_freshness.status === 'missing') return 'warning'
-    return schedule.last_status ?? 'fresh'
+  function chip(sev: string): 'crit' | 'warn' | 'info' | 'good' {
+    if (sev === 'critical' || sev === 'crit') return 'crit'
+    if (sev === 'warning' || sev === 'warn') return 'warn'
+    if (sev === 'good' || sev === 'success') return 'good'
+    return 'info'
   }
 
-  function automationHealthHeadline(s: StatusResponse) {
-    const schedule = s.scheduled_refresh
-    if (!schedule.enabled) return 'Automatic refresh is disabled'
-    if (schedule.last_status === 'success') return `Last run succeeded ${formatRunAt(schedule.last_finished_at)}`
-    if (schedule.last_status === 'failed') return `Last run failed ${formatRunAt(schedule.last_finished_at)}`
-    if (schedule.last_status === 'skipped') return `Last run skipped ${formatRunAt(schedule.last_finished_at)}`
-    return `Next run ${formatRunAt(schedule.next_run_at)}`
-  }
-
-  function automationHealthDetail(s: StatusResponse) {
-    const schedule = s.scheduled_refresh
-    if (!schedule.enabled)
-      return 'Automatic refresh can keep the workbook import, YNAB sync, and reconcile flow current without manual runs.'
-    if (schedule.last_error) return schedule.last_error
-    return `Runs every ${schedule.interval_minutes ?? '—'} minutes. Next run ${formatRunAt(schedule.next_run_at)}.`
-  }
-
-  function formatOverageWatchWindow(startMonth: string | null, endMonth: string | null) {
-    if (!startMonth || !endMonth) return 'Waiting for enough completed-month history to score repeat overages.'
-    if (startMonth === endMonth) return `Completed history through ${formatMonthLabel(endMonth)}`
-    return `Completed months from ${formatMonthLabel(startMonth)} through ${formatMonthLabel(endMonth)}`
+  function ynabStale(): { stale: boolean; hours: number } {
+    const hrs = $statusQuery.data?.actuals_freshness?.hours_stale ?? 0
+    return { stale: hrs > 24, hours: Math.round(hrs) }
   }
 </script>
 
-{#if $summaryQuery.isLoading || $statusQuery.isLoading || $reviewQuery.isLoading}
-  <div class="space-y-8">
-    <div class="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-      {#each Array(4) as _, i (i)}
-        <Skeleton class="h-32 rounded-xl" />
-      {/each}
-    </div>
-    <Skeleton class="h-[480px] rounded-xl" />
-  </div>
-{:else if summary && status && review}
-  <div class="space-y-8">
-    <FailureCauseCard {status} />
+<svelte:head>
+  <title>Review · Finclaide</title>
+</svelte:head>
 
-    <section class="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-      <MetricCard label="Budget Import" value={formatRunAt(status.last_budget_import_at)} detail={`Sheet: ${status.budget_sheet}`}>
-        {#snippet icon()}<RefreshCcw class="h-4 w-4 text-muted-foreground" />{/snippet}
-      </MetricCard>
-      <MetricCard
-        label="YNAB Sync"
-        value={formatRunAt(status.last_ynab_sync_at)}
-        detail={status.last_server_knowledge !== null ? `Server knowledge ${status.last_server_knowledge}` : 'Not synced'}
-      >
-        {#snippet icon()}<ArrowDownUp class="h-4 w-4 text-muted-foreground" />{/snippet}
-      </MetricCard>
-      <MetricCard
-        label="Reconcile"
-        value={status.last_reconcile_status ?? 'Not run'}
-        detail={formatRunAt(status.last_reconcile_at)}
-        tone={status.last_reconcile_status === 'success' ? 'good' : 'warn'}
-      >
-        {#snippet icon()}<ShieldCheck class="h-4 w-4 text-muted-foreground" />{/snippet}
-      </MetricCard>
-      <MetricCard
-        label="Mismatch Count"
-        value={String(summary.mismatches.length)}
-        detail={status.busy ? `Busy: ${status.current_operation}` : 'Ready'}
-        tone={summary.mismatches.length ? 'warn' : 'good'}
-      >
-        {#snippet icon()}<AlertTriangle class="h-4 w-4 text-muted-foreground" />{/snippet}
-      </MetricCard>
-    </section>
-
-    <Card class="border-border/40 bg-card">
-      <CardHeader class="space-y-4">
-        <div class="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
-          <div>
-            <CardTitle>Weekly Review</CardTitle>
-            <p class="mt-2 text-sm text-muted-foreground">{review.headline}</p>
-          </div>
-          <div class="flex items-center gap-3">
-            <StatusChip status={review.overall_status} />
-            <div class="text-right text-sm text-muted-foreground">
-              <div>{review.supporting_metrics.blocker_count} blockers</div>
-              <div>{review.supporting_metrics.recommendation_count} suggested actions</div>
-            </div>
-          </div>
-        </div>
-
-        {#if priorityItems.length}
-          <div class="grid gap-3 xl:grid-cols-3">
-            {#each priorityItems as item, idx (`${item.kind}-${item.title}-${idx}`)}
-              <div class="rounded-lg bg-muted/30 p-4">
-                <div class="flex items-start justify-between gap-3">
-                  <div class="text-sm font-medium text-foreground">{item.title}</div>
-                  <StatusChip status={item.severity} />
-                </div>
-                <p class="mt-2 text-sm text-muted-foreground">{item.why_it_matters}</p>
-              </div>
-            {/each}
-          </div>
-        {/if}
-
-        {#if review.blockers.length}
-          <div class="rounded-lg bg-rose-500/[0.08] p-4 ring-1 ring-inset ring-rose-500/20">
-            <div class="flex items-center gap-2 text-sm font-medium text-rose-100">
-              <AlertTriangle class="h-4 w-4" />
-              Review confidence is reduced until these blockers are resolved.
-            </div>
-            <div class="mt-3 space-y-2">
-              {#each review.blockers.slice(0, 3) as item (item.title)}
-                <div class="text-sm text-rose-50/90">
-                  <span class="font-medium">{item.title}</span>
-                  <span class="text-rose-100/70"> — {item.recommended_action ?? item.why_it_matters}</span>
-                </div>
-              {/each}
-            </div>
-          </div>
-        {/if}
-      </CardHeader>
-      <CardContent class="grid gap-4 xl:grid-cols-3">
-        {@render reviewColumn('What Changed', 'Month-to-date shifts and full-month projections worth sanity-checking.', review.changes, 'No material pace changes crossed the review thresholds.', false)}
-        {@render reviewColumn('Needs Attention', 'Current blockers, overages, and unusual spend.', attentionItems, 'Nothing urgent is crowding the current review window.', false)}
-        {@render reviewColumn('Recommended Actions', 'Suggested next steps grounded in the latest plan and actuals.', actionItems, 'No budget changes are being recommended right now.', true)}
-      </CardContent>
-    </Card>
-
-    <Card class="border-border/40 bg-card">
-      <CardHeader class="flex flex-row items-center justify-between gap-4">
-        <div>
-          <CardTitle>Automation Health</CardTitle>
-          <p class="mt-2 text-sm text-muted-foreground">Scheduled import, YNAB sync, and reconcile state.</p>
-        </div>
-        <StatusChip status={automationHealthStatus(status)} />
-      </CardHeader>
-      <CardContent class="grid gap-4 md:grid-cols-3">
-        <div class="rounded-lg bg-muted/30 p-4">
-          <div class="text-label-upper">Scheduler</div>
-          <div class="mt-2 text-foreground">{automationHealthHeadline(status)}</div>
-          <div class="mt-1 text-sm text-muted-foreground">{automationHealthDetail(status)}</div>
-        </div>
-        <div class="rounded-lg bg-muted/30 p-4">
-          <div class="text-label-upper">Plan Freshness</div>
-          <div class="mt-2 text-foreground">{status.plan_freshness.status}</div>
-          <div class="mt-1 text-sm text-muted-foreground">Last import {formatRunAt(status.plan_freshness.last_updated_at)}</div>
-        </div>
-        <div class="rounded-lg bg-muted/30 p-4">
-          <div class="text-label-upper">YNAB Freshness</div>
-          <div class="mt-2 text-foreground">{status.actuals_freshness.status}</div>
-          <div class="mt-1 text-sm text-muted-foreground">Last sync {formatRunAt(status.actuals_freshness.last_updated_at)}</div>
-        </div>
-      </CardContent>
-    </Card>
-
-    <div class="grid gap-6 xl:grid-cols-[1.6fr_1fr]">
-      <MonthPaceCard
-        pace={$paceQuery.data}
-        isLoading={$paceQuery.isLoading}
-        isError={$paceQuery.isError}
-      />
-      <YearEndForecastCard
-        projection={$projectionQuery.data}
-        isLoading={$projectionQuery.isLoading}
-        isError={$projectionQuery.isError}
-      />
-    </div>
-
-    <div class="grid gap-6 xl:grid-cols-[1.6fr_1fr]">
-      <Card class="border-border/40 bg-card">
-        <CardHeader class="flex flex-row items-center justify-between">
-          <div>
-            <CardTitle>Plan vs Actual by Group</CardTitle>
-            <p class="mt-2 text-sm text-muted-foreground">
-              {formatMonthLabel(summary.month)} across {summary.groups.length} groups
-            </p>
-          </div>
-          <div class="text-right text-sm text-muted-foreground">
-            <div>Planned {formatCompactMoney(summary.groups.reduce((sum, group) => sum + group.planned_milliunits, 0))}</div>
-            <div>Actual {formatCompactMoney(summary.groups.reduce((sum, group) => sum + group.actual_milliunits, 0))}</div>
-          </div>
-        </CardHeader>
-        <CardContent>
-          <GroupChart groups={summary.groups} />
-        </CardContent>
-      </Card>
-
-      <div class="space-y-6">
-        <Card class="border-border/40 bg-card">
-          <CardHeader class="space-y-3">
-            <div class="flex items-center justify-between gap-3">
-              <CardTitle>Overage Watch</CardTitle>
-              <div class="text-label">{summary.overage_watch.categories.length} watched</div>
-            </div>
-            <p class="text-sm text-muted-foreground">
-              {formatOverageWatchWindow(summary.overage_watch.analysis_start_month, summary.overage_watch.analysis_end_month)}
-            </p>
-          </CardHeader>
-          <CardContent class="space-y-3">
-            {#if summary.overage_watch.categories.length}
-              {#each summary.overage_watch.categories as category (`${category.group_name}-${category.category_name}`)}
-                <div class="grid gap-3 rounded-lg bg-muted/30 p-3">
-                  <div class="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
-                    <div>
-                      <div class="font-medium text-foreground">{category.group_name} / {category.category_name}</div>
-                      <div class="mt-1 text-sm text-muted-foreground">
-                        {category.watch_kind === 'unplanned' ? 'Needs a sinking fund' : 'Current target is lagging actual run rate'}
-                      </div>
-                    </div>
-                    <div class="flex items-center gap-2">
-                      <StatusChip status={category.watch_level} />
-                      <div class="text-label">{category.over_months}/{category.analysis_month_count} months over</div>
-                    </div>
-                  </div>
-                </div>
-              {/each}
-            {:else}
-              <div class="rounded-lg bg-emerald-500/[0.06] p-4 text-sm text-emerald-100 ring-1 ring-inset ring-emerald-500/15">
-                No repeat overages are breaching the watch thresholds in the completed-month history.
-              </div>
-            {/if}
-          </CardContent>
-        </Card>
-
-        <Card class="border-border/40 bg-card">
-          <CardHeader>
-            <CardTitle>Mismatch Status</CardTitle>
-          </CardHeader>
-          <CardContent class="space-y-3">
-            {#if summary.mismatches.length}
-              {#each summary.mismatches as mismatch (`${mismatch.group_name}-${mismatch.category_name}`)}
-                <div class="rounded-lg bg-amber-500/[0.06] p-3 ring-1 ring-inset ring-amber-500/15">
-                  <div class="font-medium text-foreground">{mismatch.group_name} / {mismatch.category_name}</div>
-                  <div class="mt-1 text-sm text-muted-foreground">{mismatch.reason}</div>
-                </div>
-              {/each}
-            {:else}
-              <div class="rounded-lg bg-emerald-500/[0.06] p-4 text-sm text-emerald-100 ring-1 ring-inset ring-emerald-500/15">
-                Reconciliation is clean. All imported sheet categories have an exact YNAB match.
-              </div>
-            {/if}
-          </CardContent>
-        </Card>
+<section class="flex flex-col gap-5 px-7 py-6">
+  <header class="flex items-center justify-between">
+    <div>
+      <div class="mb-2 inline-flex items-center gap-1.5 rounded-full border border-border bg-card px-2.5 py-1 text-xs text-foreground/70">
+        <span class="h-1.5 w-1.5 rounded-full bg-[#2F8A57]"></span>
+        Review · Week {weekNumber}
       </div>
+      <h1 class="flex items-baseline gap-3 text-[22px] font-semibold tracking-[-0.015em]">
+        {formatMonthLabel(month)}
+        <span class="text-sm font-normal text-muted-foreground">
+          {weekday} · day {dayOfMonth} of {daysInMonth}
+        </span>
+      </h1>
     </div>
-
-    <div class="grid gap-6 xl:grid-cols-[1.15fr_1fr]">
-      <Card class="border-border/40 bg-card">
-        <CardHeader><CardTitle>Annual Funding Status</CardTitle></CardHeader>
-        <CardContent class="space-y-3">
-          {#if annualCategories.length}
-            {#each annualCategories as category (`${category.group_name}-${category.category_name}`)}
-              <div class="grid gap-2 rounded-lg p-3 transition-colors duration-100 hover:bg-muted/30 md:grid-cols-[1.3fr_1fr_auto]">
-                <div>
-                  <div class="font-medium text-foreground">{category.group_name} / {category.category_name}</div>
-                  <div class="mt-1 text-sm text-muted-foreground">
-                    Due month {category.due_month ?? '-'} &middot; Balance {formatMoney(category.current_balance_milliunits)}
-                  </div>
-                </div>
-                <div class="font-mono text-sm text-muted-foreground">Monthly target {formatMoney(category.planned_milliunits)}</div>
-                <StatusChip status={category.status} />
-              </div>
-            {/each}
-          {:else}
-            <p class="text-sm text-muted-foreground">No annual categories available.</p>
-          {/if}
-        </CardContent>
-      </Card>
-
-      <Card class="border-border/40 bg-card">
-        <CardHeader><CardTitle>Recent Transactions</CardTitle></CardHeader>
-        <CardContent class="space-y-3">
-          {#if summary.recent_transactions.length}
-            {#each summary.recent_transactions as transaction (transaction.id)}
-              <div class="grid gap-2 rounded-lg p-3 transition-colors duration-100 hover:bg-muted/30 md:grid-cols-[96px_1fr_auto]">
-                <div class="font-mono text-xs text-muted-foreground">{formatDay(transaction.date)}</div>
-                <div>
-                  <div class="font-medium text-foreground">{transaction.payee_name ?? 'Uncategorized payee'}</div>
-                  <div class="mt-1 text-sm text-muted-foreground">
-                    {transaction.group_name ?? 'No group'} / {transaction.category_name ?? 'No category'}
-                  </div>
-                </div>
-                <div class="space-y-1 text-right">
-                  <div class="font-mono text-sm text-foreground">{formatMoney(transaction.amount_milliunits)}</div>
-                  {#if transaction.memo}
-                    <div class="max-w-48 text-xs text-muted-foreground">{transaction.memo}</div>
-                  {/if}
-                </div>
-              </div>
-            {/each}
-          {:else}
-            <p class="text-sm text-muted-foreground">No transactions synced yet.</p>
-          {/if}
-        </CardContent>
-      </Card>
-    </div>
-  </div>
-{/if}
-
-{#snippet reviewColumn(title: string, subtitle: string, items: ReviewItem[], empty: string, showAction: boolean)}
-  <div class="rounded-lg bg-muted/20 p-4">
-    <div class="text-base font-medium text-foreground">{title}</div>
-    <p class="mt-1 text-sm text-muted-foreground">{subtitle}</p>
-    <div class="mt-4 space-y-3">
-      {#if items.length}
-        {#each items as item, idx (`${item.kind}-${item.title}-${idx}`)}
-          <div class="rounded-lg bg-muted/30 p-3">
-            <div class="flex items-start justify-between gap-3">
-              <div class="text-sm font-medium text-foreground">{item.title}</div>
-              <StatusChip status={item.severity} />
-            </div>
-            <div class="mt-2 text-sm text-muted-foreground">{item.why_it_matters}</div>
-            {#if item.narrative?.context}
-              <details class="mt-2 text-xs text-muted-foreground/80">
-                <summary class="cursor-pointer select-none hover:text-foreground">Context</summary>
-                <p class="mt-2">{item.narrative.context}</p>
-              </details>
-            {/if}
-            {#if item.supporting_evidence && (item.supporting_evidence.recent_overage_months?.length || item.supporting_evidence.top_transactions?.length)}
-              <details class="mt-2 text-xs text-muted-foreground/80">
-                <summary class="cursor-pointer select-none hover:text-foreground">Supporting evidence</summary>
-                <div class="mt-2 space-y-2">
-                  {#if item.supporting_evidence.recent_overage_months?.length}
-                    <div>
-                      <div class="text-[10px] uppercase tracking-wide text-muted-foreground">Recent variance</div>
-                      <ul class="mt-1 space-y-0.5">
-                        {#each item.supporting_evidence.recent_overage_months as m (m.month)}
-                          <li class="font-mono text-[11px]">
-                            {m.month}: spent {formatMoney(m.spend_milliunits)}
-                            ({m.variance_milliunits > 0 ? '+' : ''}{formatMoney(m.variance_milliunits)} vs plan)
-                          </li>
-                        {/each}
-                      </ul>
-                    </div>
-                  {/if}
-                  {#if item.supporting_evidence.top_transactions?.length}
-                    <div>
-                      <div class="text-[10px] uppercase tracking-wide text-muted-foreground">Top transactions</div>
-                      <ul class="mt-1 space-y-0.5">
-                        {#each item.supporting_evidence.top_transactions as txn (txn.id)}
-                          <li class="font-mono text-[11px]">
-                            {txn.date} {txn.payee_name ?? '—'} {formatMoney(txn.amount_milliunits)}
-                          </li>
-                        {/each}
-                      </ul>
-                    </div>
-                  {/if}
-                </div>
-              </details>
-            {/if}
-            {#if showAction && item.recommended_action}
-              <div class="mt-3 text-sm text-foreground/90">{item.recommended_action}</div>
-            {/if}
-          </div>
-        {/each}
-      {:else}
-        <div class="rounded-lg bg-emerald-500/[0.06] p-4 text-sm text-emerald-100 ring-1 ring-inset ring-emerald-500/15">
-          {empty}
+    <div class="flex items-center gap-2">
+      {#if ynabStale().stale}
+        <div class="inline-flex items-center gap-1.5 rounded-full border border-[#C68A21]/30 bg-[#FBF1DC] px-2.5 py-1 text-xs text-[#C68A21]">
+          <span class="h-1.5 w-1.5 rounded-full bg-[#C68A21]"></span>
+          YNAB stale {ynabStale().hours}h
         </div>
       {/if}
+      <a
+        href="/operate"
+        class="rounded-lg border border-border bg-card px-3 py-1.5 text-xs font-medium hover:bg-secondary"
+      >
+        View runs
+      </a>
     </div>
-  </div>
-{/snippet}
+  </header>
+
+  <Tabs {tabs} bind:value={tab} />
+
+  {#if tab === 'review'}
+    <div class="grid gap-3" style="grid-template-columns: 1.4fr 1fr 1fr 1fr">
+      <HighlightTile
+        title="Month so far"
+        value={formatMoney(actual).replace('.00', '')}
+        unit={`/ ${formatMoney(planned).replace('.00', '')}`}
+        sub={`${pctOfPlan}% of plan · day ${dayOfMonth}/${daysInMonth} (${monthProgressPct}%)`}
+        subtone={paceDelta > 5 ? 'warn' : paceDelta < -5 ? 'pos' : 'muted'}
+      />
+      <HighlightTile
+        title="Projected close"
+        value={projectedClose > 0 ? formatCompactMoney(projectedClose) : '—'}
+        sub={projectedVariance > 0
+          ? `+${formatMoney(projectedVariance).replace('.00', '')} over plan`
+          : projectedVariance < 0
+            ? `${formatMoney(projectedVariance).replace('.00', '')} under plan`
+            : 'on plan'}
+        subtone={projectedVariance > 0 ? 'warn' : 'pos'}
+      />
+      <HighlightTile
+        title="Net cash flow"
+        value={(netThisMonth >= 0 ? '+' : '') + formatMoney(netThisMonth).replace('.00', '')}
+        sub={netPrevMonth !== 0 ? `${netMoMPct > 0 ? '+' : ''}${netMoMPct}% MoM` : '—'}
+        subtone={netMoMPct >= 0 ? 'pos' : 'neg'}
+      />
+      <HighlightTile
+        title="Runway"
+        value="—"
+        unit="mo"
+        sub="cash · burn not yet wired"
+        subtone="muted"
+      />
+    </div>
+
+    <div class="grid gap-4" style="grid-template-columns: 1.4fr 1fr">
+      <div class="flex flex-col gap-4">
+        <div class="rounded-xl border border-border bg-card p-[18px]">
+          <SectionHeading title="Plan vs actual · by group" meta="Open detail" />
+          {#if $summaryQuery.data?.groups}
+            {#each $summaryQuery.data.groups as group (group.group_name)}
+              {@const groupActual = group.categories.reduce((s: number, c: any) => s + c.actual_milliunits, 0)}
+              {@const groupPlanned = group.categories.reduce((s: number, c: any) => s + c.planned_milliunits, 0)}
+              <PlanVsActualRow
+                name={group.group_name}
+                subtitle={`${group.categories.length} categories`}
+                accent={accentForGroup(group.group_name)}
+                planned={groupPlanned}
+                actual={groupActual}
+                {formatMoney}
+              />
+            {/each}
+          {:else}
+            <div class="py-6 text-center text-sm text-muted-foreground">Loading plan…</div>
+          {/if}
+        </div>
+
+        <div class="rounded-xl border border-border bg-card p-[18px]">
+          <SectionHeading title="What changed" meta="Month over month · 15% drift threshold" />
+          <div class="flex flex-col gap-2.5">
+            {#each $reviewQuery.data?.changes ?? [] as item, i (i)}
+              <AttentionItem
+                title={item.title}
+                why={item.why_it_matters}
+                severity={chip(item.severity)}
+              />
+            {/each}
+            {#if ($reviewQuery.data?.changes?.length ?? 0) === 0}
+              <div class="rounded-xl border border-border bg-secondary/40 p-3 text-xs text-muted-foreground">
+                No notable month-over-month changes.
+              </div>
+            {/if}
+          </div>
+        </div>
+      </div>
+
+      <div class="flex flex-col gap-4">
+        <div class="rounded-xl border border-border bg-card p-[18px]">
+          <SectionHeading
+            title="Needs attention"
+            meta={`${$reviewQuery.data?.blockers?.length ?? 0} blocker${($reviewQuery.data?.blockers?.length ?? 0) === 1 ? '' : 's'} · ${$reviewQuery.data?.overages?.length ?? 0} overages`}
+          />
+          <div class="flex flex-col gap-2.5">
+            {#each $reviewQuery.data?.blockers ?? [] as item, i (`b-${i}`)}
+              <AttentionItem
+                title={item.title}
+                why={item.why_it_matters}
+                severity="crit"
+                highlight
+              >
+                <ChevronRight class="h-3 w-3" />
+                <span class="font-medium">{item.recommended_action ?? 'Resolve in Operate.'}</span>
+              </AttentionItem>
+            {/each}
+            {#each $reviewQuery.data?.overages ?? [] as item, i (`o-${i}`)}
+              <AttentionItem
+                title={item.title}
+                why={item.why_it_matters}
+                severity={chip(item.severity)}
+              />
+            {/each}
+            {#if ($reviewQuery.data?.blockers?.length ?? 0) === 0 && ($reviewQuery.data?.overages?.length ?? 0) === 0}
+              <div class="rounded-xl border border-border bg-secondary/40 p-3 text-xs text-muted-foreground">
+                Nothing needs attention right now.
+              </div>
+            {/if}
+          </div>
+        </div>
+
+        <div class="rounded-xl border border-border bg-card p-[18px]">
+          <SectionHeading title="Recommended actions" meta="Suggested by Finclaide" />
+          <div class="flex flex-col gap-2.5">
+            {#each $reviewQuery.data?.recommendations ?? [] as item, i (`r-${i}`)}
+              <RecommendationItem
+                title={item.title}
+                why={item.why_it_matters}
+                confidence="medium"
+              />
+            {/each}
+            {#if ($reviewQuery.data?.recommendations?.length ?? 0) === 0}
+              <div class="rounded-xl border border-border bg-secondary/40 p-3 text-xs text-muted-foreground">
+                No recommendations yet — Finclaide will surface them as patterns emerge.
+              </div>
+            {/if}
+          </div>
+        </div>
+      </div>
+    </div>
+  {:else}
+    <div class="rounded-xl border border-border bg-card p-8 text-center text-sm text-muted-foreground">
+      This view is coming as part of the Quartz redesign rollout.
+    </div>
+  {/if}
+</section>
