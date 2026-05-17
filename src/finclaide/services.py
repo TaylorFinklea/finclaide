@@ -1789,3 +1789,4 @@ class ServiceContainer:
     plan_exporter: Any = None
     export_storage: Any = None
     sheets_publisher: Any = None
+    ai: Any = None
