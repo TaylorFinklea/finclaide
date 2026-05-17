@@ -2,8 +2,8 @@ import { screen } from '@testing-library/svelte'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-import { summaryFixture } from '../../test/fixtures'
-import { renderPage } from '../../test/render-page'
+import { summaryFixture } from '../../../test/fixtures'
+import { renderPage } from '../../../test/render-page'
 import CategoriesPage from './+page.svelte'
 
 const apiMocks = vi.hoisted(() => ({

@@ -4,7 +4,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type { ActivePlanResponse, ScenarioSummary } from '$lib/api'
 
-import { renderPage } from '../../test/render-page'
+import { renderPage } from '../../../test/render-page'
 import ScenariosPage from './+page.svelte'
 
 const apiMocks = vi.hoisted(() => ({

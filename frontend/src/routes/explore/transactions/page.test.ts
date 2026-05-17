@@ -4,8 +4,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type { TransactionsPageResponse } from '$lib/api'
 
-import { summaryFixture } from '../../test/fixtures'
-import { renderPage } from '../../test/render-page'
+import { summaryFixture } from '../../../test/fixtures'
+import { renderPage } from '../../../test/render-page'
 import TransactionsPage from './+page.svelte'
 
 const apiMocks = vi.hoisted(() => ({

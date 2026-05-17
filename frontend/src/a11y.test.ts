@@ -2,22 +2,11 @@ import { render, screen, within } from '@testing-library/svelte'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import LayoutHarness from './test/layout-harness.svelte'
-import { reviewFixture, statusFixture, summaryFixture } from './test/fixtures'
+import { statusFixture } from './test/fixtures'
 import { resetMockPage } from './test/setup'
-import { monthStore } from '$lib/stores/month.svelte'
 
 const apiMocks = vi.hoisted(() => ({
   getStatus: vi.fn(),
-  getSummary: vi.fn(),
-  getWeeklyReview: vi.fn(),
-  getTransactions: vi.fn(),
-  getRuns: vi.fn(),
-  getRun: vi.fn(),
-  getReconcilePreview: vi.fn(),
-  importBudget: vi.fn(),
-  syncYnab: vi.fn(),
-  reconcile: vi.fn(),
-  refreshAll: vi.fn(),
 }))
 
 vi.mock('$lib/api', async () => {
@@ -27,60 +16,57 @@ vi.mock('$lib/api', async () => {
 
 vi.mock('$components/ui/toaster.svelte', async () => import('./test/noop.svelte'))
 
-describe('Accessibility smoke — header and navigation', () => {
-  beforeEach(() => {
-    for (const mock of Object.values(apiMocks)) mock.mockReset()
-    apiMocks.getStatus.mockResolvedValue(statusFixture)
-    apiMocks.getSummary.mockResolvedValue(summaryFixture)
-    apiMocks.getWeeklyReview.mockResolvedValue(reviewFixture)
-    apiMocks.getTransactions.mockResolvedValue({
-      transactions: [],
-      total_count: 0,
-      limit: 25,
-      offset: 0,
-    })
-    apiMocks.getRuns.mockResolvedValue({ runs: [] })
-    window.localStorage.setItem('finclaide:selected-month', '2026-03')
-    monthStore.set('2026-03')
-    resetMockPage()
-  })
+// A bare-bones fetch stub so the AI availability probe in +layout.svelte
+// resolves without surprising the test harness with a network call.
+const fetchMock = vi.hoisted(() => vi.fn(async () => new Response('', { status: 503 })))
 
-  it('exposes nav links with accessible names for every primary route', async () => {
+beforeEach(() => {
+  for (const mock of Object.values(apiMocks)) mock.mockReset()
+  apiMocks.getStatus.mockResolvedValue(statusFixture)
+  vi.stubGlobal('fetch', fetchMock)
+  resetMockPage()
+})
+
+describe('Accessibility smoke — Quartz shell', () => {
+  it('exposes nav links for the three workflow routes', async () => {
     render(LayoutHarness)
 
     const nav = await screen.findByRole('navigation')
-    expect(within(nav).getByRole('link', { name: /Overview/i })).toBeInTheDocument()
+    expect(within(nav).getByRole('link', { name: /Review/i })).toBeInTheDocument()
+    expect(within(nav).getByRole('link', { name: /Plan/i })).toBeInTheDocument()
+    expect(within(nav).getByRole('link', { name: /Operate/i })).toBeInTheDocument()
+  })
+
+  it('exposes the explore sub-routes', async () => {
+    render(LayoutHarness)
+
+    const nav = await screen.findByRole('navigation')
     expect(within(nav).getByRole('link', { name: /Categories/i })).toBeInTheDocument()
     expect(within(nav).getByRole('link', { name: /Transactions/i })).toBeInTheDocument()
-    expect(within(nav).getByRole('link', { name: /Operations/i })).toBeInTheDocument()
+    expect(within(nav).getByRole('link', { name: /Forecast/i })).toBeInTheDocument()
+    expect(within(nav).getByRole('link', { name: /Scenarios/i })).toBeInTheDocument()
+    expect(within(nav).getByRole('link', { name: /Insights/i })).toBeInTheDocument()
   })
 
-  it('associates the month input with a visible label', async () => {
+  it('renders a Jump-to-anything search affordance', async () => {
     render(LayoutHarness)
 
-    const monthInput = await screen.findByLabelText(/month/i)
-    expect(monthInput).toHaveAttribute('type', 'month')
-    expect(monthInput).toHaveValue('2026-03')
+    const search = await screen.findByRole('button', { name: /Jump to anything/i })
+    expect(search).toBeInTheDocument()
   })
 
-  it('labels the freshness chips with their status and staleness for screen readers', async () => {
+  it('mounts the AI rail composer with a labelled send button', async () => {
     render(LayoutHarness)
 
-    expect(await screen.findByLabelText(/Plan freshness: fresh/i)).toBeInTheDocument()
-    expect(await screen.findByLabelText(/YNAB freshness: stale/i)).toBeInTheDocument()
+    // Composer input is present even when the rail is disabled — only the
+    // submit button is gated.
+    expect(await screen.findByPlaceholderText(/Ask Finclaide/i)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /Send/i })).toBeInTheDocument()
   })
 
-  it('surfaces the scheduled-refresh banner as a polite live region when last status is failed', async () => {
+  it('shows a degraded-state banner when the AI rail is unavailable', async () => {
     render(LayoutHarness)
 
-    const banner = await screen.findByRole('status')
-    expect(banner).toHaveAttribute('aria-live', 'polite')
-    expect(within(banner).getByText(/Scheduled refresh failed/i)).toBeInTheDocument()
-  })
-
-  it('renders the workspace heading so screen readers can land on the active month', async () => {
-    render(LayoutHarness)
-
-    expect(await screen.findByText('March 2026')).toBeInTheDocument()
+    expect(await screen.findByText(/ANTHROPIC_API_KEY/i)).toBeInTheDocument()
   })
 })
