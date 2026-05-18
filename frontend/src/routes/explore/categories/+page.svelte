@@ -84,11 +84,16 @@
   ]
 
   {/* svelte-ignore unused_export_let */}
+
+  import ScreenHeader from '$components/quartz/screen-header.svelte'
 </script>
 
 {#snippet statusCell(row: Row)}
   <StatusChip status={row.status} />
 {/snippet}
+
+<section class="space-y-5 px-7 py-6">
+<ScreenHeader pill="Explore · Categories" title="Categories" subtitle="Grouped plan-vs-actual table" tone="explore" />
 
 {#if $summaryQuery.isLoading}
   <Skeleton class="h-[640px] rounded-xl" />
@@ -148,3 +153,4 @@
     </Card>
   </div>
 {/if}
+</section>

@@ -111,9 +111,12 @@
     run_rate: '6mo run-rate',
     lump: 'obligation',
   } as const
+
+  import ScreenHeader from '$components/quartz/screen-header.svelte'
 </script>
 
-<div class="space-y-6">
+<section class="space-y-5 px-7 py-6">
+  <ScreenHeader pill="Explore · Forecast" title="Cash flow forecast" subtitle="Twelve-month outlook + rebalance prompts" tone="explore" />
   <Card class="border-border/40 bg-card">
     <CardHeader>
       <CardTitle>
@@ -334,4 +337,4 @@
       </CardContent>
     </Card>
   {/if}
-</div>
+</section>

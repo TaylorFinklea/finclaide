@@ -188,8 +188,12 @@
   function rowKey(s: ScenarioSummary): string {
     return `${s.id}`
   }
+
+  import ScreenHeader from '$components/quartz/screen-header.svelte'
 </script>
 
+<section class="space-y-5 px-7 py-6">
+<ScreenHeader pill="Explore · Scenarios" title="Saved scenarios" subtitle="Named drafts you can compare, open, or commit" tone="explore" />
 <Card class="border-border/40 bg-card">
   <CardHeader>
     <CardTitle class="flex items-center gap-2">
@@ -275,6 +279,7 @@
 <div class="mt-6">
   <ProjectionPanel />
 </div>
+</section>
 
 <!-- Auto-park modal: opens when Open is clicked while a Sandbox exists. -->
 <DialogPrimitive.Root

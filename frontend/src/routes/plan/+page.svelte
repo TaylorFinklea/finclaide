@@ -552,6 +552,44 @@
   }
 </script>
 
+<section class="flex flex-col gap-5 px-7 py-6">
+<header class="flex items-center justify-between">
+  <div>
+    <div class="mb-2 inline-flex items-center gap-1.5 rounded-full border border-border bg-card px-2.5 py-1 text-xs text-foreground/70">
+      <span class="h-1.5 w-1.5 rounded-full {inSandboxMode ? 'bg-[#4E46E5]' : 'bg-[#2F8A57]'}"></span>
+      Plan · {inSandboxMode ? 'Sandbox' : 'Live'}
+    </div>
+    <h1 class="flex items-baseline gap-3 text-[22px] font-semibold tracking-[-0.015em]">
+      Editor
+      {#if displayedPlan?.plan?.label}
+        <span class="text-sm font-normal text-muted-foreground">
+          {inSandboxMode ? 'Draft' : 'Plan'} {displayedPlan.plan.label}
+        </span>
+      {/if}
+    </h1>
+  </div>
+  {#if inSandboxMode}
+    <div class="flex items-center gap-2">
+      <button
+        type="button"
+        class="rounded-lg border border-border bg-card px-3 py-1.5 text-xs font-medium hover:bg-secondary"
+        onclick={() => (confirmingDiscard = true)}
+        disabled={scenarioBusy}
+      >
+        Discard draft
+      </button>
+      <button
+        type="button"
+        class="rounded-lg bg-[#4E46E5] px-3 py-1.5 text-xs font-medium text-white hover:opacity-90"
+        onclick={() => (confirmingCommit = true)}
+        disabled={scenarioBusy || importBusy}
+      >
+        Commit ⌘↵
+      </button>
+    </div>
+  {/if}
+</header>
+
 {#if displayedQueryLoading}
   <Skeleton class="h-[640px] rounded-2xl" />
 {:else if displayedQueryError}
@@ -866,6 +904,7 @@
     />
   </div>
 {/if}
+</section>
 
 {#snippet blockPanel(block: BlockKey, rows: PlanCategory[], total: number)}
   {@const columns = blockColumns(block)}

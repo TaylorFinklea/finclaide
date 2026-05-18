@@ -3,6 +3,8 @@
   import { Dialog as DialogPrimitive } from 'bits-ui'
   import { createMutation, createQuery, useQueryClient } from '@tanstack/svelte-query'
   import { LoaderCircle, RefreshCw } from 'lucide-svelte'
+
+  import ScreenHeader from '$components/quartz/screen-header.svelte'
   import { toast } from 'svelte-sonner'
   import { writable } from 'svelte/store'
 
@@ -232,7 +234,13 @@
   }
 </script>
 
-<div class="space-y-6">
+<section class="space-y-5 px-7 py-6">
+  <ScreenHeader
+    pill="Operate · Runs"
+    title="Operate"
+    subtitle="Run history, reconcile preview, and manual triggers"
+    tone="operate"
+  />
   <FailureCauseCard status={$statusQuery.data} onRetry={handleRetry} {retrying} />
 
   {#if reconcileFailed && planImported}
@@ -339,7 +347,7 @@
       </pre>
     </CardContent>
   </Card>
-</div>
+</section>
 
 {#snippet opButton(
   label: string,

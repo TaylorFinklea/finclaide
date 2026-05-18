@@ -96,6 +96,8 @@
       cellClass: 'text-right',
     },
   ]
+
+  import ScreenHeader from '$components/quartz/screen-header.svelte'
 </script>
 
 {#snippet amountCell(row: TransactionRow)}
@@ -103,6 +105,9 @@
     {formatMoney(row.amount_milliunits)}
   </span>
 {/snippet}
+
+<section class="space-y-5 px-7 py-6">
+<ScreenHeader pill="Explore · Transactions" title="Transactions" subtitle="Search, filter, and drill into individual rows" tone="explore" />
 
 {#if $summaryQuery.isLoading || $transactionsQuery.isLoading}
   <Skeleton class="h-[640px] rounded-xl" />
@@ -194,3 +199,4 @@
     </SheetContent>
   </DialogPrimitive.Root>
 {/if}
+</section>

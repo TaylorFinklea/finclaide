@@ -132,9 +132,12 @@
     falling: '↓',
     stable: '→',
   }
+
+  import ScreenHeader from '$components/quartz/screen-header.svelte'
 </script>
 
-<div class="space-y-6">
+<section class="space-y-5 px-7 py-6">
+  <ScreenHeader pill="Explore · Insights" title="Spending insights" subtitle="Trends, anomalies, and category drilldowns" tone="explore" />
   <Card class="border-border/40 bg-card">
     <CardHeader>
       <div class="flex items-center justify-between gap-3">
@@ -227,4 +230,4 @@
       {/if}
     </CardContent>
   </Card>
-</div>
+</section>
