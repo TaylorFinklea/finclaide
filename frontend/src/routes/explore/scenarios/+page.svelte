@@ -194,7 +194,7 @@
 
 <section class="space-y-5 px-7 py-6">
 <ScreenHeader pill="Explore · Scenarios" title="Saved scenarios" subtitle="Named drafts you can compare, open, or commit" tone="explore" />
-<Card class="border-border/40 bg-card">
+<Card class="border-border bg-card">
   <CardHeader>
     <CardTitle class="flex items-center gap-2">
       <Layers class="h-4 w-4" />

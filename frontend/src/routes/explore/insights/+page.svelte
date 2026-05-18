@@ -138,7 +138,7 @@
 
 <section class="space-y-5 px-7 py-6">
   <ScreenHeader pill="Explore · Insights" title="Spending insights" subtitle="Trends, anomalies, and category drilldowns" tone="explore" />
-  <Card class="border-border/40 bg-card">
+  <Card class="border-border bg-card">
     <CardHeader>
       <div class="flex items-center justify-between gap-3">
         <CardTitle>

@@ -5,6 +5,7 @@
   import { LoaderCircle, RefreshCw } from 'lucide-svelte'
 
   import ScreenHeader from '$components/quartz/screen-header.svelte'
+  import Tabs from '$components/quartz/tabs.svelte'
   import { toast } from 'svelte-sonner'
   import { writable } from 'svelte/store'
 
@@ -232,6 +233,19 @@
     const parts = value.split(/[\\/]/)
     return parts[parts.length - 1] || value
   }
+
+  // ----- Quartz tabs: filter which section group is in focus -----
+  type OperateTab = 'all' | 'runs' | 'reconcile' | 'manual'
+  let operateTab: OperateTab = $state('all')
+  const operateTabs = [
+    { value: 'all' as const, label: 'All' },
+    { value: 'runs' as const, label: 'Runs' },
+    { value: 'reconcile' as const, label: 'Reconcile' },
+    { value: 'manual' as const, label: 'Manual' },
+  ]
+  let showRuns = $derived(operateTab === 'all' || operateTab === 'runs')
+  let showReconcile = $derived(operateTab === 'all' || operateTab === 'reconcile')
+  let showManual = $derived(operateTab === 'all' || operateTab === 'manual')
 </script>
 
 <section class="space-y-5 px-7 py-6">
@@ -241,9 +255,12 @@
     subtitle="Run history, reconcile preview, and manual triggers"
     tone="operate"
   />
-  <FailureCauseCard status={$statusQuery.data} onRetry={handleRetry} {retrying} />
+  <Tabs tabs={operateTabs} bind:value={operateTab} />
+  {#if showReconcile}
+    <FailureCauseCard status={$statusQuery.data} onRetry={handleRetry} {retrying} />
+  {/if}
 
-  {#if reconcileFailed && planImported}
+  {#if showReconcile && reconcileFailed && planImported}
     <ReconcilePreviewCard
       preview={$previewQuery.data}
       plan={$planQuery.data}
@@ -256,8 +273,11 @@
     />
   {/if}
 
-  <AutomationStatusCard status={$statusQuery.data} />
+  {#if showReconcile}
+    <AutomationStatusCard status={$statusQuery.data} />
+  {/if}
 
+  {#if showManual}
   <Card class="border-border/40 bg-card">
     <CardHeader>
       <CardTitle>Operations</CardTitle>
@@ -274,7 +294,9 @@
       {@render opButton('Restore from workbook', 'Replaces the current plan with the contents of the configured workbook. Use only when migrating data in or recovering — overwrites in-app edits.', $importMutation.isPending, () => (confirmingImport = true), false, 'destructive')}
     </CardContent>
   </Card>
+  {/if}
 
+  {#if showRuns}
   <div class="grid gap-6 xl:grid-cols-[1.1fr_1fr]">
     <Card class="border-border/40 bg-card">
       <CardHeader><CardTitle>Recent Runs</CardTitle></CardHeader>
@@ -338,7 +360,9 @@
       </CardContent>
     </Card>
   </div>
+  {/if}
 
+  {#if showManual}
   <Card class="border-border/40 bg-card">
     <CardHeader><CardTitle>Latest Operation Payload</CardTitle></CardHeader>
     <CardContent>
@@ -347,6 +371,7 @@
       </pre>
     </CardContent>
   </Card>
+  {/if}
 </section>
 
 {#snippet opButton(
