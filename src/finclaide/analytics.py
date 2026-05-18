@@ -1089,6 +1089,63 @@ class AnalyticsService:
             f"applying covers part of the gap; close the rest manually."
         )
 
+    def runway(self, *, months_window: int = 6, as_of_month: str | None = None) -> dict[str, Any]:
+        """Cash on hand divided by trailing average monthly outflow.
+
+        Both halves come from the same data we already trust:
+          * cash on hand is `_cash_starting_balance()` — positive account
+            balances on open, on-budget YNAB accounts.
+          * monthly burn is the trailing-N-month outflow average from the
+            cash-flow timeline, excluding the current (partial) month.
+
+        Returns 0 runway months when cash is non-positive; returns a sentinel
+        (None) when burn is 0 or there isn't enough history yet to average.
+        """
+        reference = _month_reference(as_of_month)
+        cash = self._cash_starting_balance()
+        # Pull the timeline backward: the cash_flow_timeline() helper projects
+        # forward, but for runway we want trailing actuals. Sum negative
+        # transaction amounts directly per month and average.
+        since = _n_months_ago(months_window, reference=reference)
+        through = reference.isoformat()  # exclusive upper bound (start of current month)
+        with self.database.connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT
+                    substr(t.date, 1, 7) AS month_key,
+                    SUM(CASE WHEN t.amount_milliunits < 0
+                             THEN -1 * t.amount_milliunits ELSE 0 END) AS outflow
+                FROM transactions t
+                WHERE t.date >= ? AND t.date < ?
+                GROUP BY month_key
+                """,
+                (f"{since}-01", through),
+            ).fetchall()
+        monthly_outflows = [int(r["outflow"] or 0) for r in rows if r["outflow"]]
+        if not monthly_outflows:
+            return {
+                "cash_milliunits": cash,
+                "monthly_burn_milliunits": 0,
+                "runway_months": None,
+                "trail_months": 0,
+                "as_of_month": reference.strftime("%Y-%m"),
+            }
+        monthly_burn = sum(monthly_outflows) // len(monthly_outflows)
+        runway_months: float | None
+        if monthly_burn <= 0:
+            runway_months = None
+        elif cash <= 0:
+            runway_months = 0.0
+        else:
+            runway_months = round(cash / monthly_burn, 1)
+        return {
+            "cash_milliunits": cash,
+            "monthly_burn_milliunits": monthly_burn,
+            "runway_months": runway_months,
+            "trail_months": len(monthly_outflows),
+            "as_of_month": reference.strftime("%Y-%m"),
+        }
+
     def _cash_starting_balance(self) -> int:
         """Sum of positive account balances on open, on-budget accounts.
         Credit-card accounts in YNAB typically carry negative balances

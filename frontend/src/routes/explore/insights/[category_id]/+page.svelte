@@ -146,7 +146,7 @@
   {#if $planQuery.isLoading}
     <Skeleton class="h-32 rounded" />
   {:else if !category()}
-    <Card class="border-border/40 bg-card">
+    <Card class="border-border bg-card">
       <CardContent>
         <p class="py-8 text-center text-sm text-muted-foreground">
           Category not found in the active plan.
@@ -155,7 +155,7 @@
     </Card>
   {:else}
     {@const cat = category()!}
-    <Card class="border-border/40 bg-card">
+    <Card class="border-border bg-card">
       <CardHeader>
         <CardTitle>{cat.category_name}</CardTitle>
         <p class="text-sm text-muted-foreground">
@@ -214,7 +214,7 @@
     </Card>
 
     {#if categoryAnomalies().length > 0 || transactionAnomalies().length > 0}
-      <Card class="border-border/40 bg-card">
+      <Card class="border-border bg-card">
         <CardHeader>
           <CardTitle>
             <span class="inline-flex items-center gap-2">
@@ -248,7 +248,7 @@
       </Card>
     {/if}
 
-    <Card class="border-border/40 bg-card">
+    <Card class="border-border bg-card">
       <CardHeader>
         <CardTitle>Recent transactions</CardTitle>
       </CardHeader>

@@ -1204,6 +1204,7 @@ class WeeklyReviewService:
 
         planned_total = sum(group["planned_milliunits"] for group in summary["groups"])
         actual_total = sum(group["actual_milliunits"] for group in summary["groups"])
+        runway = self.analytics.runway(as_of_month=month_label)
         return {
             "month": month_label,
             "generated_at": utc_now(),
@@ -1226,6 +1227,9 @@ class WeeklyReviewService:
                 "projected_annual_variance_milliunits": recommendations["summary"]["total_projected_variance_milliunits"],
                 "categories_over_budget": recommendations["summary"]["categories_over_budget"],
                 "categories_under_budget": recommendations["summary"]["categories_under_budget"],
+                "runway_months": runway["runway_months"],
+                "monthly_burn_milliunits": runway["monthly_burn_milliunits"],
+                "cash_milliunits": runway["cash_milliunits"],
             },
         }
 

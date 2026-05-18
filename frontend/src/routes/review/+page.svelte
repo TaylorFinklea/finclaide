@@ -113,6 +113,23 @@
     const hrs = $statusQuery.data?.actuals_freshness?.hours_stale ?? 0
     return { stale: hrs > 24, hours: Math.round(hrs) }
   }
+
+  let runwayMonths = $derived<number | null | undefined>(
+    $reviewQuery.data?.supporting_metrics?.runway_months as number | null | undefined,
+  )
+  let monthlyBurn = $derived<number | undefined>(
+    $reviewQuery.data?.supporting_metrics?.monthly_burn_milliunits as number | undefined,
+  )
+  let cashOnHand = $derived<number | undefined>(
+    $reviewQuery.data?.supporting_metrics?.cash_milliunits as number | undefined,
+  )
+
+  function runwaySub(): string {
+    if (cashOnHand === undefined || monthlyBurn === undefined) return '—'
+    const cashLabel = formatCompactMoney(cashOnHand)
+    if (!monthlyBurn) return `${cashLabel} cash · no burn yet`
+    return `${cashLabel} cash · burn ${formatCompactMoney(monthlyBurn)}/mo`
+  }
 </script>
 
 <svelte:head>
@@ -178,10 +195,10 @@
       />
       <HighlightTile
         title="Runway"
-        value="—"
-        unit="mo"
-        sub="cash · burn not yet wired"
-        subtone="muted"
+        value={runwayMonths == null ? '—' : runwayMonths.toFixed(1)}
+        unit={runwayMonths == null ? undefined : 'mo'}
+        sub={runwaySub()}
+        subtone={runwayMonths != null && runwayMonths < 3 ? 'warn' : 'muted'}
       />
     </div>
 

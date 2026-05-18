@@ -4,12 +4,14 @@
   import { AlertTriangle, TrendingUp } from 'lucide-svelte'
 
   import ForecastRecommendationsCard from '$components/forecast-recommendations-card.svelte'
+  import CashFlowCascadeCard from '$components/quartz/cash-flow-cascade-card.svelte'
   import Card from '$components/ui/card.svelte'
   import CardContent from '$components/ui/card-content.svelte'
   import CardHeader from '$components/ui/card-header.svelte'
   import CardTitle from '$components/ui/card-title.svelte'
   import Skeleton from '$components/ui/skeleton.svelte'
   import {
+    getActivePlan,
     getCashflowRecommendations,
     getCashflowTimeline,
     type CashflowMonth,
@@ -25,6 +27,13 @@
   const recommendationsQuery = createQuery({
     queryKey: ['analytics-cashflow-recommendations'],
     queryFn: () => getCashflowRecommendations({ months: 12 }),
+    enabled: browser,
+  })
+  // Cascade restored from the old planning surface: how monthly income
+  // distributes across the five cadence blocks, ending in the leftover.
+  const planQuery = createQuery({
+    queryKey: ['plan', 'active'],
+    queryFn: () => getActivePlan(),
     enabled: browser,
   })
 
@@ -117,7 +126,10 @@
 
 <section class="space-y-5 px-7 py-6">
   <ScreenHeader pill="Explore · Forecast" title="Cash flow forecast" subtitle="Twelve-month outlook + rebalance prompts" tone="explore" />
-  <Card class="border-border/40 bg-card">
+
+  <CashFlowCascadeCard plan={$planQuery.data} />
+
+  <Card class="border-border bg-card">
     <CardHeader>
       <CardTitle>
         <span class="inline-flex items-center gap-2">

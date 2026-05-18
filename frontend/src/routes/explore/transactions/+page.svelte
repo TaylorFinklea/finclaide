@@ -87,7 +87,7 @@
   const columns: DataTableColumn<TransactionRow>[] = [
     { key: 'date', header: 'Date', cell: (row) => formatDay(row.date), cellClass: 'font-mono text-sm text-muted-foreground' },
     { key: 'payee', header: 'Payee', cell: (row) => row.payee_name ?? 'No payee' },
-    { key: 'group', header: 'Group', cell: (row) => row.group_name ?? '—' },
+    { key: 'group', header: 'Group', snippet: groupCell },
     { key: 'category', header: 'Category', cell: (row) => row.category_name ?? '—' },
     {
       key: 'amount',
@@ -98,12 +98,24 @@
   ]
 
   import ScreenHeader from '$components/quartz/screen-header.svelte'
+  import { accentForGroup } from '$lib/design/tokens'
 </script>
 
 {#snippet amountCell(row: TransactionRow)}
   <span class={row.amount_milliunits < 0 ? 'font-mono text-rose-200' : 'font-mono text-emerald-200'}>
     {formatMoney(row.amount_milliunits)}
   </span>
+{/snippet}
+
+{#snippet groupCell(row: TransactionRow)}
+  {#if row.group_name}
+    <span class="inline-flex items-center gap-2">
+      <span class="inline-block h-2 w-2 rounded-[3px]" style="background:{accentForGroup(row.group_name)}" aria-hidden="true"></span>
+      {row.group_name}
+    </span>
+  {:else}
+    —
+  {/if}
 {/snippet}
 
 <section class="space-y-5 px-7 py-6">
@@ -114,7 +126,7 @@
 {:else if $transactionsQuery.data}
   {@const page = $transactionsQuery.data}
   <div class="space-y-6">
-    <Card class="border-border/40 bg-card">
+    <Card class="border-border bg-card">
       <CardHeader class="space-y-4">
         <div>
           <CardTitle>Transactions</CardTitle>
@@ -169,7 +181,7 @@
   </div>
 
   <DialogPrimitive.Root bind:open={() => selected !== null, (next) => { if (!next) selected = null }}>
-    <SheetContent class="border-border/40 bg-card text-card-foreground sm:max-w-lg" side="right">
+    <SheetContent class="border-border bg-card text-card-foreground sm:max-w-lg" side="right">
       {#if selected}
         <DialogHeader>
           <DialogTitle>{selected.payee_name ?? 'No payee name'}</DialogTitle>

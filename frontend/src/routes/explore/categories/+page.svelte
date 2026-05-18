@@ -12,6 +12,7 @@
   import Input from '$components/ui/input.svelte'
   import Skeleton from '$components/ui/skeleton.svelte'
   import { getSummary, type SummaryCategory } from '$lib/api'
+  import { accentForGroup } from '$lib/design/tokens'
   import { formatMoney, formatMonthLabel } from '$lib/format'
   import { monthStore } from '$lib/stores/month.svelte'
 
@@ -69,7 +70,7 @@
   })
 
   const columns: DataTableColumn<Row>[] = [
-    { key: 'group_name', header: 'Group' },
+    { key: 'group_name', header: 'Group', snippet: groupCell },
     { key: 'category_name', header: 'Category' },
     { key: 'planned', header: 'Planned', cell: (row) => formatMoney(row.planned_milliunits), cellClass: 'font-mono text-sm' },
     { key: 'actual', header: 'Actual', cell: (row) => formatMoney(row.actual_milliunits), cellClass: 'font-mono text-sm' },
@@ -92,6 +93,13 @@
   <StatusChip status={row.status} />
 {/snippet}
 
+{#snippet groupCell(row: Row)}
+  <span class="inline-flex items-center gap-2">
+    <span class="inline-block h-2 w-2 rounded-[3px]" style="background:{accentForGroup(row.group_name)}" aria-hidden="true"></span>
+    {row.group_name}
+  </span>
+{/snippet}
+
 <section class="space-y-5 px-7 py-6">
 <ScreenHeader pill="Explore · Categories" title="Categories" subtitle="Grouped plan-vs-actual table" tone="explore" />
 
@@ -99,7 +107,7 @@
   <Skeleton class="h-[640px] rounded-xl" />
 {:else if $summaryQuery.data}
   <div class="space-y-6">
-    <Card class="border-border/40 bg-card">
+    <Card class="border-border bg-card">
       <CardHeader class="space-y-4">
         <div>
           <CardTitle>Categories</CardTitle>

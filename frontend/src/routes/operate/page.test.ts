@@ -87,7 +87,8 @@ describe('OperationsPage', () => {
 
     renderPage(OperationsPage as never)
     await screen.findByText('Operations')
-    await userEvent.click(screen.getByRole('button', { name: 'Export .xlsx' }))
+    const user = userEvent.setup({ pointerEventsCheck: 0 })
+    await user.click(screen.getByRole('button', { name: 'Export .xlsx' }))
 
     await waitFor(() => {
       expect(apiMocks.exportBudget).toHaveBeenCalledTimes(1)

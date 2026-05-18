@@ -127,7 +127,7 @@
     Back to Insights
   </a>
 
-  <Card class="border-border/40 bg-card">
+  <Card class="border-border bg-card">
     <CardHeader>
       <CardTitle>
         <span class="inline-flex items-center gap-2">
