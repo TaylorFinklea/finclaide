@@ -78,6 +78,40 @@ def _insert_txn(database: Database, *, date_iso: str, group: str, category: str,
         )
 
 
+def _insert_plan_category(
+    database: Database,
+    *,
+    group: str,
+    category: str,
+    planned_milliunits: int,
+    block: str = "monthly",
+) -> None:
+    with database.connect() as connection:
+        plan_id = connection.execute(
+            "SELECT id FROM plans WHERE status = 'active'"
+        ).fetchone()["id"]
+        connection.execute(
+            """
+            INSERT INTO plan_categories(
+                plan_id, group_name, category_name, block, kind,
+                planned_milliunits, annual_target_milliunits, due_month,
+                notes, created_at, updated_at
+            )
+            VALUES (?, ?, ?, ?, 'outflow', ?, ?, NULL, NULL, ?, ?)
+            """,
+            (
+                plan_id,
+                group,
+                category,
+                block,
+                planned_milliunits,
+                planned_milliunits * 12,
+                "2026-05-13T12:00:00+00:00",
+                "2026-05-13T12:00:00+00:00",
+            ),
+        )
+
+
 class TestClassifyPace:
     def test_unplanned_returns_negative_sentinel(self):
         factor, status = _classify_pace(planned=0, actual=50_000, days_elapsed=10, days_total=30)
@@ -354,6 +388,53 @@ class TestBudgetRecommendations:
         data = resp.get_json()
         assert "recommendations" in data
         assert "summary" in data
+
+    def test_accumulated_fixed_category_does_not_trigger_budget_increase(self, tmp_path: Path):
+        service, database = _seed_pace_fixture(tmp_path)
+        _insert_plan_category(
+            database,
+            group="Bills",
+            category="Charitable Giving",
+            planned_milliunits=964_000,
+        )
+        _insert_txn(
+            database,
+            date_iso="2026-03-15",
+            group="Bills",
+            category="Charitable Giving",
+            amount_milliunits=3_615_160,
+        )
+
+        result = service.budget_recommendations(as_of_month="2026-05")
+
+        assert not any(
+            rec["group_name"] == "Bills" and rec["category_name"] == "Charitable Giving"
+            for rec in result["recommendations"]
+        )
+
+    def test_payment_flow_categories_do_not_trigger_budget_recommendations(self, tmp_path: Path):
+        service, database = _seed_pace_fixture(tmp_path)
+        _insert_plan_category(
+            database,
+            group="Payments",
+            category="Card Payment",
+            planned_milliunits=250_000,
+        )
+        for month in ("2026-01", "2026-02", "2026-03"):
+            _insert_txn(
+                database,
+                date_iso=f"{month}-15",
+                group="Payments",
+                category="Card Payment",
+                amount_milliunits=1_500_000,
+            )
+
+        result = service.budget_recommendations(as_of_month="2026-04")
+
+        assert not any(
+            rec["group_name"] == "Payments"
+            for rec in result["recommendations"]
+        )
 
 
 class TestAggregateSpending:

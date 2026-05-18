@@ -27,6 +27,8 @@ class AppConfig:
     frontend_dist: Path | None = None
     frontend_url: str | None = None
     budget_sheet_name: str = "2026 Budget"
+    anthropic_api_key: str | None = None
+    anthropic_model: str = "claude-haiku-4-5-20251001"
 
     @classmethod
     def from_env(cls, overrides: dict[str, Any] | None = None) -> "AppConfig":
@@ -103,6 +105,18 @@ class AppConfig:
                 "budget_sheet_name",
                 "2026 Budget",
             ),
+            anthropic_api_key=_env_or_option(
+                "ANTHROPIC_API_KEY",
+                addon_options,
+                "anthropic_api_key",
+            ),
+            anthropic_model=_env_or_option(
+                "ANTHROPIC_MODEL",
+                addon_options,
+                "anthropic_model",
+                "claude-haiku-4-5-20251001",
+            )
+            or "claude-haiku-4-5-20251001",
         )
         if not overrides:
             return config

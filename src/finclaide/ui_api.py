@@ -6,6 +6,7 @@ from urllib.parse import urlparse
 
 from flask import Blueprint, Response, current_app, jsonify, request, send_file
 
+from finclaide.api import _ai_stream_response
 from finclaide.errors import DataIntegrityError
 from finclaide.operations import (
     run_budget_export,
@@ -399,6 +400,12 @@ def scenario_delete(scenario_id: int):
         return jsonify({"error": "missing_ui_header"}), 403
     _container().plan.discard_scenario(scenario_id)
     return ("", 204)
+
+
+@ui_api.post("/ai/chat")
+@require_ui_write_request
+def ai_chat():
+    return _ai_stream_response()
 
 
 @ui_api.get("/transactions")

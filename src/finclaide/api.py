@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from flask import Blueprint, current_app, jsonify, request, send_file
+from flask import Blueprint, Response, current_app, jsonify, request, send_file
 
 from finclaide.auth import require_bearer_token
 from finclaide.errors import (
@@ -235,6 +235,40 @@ def plan_revision_restore(revision_id: int):
     with container.operation_lock.guard("plan_restore"):
         result = container.plan.restore_revision(revision_id)
     return jsonify({"plan": result})
+
+
+def _validate_ai_payload(payload):
+    if not isinstance(payload, dict):
+        return None, (jsonify({"error": "json_required"}), 415)
+    messages = payload.get("messages")
+    if not isinstance(messages, list) or not messages:
+        return None, (jsonify({"error": "messages_required"}), 400)
+    for msg in messages:
+        if not isinstance(msg, dict) or msg.get("role") not in {"user", "assistant"}:
+            return None, (jsonify({"error": "invalid_messages"}), 400)
+        if "content" not in msg:
+            return None, (jsonify({"error": "invalid_messages"}), 400)
+    month = payload.get("month")
+    if month is not None and not isinstance(month, str):
+        return None, (jsonify({"error": "invalid_month"}), 400)
+    return {"messages": messages, "month": month}, None
+
+
+def _ai_stream_response():
+    payload, error = _validate_ai_payload(request.get_json(silent=True))
+    if error is not None or payload is None:
+        return error
+    container = _container()
+    if not container.ai.available:
+        return jsonify({"error": "ai_unavailable", "error_detail": {"kind": "ai_unavailable"}}), 503
+    stream = container.ai.chat(payload["messages"], month=payload["month"])
+    return Response(stream, mimetype="text/event-stream")
+
+
+@api.post("/ai/chat")
+@require_bearer_token
+def ai_chat():
+    return _ai_stream_response()
 
 
 @api.get("/transactions")

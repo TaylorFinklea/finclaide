@@ -1,48 +1,13 @@
 <!doctype html>
-<html lang="en" data-theme="tokyo-night" class="dark">
+<html lang="en" data-theme="quartz" style="color-scheme: light">
   <head>
     <meta charset="utf-8" />
     <link rel="icon" type="image/svg+xml" href="%sveltekit.assets%/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta
       name="description"
-      content="Finclaide financial command dashboard for budget imports, YNAB sync, and reconciliation."
+      content="Finclaide — workflow-driven personal finance: review, plan, operate."
     />
-    <script>
-      // Pre-hydrate theme application. Runs before SvelteKit hydrates so the
-      // first paint matches the user's stored preference (no flash). The
-      // accent slot only affects --primary / --ring / --chart-1 which are
-      // applied on hydrate by theme-service.ts.
-      ;(function () {
-        try {
-          var THEMES = {
-            'tokyo-night': 'dark',
-            'tokyo-night-storm': 'dark',
-            'catppuccin-mocha': 'dark',
-            'nord': 'dark',
-            'dracula': 'dark',
-            'one-dark': 'dark',
-            'rose-pine': 'dark',
-            'gruvbox-dark': 'dark',
-            'kanagawa': 'dark',
-            'catppuccin-latte': 'light',
-            'solarized-light': 'light',
-            'gruvbox-light': 'light',
-          }
-          var t = localStorage.getItem('finclaide.theme')
-          if (!t || !THEMES[t]) t = 'tokyo-night'
-          var root = document.documentElement
-          root.setAttribute('data-theme', t)
-          var mode = THEMES[t]
-          root.classList.toggle('dark', mode === 'dark')
-          root.classList.toggle('light', mode === 'light')
-          root.style.colorScheme = mode
-        } catch (e) {
-          // Storage blocked or unavailable — the hardcoded data-theme on <html>
-          // means the default still renders.
-        }
-      })()
-    </script>
     %sveltekit.head%
   </head>
   <body data-sveltekit-preload-data="hover">

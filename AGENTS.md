@@ -31,6 +31,8 @@ Use `.env` for local runtime configuration. Required values:
 - `FINCLAIDE_API_BASE_URL`
 - `FINCLAIDE_HEALTH_URL`
 - `BUDGET_XLSX_HOST_PATH`
+- `ANTHROPIC_API_KEY` — powers the in-app AI rail. The dashboard renders without it but the rail returns `503 ai_unavailable`.
+- `ANTHROPIC_MODEL` (optional) — defaults to `claude-haiku-4-5-20251001`.
 
 Useful commands:
 

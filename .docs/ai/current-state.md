@@ -10,6 +10,63 @@ identical to `main`; safe to delete once origin is pushed.
 
 ## Last Session Summary
 
+**Date**: 2026-05-13 (Weekly review uses month-to-date pace)
+
+The Overview weekly review's "What Changed" column no longer compares an
+in-progress month against a full prior month:
+
+- Current-month review changes compare current month-to-date spend against
+  the same day range in the prior month.
+- Run-rate categories include a projected full-month amount and prior
+  full-month spend for context.
+- Scheduled/fixed bills and annual/one-time categories are not projected as
+  daily burn rates; their copy calls out the same-point comparison and prior
+  full-month value.
+- Not-yet-fired fixed bills with ordinal names such as `22nd - T-Mobile` are
+  suppressed from "down" change warnings before their due day.
+
+Verification:
+- `.venv/bin/pytest` -> **289/289 passed**.
+- `npm test -- --run src/routes/page.test.ts` -> **1/1 passed**.
+- `npm run check` -> **0 errors / 0 warnings**.
+
+---
+
+**Date**: 2026-05-13 (Ignore YNAB system categories across reconcile and Sheets)
+
+Finclaide now treats YNAB-owned system categories as non-manageable rows:
+
+- Reconcile preview and reconcile ignore `Internal Master Category`,
+  `Inflow: ...`, and `Uncategorized` rows from both plan and YNAB mirrors.
+- YNAB-side remediation refuses to create/rename those categories from a plan
+  row.
+- Budget import, workbook export, and Google Sheets publish share the same
+  filter, so system rows do not become local plan rows or get emitted back to
+  Sheets.
+
+Verification:
+- `.venv/bin/pytest` -> **288/288 passed**.
+
+---
+
+**Date**: 2026-05-13 (Income is planning context, not a YNAB category contract)
+
+Reconciliation now treats only `kind='outflow'` plan rows as YNAB category
+contracts:
+
+- Inflow rows remain in Finclaide/Sheets for planning, cascade, and
+  full-household context.
+- Reconcile preview and reconcile ignore inflow rows, so planned income like
+  Salary/Bonus does not require a matching YNAB category.
+- YNAB-side remediation rejects inflow rows with an explicit message instead
+  of creating income categories in YNAB.
+
+Verification:
+- `.venv/bin/pytest tests/test_api.py::test_reconcile_preview_classifies_planned_categories tests/test_api.py::test_reconcile_ignores_inflow_plan_rows tests/test_api.py::test_reconcile_preview_surfaces_missing_in_ynab tests/test_reconciliation_suggestions.py`
+  -> **13/13 passed**.
+
+---
+
 **Date**: 2026-05-10 (Cash-flow cascade, inflows, and rebalance prompts)
 
 Planning now models cash-flow balance directly:
@@ -844,6 +901,17 @@ Both Phase 3 exit criteria met:
 Weekly review archive (mentioned in the spec for Slice 3) was descoped —
 needs snapshot-storage schema; not justified now. Can land later if the
 operator wants to track review history.
+
+## Latest Review Model Adjustments
+
+- Budget-change recommendations now treat fixed monthly categories as
+  accumulating balances: if year-to-date spend is covered by the monthly
+  plan accrued through the review month, a lumpy payment does not produce
+  an "increase budget" recommendation.
+- Payment-flow groups (`Payments`, `Credit Card Payments`) are suppressed
+  from weekly-review spend signals. They remain available for cash-flow
+  modeling, but review/recommendation surfaces should use the underlying
+  categorized card transactions instead.
 
 ## Blockers
 

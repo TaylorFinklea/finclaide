@@ -42,13 +42,34 @@
     if (!latest?.latest_runs) return []
     const failures: FailedRun[] = []
     for (const [source, run] of Object.entries(latest.latest_runs)) {
-      if (run.status === 'failed') {
+      if (run.status === 'failed' && !isSupersededFailure(latest, source, run)) {
         const runId = typeof run.id === 'number' ? run.id : null
         failures.push({ ...run, source, runId })
       }
     }
     failures.sort((a, b) => (b.finished_at ?? '').localeCompare(a.finished_at ?? ''))
     return failures
+  }
+
+  function isSupersededFailure(
+    latest: StatusResponse,
+    source: string,
+    run: LatestRun,
+  ): boolean {
+    if (source !== 'scheduled_refresh') return false
+    const details = run.details ?? {}
+    if (typeof details.reconcile_error !== 'string') return false
+    const failedAt = run.finished_at ?? run.started_at
+    const latestReconcile = latest.latest_runs?.reconcile
+    return isSuccessfulRunAfter(latestReconcile, failedAt)
+  }
+
+  function isSuccessfulRunAfter(
+    run: LatestRun | undefined,
+    threshold: string | null | undefined,
+  ): boolean {
+    if (!run || run.status !== 'success' || !run.finished_at || !threshold) return false
+    return run.finished_at > threshold
   }
 
   let failures = $derived(gatherFailures(status))

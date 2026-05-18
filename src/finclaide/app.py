@@ -3,6 +3,7 @@ from __future__ import annotations
 import httpx
 from flask import Flask, jsonify
 
+from finclaide.ai import AIService
 from finclaide.analytics import AnalyticsService
 from finclaide.analytics_api import analytics_api
 from finclaide.api import api, register_error_handlers
@@ -61,6 +62,7 @@ def create_app(
         config=config,
     )
     services.review = WeeklyReviewService(reports=services.reports, analytics=services.analytics)
+    services.ai = AIService(config=config, container=services)
     services.scheduled_refresh = ScheduledRefreshService(
         enabled=config.scheduled_refresh_enabled,
         bootstrap_on_start=config.scheduled_refresh_bootstrap_on_start,

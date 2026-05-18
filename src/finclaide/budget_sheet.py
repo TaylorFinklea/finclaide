@@ -10,6 +10,7 @@ from typing import Any
 from openpyxl import load_workbook
 from openpyxl.utils import get_column_letter
 
+from finclaide.category_filters import is_ynab_system_category
 from finclaide.database import Database, utc_now
 from finclaide.plan_service import (
     insert_plan_revision,
@@ -275,6 +276,8 @@ class BudgetImporter:
                 continue
             if current_group is None:
                 continue
+            if is_ynab_system_category(current_group, name_value):
+                continue
             formula_text = self._formula_text(sheet_formula[amount_cell].value)
             rows.append(
                 PlannedCategoryRow(
@@ -321,6 +324,8 @@ class BudgetImporter:
                 due_or_monthly_value=due_or_monthly_value,
                 monthly_value=monthly_value,
             )
+            if is_ynab_system_category(current_group, name_value):
+                continue
             rows.append(
                 PlannedCategoryRow(
                     group_name=current_group,
@@ -365,6 +370,8 @@ class BudgetImporter:
                 continue
             if current_group is None:
                 raise DataIntegrityError(f"Missing group header before {name_cell}.")
+            if is_ynab_system_category(current_group, name_value):
+                continue
             rows.append(
                 PlannedCategoryRow(
                     group_name=current_group,

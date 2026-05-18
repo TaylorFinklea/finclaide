@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from datetime import UTC, date, datetime
 from typing import Any
 
+from finclaide.category_filters import is_payment_flow_category
 from finclaide.config import AppConfig
 from finclaide.database import Database, utc_now
 from finclaide.locking import OperationLock
@@ -1212,6 +1213,7 @@ class AnalyticsService:
             categories.append({
                 "group_name": row["group_name"],
                 "category_name": row["category_name"],
+                "block": row["block"],
                 "planned_annual_milliunits": annual_target,
                 "actual_ytd_milliunits": actual_ytd,
                 "projected_annual_milliunits": projected_annual,
@@ -1443,6 +1445,8 @@ class AnalyticsService:
 
         recommendations = []
         for cat in projection.get("categories", []):
+            if is_payment_flow_category(cat["group_name"], cat["category_name"]):
+                continue
             variance = cat["projected_variance_milliunits"]
             planned = cat["planned_monthly_milliunits"]
             run_rate = cat["run_rate_monthly_milliunits"]
@@ -1455,6 +1459,14 @@ class AnalyticsService:
 
             if variance > 0 and run_rate > planned:
                 action = "increase_budget"
+                if self._is_accumulated_fixed_category_covered(
+                    group_name=cat["group_name"],
+                    block=cat.get("block"),
+                    planned_monthly=planned,
+                    actual_ytd=int(cat.get("actual_ytd_milliunits") or 0),
+                    as_of_month=current,
+                ):
+                    continue
                 reason = (
                     f"Averaging ${run_rate // 1000}/mo against ${planned // 1000} plan. "
                     f"Projected ${variance // 1000} annual overage."
@@ -1508,6 +1520,30 @@ class AnalyticsService:
                 "categories_under_budget": under_count,
             },
         }
+
+    def _is_accumulated_fixed_category_covered(
+        self,
+        *,
+        group_name: str | None,
+        block: str | None,
+        planned_monthly: int,
+        actual_ytd: int,
+        as_of_month: str,
+    ) -> bool:
+        """True when a lumpy fixed-category payment is covered by accrued plan.
+
+        Some fixed categories behave like sinking funds: a monthly amount
+        accumulates, then the real payment happens every few months. In that
+        case one large payment month should not imply the monthly budget should
+        be raised.
+        """
+        if block != "monthly" or planned_monthly <= 0:
+            return False
+        if not _is_fixed_group(group_name or ""):
+            return False
+        month_number = int(as_of_month.split("-")[1])
+        accumulated_plan = planned_monthly * month_number
+        return actual_ytd <= accumulated_plan
 
     def _recommendation_evidence(
         self,

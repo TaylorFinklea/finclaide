@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import date
 from pathlib import Path
 
 import httpx
@@ -291,6 +292,87 @@ def test_reconcile_preview_classifies_planned_categories(app_factory, auth_heade
     assert ("Expenses", "Groceries") in {
         (item["group_name"], item["category_name"]) for item in payload["exact_matches"]
     }
+
+
+def test_reconcile_ignores_inflow_plan_rows(app_factory, auth_header, tmp_path: Path):
+    workbook = build_budget_workbook(tmp_path / "Budget.xlsx")
+    app = app_factory(workbook_path=workbook)
+    client = app.test_client()
+    services = app.extensions["finclaide"]
+
+    client.post("/api/budget/import", headers=auth_header)
+    client.post("/api/ynab/sync", headers=auth_header)
+    plan = services.plan.get_active_plan()
+    services.plan.create_category(
+        plan["plan"]["id"],
+        {
+            "group_name": "Monthly Income",
+            "category_name": "Salary",
+            "block": "monthly",
+            "kind": "inflow",
+            "planned_milliunits": 1000000,
+        },
+    )
+
+    preview = client.get("/api/reconcile/preview", headers=auth_header).get_json()
+    missing = {
+        (item["group_name"], item["category_name"])
+        for item in preview["missing_in_ynab"]
+    }
+    assert ("Monthly Income", "Salary") not in missing
+    assert preview["counts"]["missing_in_ynab"] == 0
+
+    reconcile_response = client.post("/api/reconcile", headers=auth_header)
+
+    assert reconcile_response.status_code == 200
+    assert reconcile_response.get_json()["mismatch_count"] == 0
+
+
+def test_reconcile_ignores_ynab_system_categories(app_factory, auth_header, tmp_path: Path):
+    workbook = build_budget_workbook(tmp_path / "Budget.xlsx")
+    app = app_factory(workbook_path=workbook)
+    client = app.test_client()
+    services = app.extensions["finclaide"]
+
+    client.post("/api/budget/import", headers=auth_header)
+    client.post("/api/ynab/sync", headers=auth_header)
+
+    with services.database.connect() as connection:
+        connection.execute(
+            """
+            INSERT OR IGNORE INTO category_groups(
+                id, plan_id, name, hidden, deleted, raw_json, updated_at
+            ) VALUES (
+                'grp-internal', 'plan-123', 'Internal Master Category',
+                0, 0, '{}', '2026-03-15T12:00:00+00:00'
+            )
+            """
+        )
+        connection.executemany(
+            """
+            INSERT INTO categories(
+                id, plan_id, group_id, group_name, name,
+                hidden, deleted, balance_milliunits, raw_json, updated_at
+            ) VALUES (
+                ?, 'plan-123', 'grp-internal', 'Internal Master Category', ?,
+                0, 0, 0, '{}', '2026-03-15T12:00:00+00:00'
+            )
+            """,
+            [
+                ("cat-ready-to-assign", "Inflow: Ready to Assign"),
+                ("cat-uncategorized", "Uncategorized"),
+            ],
+        )
+
+    response = client.get("/api/reconcile/preview", headers=auth_header)
+
+    assert response.status_code == 200
+    extras = {
+        (item["group_name"], item["category_name"])
+        for item in response.get_json()["extra_in_ynab"]
+    }
+    assert ("Internal Master Category", "Inflow: Ready to Assign") not in extras
+    assert ("Internal Master Category", "Uncategorized") not in extras
 
 
 def test_reconcile_preview_surfaces_missing_in_ynab(app_factory, auth_header, tmp_path: Path):
@@ -590,22 +672,100 @@ def test_weekly_review_warns_when_budget_and_sync_are_missing(app_factory, auth_
     assert "no_budget_blocker" in blocker_kinds
 
 
-def test_weekly_review_deemphasizes_payment_flow_recommendations(app_factory, auth_header, tmp_path: Path):
+def test_weekly_review_suppresses_payment_flow_signals(app_factory, tmp_path: Path):
     workbook = build_budget_workbook(tmp_path / "Budget.xlsx")
     app = app_factory(workbook_path=workbook)
     client = app.test_client()
+    services = app.extensions["finclaide"]
 
-    client.post("/api/budget/import", headers=auth_header)
-    client.post("/api/ynab/sync", headers=auth_header)
-    client.post("/api/reconcile", headers=auth_header)
+    client.post("/api/budget/import", headers={"Authorization": "Bearer test-token"})
+    with services.database.connect() as connection:
+        plan_id = connection.execute(
+            "SELECT id FROM plans WHERE status = 'active'"
+        ).fetchone()["id"]
+        connection.execute(
+            """
+            INSERT INTO plan_categories(
+                plan_id, group_name, category_name, block, kind,
+                planned_milliunits, annual_target_milliunits, due_month,
+                notes, created_at, updated_at
+            )
+            VALUES (?, 'Payments', 'Card Payment', 'monthly', 'outflow',
+                    250000, 3000000, NULL, NULL,
+                    '2026-05-13T12:00:00+00:00',
+                    '2026-05-13T12:00:00+00:00')
+            """,
+            (plan_id,),
+        )
+        connection.executemany(
+            """
+            INSERT INTO transactions(
+                id, plan_id, account_id, date, payee_name, memo, cleared, approved,
+                category_id, category_name, group_name, amount_milliunits, deleted,
+                raw_json, updated_at
+            )
+            VALUES (?, 'plan-123', 'acct-checking', ?, 'Payment', NULL, 'cleared', 1,
+                    NULL, 'Card Payment', 'Payments', ?, 0, '{}',
+                    '2026-05-13T12:00:00+00:00')
+            """,
+            [
+                ("txn-payment-jan", "2026-01-05", -1_500_000),
+                ("txn-payment-feb", "2026-02-05", -1_500_000),
+                ("txn-payment-apr", "2026-04-05", -1_500_000),
+                ("txn-payment-may", "2026-05-05", -1_500_000),
+            ],
+        )
 
-    response = client.get("/api/review/weekly?month=2026-03", headers=auth_header)
-    payload = response.get_json()
+    payload = services.review.weekly(month="2026-05", now=date(2026, 5, 13))
 
-    assert response.status_code == 200
-    signal_classes = [item["signal_class"] for item in payload["recommendations"]]
-    if "payment_flow" in signal_classes:
-        assert signal_classes.index("core_spend") < signal_classes.index("payment_flow")
+    for section_name in ("changes", "overages", "anomalies", "recommendations"):
+        assert not any(
+            item["group_name"] == "Payments"
+            for item in payload[section_name]
+        ), section_name
+
+
+def test_weekly_review_changes_use_month_to_date_pace(app_factory, tmp_path: Path):
+    workbook = build_budget_workbook(tmp_path / "Budget.xlsx")
+    app = app_factory(workbook_path=workbook)
+    client = app.test_client()
+    services = app.extensions["finclaide"]
+
+    client.post("/api/budget/import", headers={"Authorization": "Bearer test-token"})
+    with services.database.connect() as connection:
+        connection.executemany(
+            """
+            INSERT INTO transactions(
+                id, plan_id, account_id, date, payee_name, memo, cleared, approved,
+                category_id, category_name, group_name, amount_milliunits, deleted,
+                raw_json, updated_at
+            )
+            VALUES (?, 'plan-123', 'acct-checking', ?, 'Test', NULL, 'cleared', 1,
+                    NULL, ?, ?, ?, 0, '{}', '2026-05-13T12:00:00+00:00')
+            """,
+            [
+                ("txn-apr-groceries", "2026-04-05", "Groceries", "Expenses", -1_200_000),
+                ("txn-may-groceries", "2026-05-05", "Groceries", "Expenses", -300_000),
+                ("txn-apr-phone", "2026-04-10", "22nd - T-Mobile", "Bills", -155_000),
+            ],
+        )
+
+    payload = services.review.weekly(month="2026-05", now=date(2026, 5, 13))
+
+    change_titles = [item["title"] for item in payload["changes"]]
+    assert any(
+        "Expenses / Groceries is down $900.00 month-to-date versus 2026-04" == title
+        for title in change_titles
+    )
+    assert not any("22nd - T-Mobile" in title for title in change_titles)
+    groceries = next(
+        item for item in payload["changes"]
+        if item["group_name"] == "Expenses" and item["category_name"] == "Groceries"
+    )
+    assert groceries["evidence"]["comparison_basis"] == "month_to_date"
+    assert groceries["evidence"]["days_elapsed"] == 13
+    assert groceries["evidence"]["projected_month_b_milliunits"] == 715385
+    assert "At this pace" in groceries["why_it_matters"]
 
 
 def test_budget_import_can_export_google_sheet_with_service_account(

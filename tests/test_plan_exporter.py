@@ -75,6 +75,35 @@ def test_exporter_round_trips_through_importer(tmp_path: Path):
         assert before_pairs == after_pairs, block
 
 
+def test_exporter_skips_ynab_system_categories(tmp_path: Path):
+    database, exporter, _ = _setup_with_imported_plan(tmp_path)
+    plan_service = PlanService(database=database)
+    plan = plan_service.get_active_plan()
+    before_row_count = exporter.export_active_plan(sheet_name="2026 Budget").row_count
+    plan_service.create_category(
+        plan["plan"]["id"],
+        {
+            "group_name": "Internal Master Category",
+            "category_name": "Inflow: Ready to Assign",
+            "block": "monthly",
+            "planned_milliunits": 123000,
+        },
+    )
+
+    result = exporter.export_active_plan(sheet_name="2026 Budget")
+    workbook = load_workbook(BytesIO(result.bytes), data_only=True)
+    sheet = workbook["2026 Budget"]
+    values = [
+        sheet[f"{column}{row}"].value
+        for column in ("A", "D", "I", "L")
+        for row in range(1, 53)
+    ]
+
+    assert result.row_count == before_row_count
+    assert "Internal Master Category" not in values
+    assert "Inflow: Ready to Assign" not in values
+
+
 def test_exporter_emits_group_headers_with_empty_amount_cells(tmp_path: Path):
     _, exporter, _ = _setup_with_imported_plan(tmp_path)
     result = exporter.export_active_plan(sheet_name="2026 Budget")

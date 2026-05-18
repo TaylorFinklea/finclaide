@@ -23,6 +23,7 @@ def build_budget_workbook(
     missing_cached_formula: bool = False,
     wrong_sheet_name: bool = False,
     invalid_layout: bool = False,
+    ynab_system_categories: bool = False,
     layout: str = "legacy",
 ) -> Path:
     if layout == "current":
@@ -49,6 +50,12 @@ def build_budget_workbook(
     sheet["B22"] = 300
     sheet["A23"] = "Fuel"
     sheet["B23"] = 150
+    if ynab_system_categories:
+        sheet["A24"] = "Internal Master Category"
+        sheet["A25"] = "Inflow: Ready to Assign"
+        sheet["B25"] = 50
+        sheet["A26"] = "Uncategorized"
+        sheet["B26"] = 25
     sheet["B53"] = "=SUM(B5:B51)"
     sheet["B54"] = "=B3-B53"
 

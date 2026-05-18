@@ -2,6 +2,49 @@
 
 > Architecture decision records. Append-only — one entry per decision.
 
+## [2026-05-13] Weekly review changes compare month-to-date for active months
+
+**Context**: Comparing an in-progress month to the full prior month produced
+low-signal "down" warnings for ordinary timing effects, such as groceries
+being lower halfway through the month or bills not firing until their due day.
+**Decision**: For the active month, "What Changed" compares current
+month-to-date spend to the same day range in the prior month. Run-rate
+categories may show a projected full-month value, while scheduled bills and
+annual/one-time categories are not projected linearly. Fixed bills with an
+ordinal due day in the name are suppressed from "down" warnings before that
+day.
+**Rationale**: The review should answer practical questions: are we burning
+down faster or slower than expected, are we tracking differently from the same
+point last month, and is a category likely to finish meaningfully different.
+It should not alert on predictable calendar timing.
+
+## [2026-05-13] YNAB system categories are outside Finclaide management
+
+**Context**: YNAB can expose `Internal Master Category / Inflow: Ready to
+Assign` and `Internal Master Category / Uncategorized` in category lists.
+Those are YNAB accounting/system buckets, not household planning categories.
+**Decision**: Finclaide filters YNAB system categories from reconciliation,
+remediation, workbook import, workbook export, and Google Sheets publish.
+System categories are defined as rows in `Internal Master Category`, rows
+named `Uncategorized`, or rows whose category name starts with `Inflow:`.
+**Rationale**: Exact-match reconciliation should remain strict for real
+budget categories without forcing the operator to model YNAB internals in
+the household plan or accidentally write them back into Sheets.
+
+## [2026-05-13] Income rows are Finclaide planning context, not YNAB category contracts
+
+**Context**: YNAB income actuals arrive as checking-account deposits and are
+not tied to savings/category allocation in the way Finclaide and the planning
+sheet model household cash flow.
+**Decision**: Only outflow plan rows participate in exact category-name
+reconciliation and YNAB-side remediation. Inflow rows stay in Finclaide/Sheets
+for planning and cascade math, but reconcile does not require or create
+matching YNAB categories for them.
+**Rationale**: YNAB remains source of truth for actual cash movement, while
+Finclaide owns the richer planning context. Requiring income categories to
+match YNAB would encode the wrong mental model and create false reconcile
+failures.
+
 ## [2026-05-10] Tithe rows compute from same-block inflows only
 
 **Context**: Planning now distinguishes inflow and outflow categories and can
@@ -219,3 +262,20 @@ invariant at the database level so the API can rely on `IntegrityError`
 for race-safe enforcement without app-side checks. Frontend sends
 `UNIQUE constraint failed: plans.status` and `plans.label` errors as
 human-readable `DataIntegrityError` messages from PlanService.
+
+## [2026-05-13] Weekly review ignores payment flow and respects accumulating fixed categories
+
+**Context**: Weekly review recommendations were treating lumpy fixed-category
+payments as a higher monthly run rate. Example: charitable giving or another
+fixed obligation may be planned monthly but paid every few months, so a catch-up
+payment should not imply the monthly plan is too low. Credit-card payment
+categories also appeared as spend signals even though their underlying card
+transactions are already categorized elsewhere.
+**Decision**: Budget recommendations skip `Payments` and `Credit Card Payments`
+entirely, and weekly-review overage/change/anomaly/recommendation sections
+suppress those payment-flow groups. For fixed monthly categories, an
+`increase_budget` recommendation is suppressed when year-to-date actual spend is
+covered by the monthly plan accrued through the review month.
+**Rationale**: The weekly review should highlight actionable budget behavior,
+not cash transfers or timing artifacts. Cash-flow modeling can still use
+payment-flow categories where bank-balance timing matters.

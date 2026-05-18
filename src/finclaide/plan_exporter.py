@@ -11,6 +11,7 @@ from typing import Any
 
 from openpyxl import Workbook, load_workbook
 
+from finclaide.category_filters import is_ynab_system_category
 from finclaide.database import utc_now
 from finclaide.plan_service import PlanService
 
@@ -78,10 +79,21 @@ class PlanCellGrid:
 
 def build_plan_cell_grid(plan: dict[str, Any]) -> PlanCellGrid:
     cells: dict[str, str | float] = {}
+    plan_blocks = {
+        block: [
+            row
+            for row in plan["blocks"][block]
+            if not is_ynab_system_category(
+                row.get("group_name"),
+                row.get("category_name"),
+            )
+        ]
+        for block in ("monthly", "annual", "one_time", "stipends", "savings")
+    }
 
     monthly_total = _emit_simple_block(
         cells,
-        rows=plan["blocks"]["monthly"],
+        rows=plan_blocks["monthly"],
         name_col="A",
         amount_col="B",
         header_label=None,
@@ -91,15 +103,15 @@ def build_plan_cell_grid(plan: dict[str, Any]) -> PlanCellGrid:
 
     yearly_total = _emit_yearly_block(
         cells,
-        annual_rows=plan["blocks"]["annual"],
-        one_time_rows=plan["blocks"]["one_time"],
+        annual_rows=plan_blocks["annual"],
+        one_time_rows=plan_blocks["one_time"],
     )
     cells[f"D{TOTALS_ROW}"] = "Total"
     cells[f"G{TOTALS_ROW}"] = "=SUM(G2:G52)"
 
     stipends_total = _emit_simple_block(
         cells,
-        rows=plan["blocks"]["stipends"],
+        rows=plan_blocks["stipends"],
         name_col="I",
         amount_col="J",
         header_label="Stipends",
@@ -109,7 +121,7 @@ def build_plan_cell_grid(plan: dict[str, Any]) -> PlanCellGrid:
 
     savings_total = _emit_simple_block(
         cells,
-        rows=plan["blocks"]["savings"],
+        rows=plan_blocks["savings"],
         name_col="L",
         amount_col="M",
         header_label="Savings",
@@ -125,11 +137,11 @@ def build_plan_cell_grid(plan: dict[str, Any]) -> PlanCellGrid:
     }
 
     row_count = (
-        len(plan["blocks"]["monthly"])
-        + len(plan["blocks"]["annual"])
-        + len(plan["blocks"]["one_time"])
-        + len(plan["blocks"]["stipends"])
-        + len(plan["blocks"]["savings"])
+        len(plan_blocks["monthly"])
+        + len(plan_blocks["annual"])
+        + len(plan_blocks["one_time"])
+        + len(plan_blocks["stipends"])
+        + len(plan_blocks["savings"])
     )
 
     return PlanCellGrid(
