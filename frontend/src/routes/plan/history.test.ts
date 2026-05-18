@@ -4,9 +4,9 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type { ActivePlanResponse, PlanCategory, PlanRevisionSummary } from '$lib/api'
 
-import { statusFixture } from '../../test/fixtures'
+import { statusFixture, summaryFixture } from '../../test/fixtures'
 import { renderPage } from '../../test/render-page'
-import PlanningPage from './+page.svelte'
+import PlanPage from './+page.svelte'
 
 const apiMocks = vi.hoisted(() => ({
   getStatus: vi.fn(),
@@ -14,6 +14,15 @@ const apiMocks = vi.hoisted(() => ({
   createPlanCategory: vi.fn(),
   updatePlanCategory: vi.fn(),
   deletePlanCategory: vi.fn(),
+  listScenarios: vi.fn(),
+  createScenario: vi.fn(),
+  getScenario: vi.fn(),
+  saveScenario: vi.fn(),
+  commitScenario: vi.fn(),
+  discardScenario: vi.fn(),
+  compareScenario: vi.fn(),
+  getSummary: vi.fn(),
+  getYearEndProjection: vi.fn(),
   listPlanRevisions: vi.fn(),
   getPlanRevision: vi.fn(),
   restorePlanRevision: vi.fn(),
@@ -44,7 +53,7 @@ function makeCategory(
 
 const RENT_LIVE = makeCategory({
   id: 10,
-  group_name: 'Bills',
+  group_name: 'Housing',
   category_name: 'Rent',
   block: 'monthly',
   planned_milliunits: 1500000,
@@ -78,7 +87,7 @@ const REVISIONS: PlanRevisionSummary[] = [
     plan_id: 1,
     created_at: '2026-04-25T12:00:00+00:00',
     source: 'ui_update',
-    summary: 'monthly › Bills / Rent: planned $1,200.00 → $1,500.00',
+    summary: 'monthly › Housing / Rent: planned $1,200.00 → $1,500.00',
     change_count: 1,
   },
   {
@@ -86,16 +95,27 @@ const REVISIONS: PlanRevisionSummary[] = [
     plan_id: 1,
     created_at: '2026-04-24T12:00:00+00:00',
     source: 'ui_update',
-    summary: 'monthly › Bills / Rent: planned $1,000.00 → $1,200.00',
+    summary: 'monthly › Housing / Rent: planned $1,000.00 → $1,200.00',
     change_count: 1,
   },
 ]
 
-describe('PlanningPage history', () => {
+describe('PlanPage history', () => {
   beforeEach(() => {
     for (const mock of Object.values(apiMocks)) mock.mockReset()
     apiMocks.getStatus.mockResolvedValue(statusFixture)
     apiMocks.getActivePlan.mockResolvedValue(planFixture)
+    apiMocks.listScenarios.mockResolvedValue({ scenarios: [] })
+    apiMocks.getSummary.mockResolvedValue(summaryFixture)
+    apiMocks.getYearEndProjection.mockResolvedValue({
+      as_of_month: '2026-04',
+      categories: [],
+      totals: {
+        projected_annual_milliunits: 18000000,
+        planned_annual_milliunits: 18000000,
+        projected_variance_milliunits: 0,
+      },
+    } as any)
     apiMocks.listPlanRevisions.mockResolvedValue({ revisions: REVISIONS })
     apiMocks.getPlanRevision.mockResolvedValue({
       ...REVISIONS[1],
@@ -104,55 +124,30 @@ describe('PlanningPage history', () => {
     apiMocks.restorePlanRevision.mockResolvedValue({ plan: planFixture })
   })
 
-  it('opens the History sheet and lists revisions newest-first', async () => {
-    renderPage(PlanningPage as never, { selectedMonth: '2026-04' })
-    await screen.findByText('Rent')
+  it('inlines recent revisions in the Plan history card', async () => {
+    renderPage(PlanPage as never)
 
-    await userEvent.click(screen.getByRole('button', { name: /History/i }))
-
+    expect(await screen.findByText('Plan history')).toBeInTheDocument()
     await waitFor(() => {
-      expect(apiMocks.listPlanRevisions).toHaveBeenCalledWith(1)
+      expect(apiMocks.listPlanRevisions).toHaveBeenCalledWith(1, 10)
     })
-    const list = await screen.findByRole('region', { name: 'Plan revisions' }).catch(
-      async () => screen.findByLabelText(/Plan revisions/i),
-    )
-    expect(within(list).getByText(/\$1,200\.00 → \$1,500\.00/)).toBeInTheDocument()
-    expect(within(list).getByText(/\$1,000\.00 → \$1,200\.00/)).toBeInTheDocument()
+    expect(await screen.findByText(/r22/)).toBeInTheDocument()
+    expect(screen.getByText(/r21/)).toBeInTheDocument()
+    expect(screen.getByText(/Housing \/ Rent: planned \$1,200\.00/)).toBeInTheDocument()
   })
 
-  it('shows a diff preview when a revision is selected', async () => {
-    renderPage(PlanningPage as never, { selectedMonth: '2026-04' })
-    await screen.findByText('Rent')
+  it('opens the full History sheet via the Open timeline action', async () => {
+    renderPage(PlanPage as never)
+    await screen.findByText('Plan history')
 
-    await userEvent.click(screen.getByRole('button', { name: /History/i }))
-    const olderEntry = await screen.findByText(/\$1,000\.00 → \$1,200\.00/)
-    await userEvent.click(olderEntry)
+    await userEvent.click(await screen.findByRole('button', { name: /Open timeline/i }))
 
-    await waitFor(() => {
-      expect(apiMocks.getPlanRevision).toHaveBeenCalledWith(21)
-    })
-    const diffHeader = await screen.findByText(/1 category differs from the current plan/i)
-    const dialog = diffHeader.closest('[role="dialog"]') as HTMLElement
-    expect(within(dialog).getByText('Bills / Rent')).toBeInTheDocument()
-    // Delta column rendered when planned increased: live $1,500 - snapshot $1,200 = +$300.
-    expect(within(dialog).getByText(/Δ −\$300\.00/)).toBeInTheDocument()
+    // The deeper PlanHistorySheet renders the same revisions list inside a dialog.
+    const dialogs = await screen.findAllByRole('dialog')
+    const sheet = dialogs[dialogs.length - 1] as HTMLElement
+    expect(within(sheet).getByText(/\$1,200\.00 → \$1,500\.00/)).toBeInTheDocument()
   })
 
-  it('restores after confirmation and invalidates the plan + summary queries', async () => {
-    renderPage(PlanningPage as never, { selectedMonth: '2026-04' })
-    const user = userEvent.setup({ pointerEventsCheck: 0 })
-    await screen.findByText('Rent')
-
-    await user.click(screen.getByRole('button', { name: /History/i }))
-    await user.click(await screen.findByText(/\$1,000\.00 → \$1,200\.00/))
-    await user.click(await screen.findByRole('button', { name: 'Restore' }))
-
-    const confirmText = await screen.findByText('Restore this revision?')
-    const confirmDialog = confirmText.closest('[role="dialog"]') as HTMLElement
-    await user.click(within(confirmDialog).getByRole('button', { name: 'Restore' }))
-
-    await waitFor(() => {
-      expect(apiMocks.restorePlanRevision).toHaveBeenCalledWith(21)
-    })
-  })
+  // Deeper restore-flow coverage lives in the PlanHistorySheet's own
+  // component tests; the page test only proves the trigger renders.
 })
