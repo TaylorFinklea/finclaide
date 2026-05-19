@@ -4,13 +4,22 @@
   import { browser } from '$app/environment'
   import { page } from '$app/stores'
   import { QueryClient, QueryClientProvider, createQuery } from '@tanstack/svelte-query'
+  import { PanelRightOpen, Sparkles } from 'lucide-svelte'
 
   import Sidebar from '$components/quartz/sidebar.svelte'
   import AIRail from '$components/quartz/ai-rail.svelte'
   import Toaster from '$components/ui/toaster.svelte'
   import { getStatus } from '$lib/api'
+  import { chromeStore } from '$lib/stores/chrome.svelte'
 
   let { children } = $props()
+
+  $effect(() => {
+    if (browser) chromeStore.hydrate()
+  })
+
+  let sidebarWidth = $derived(chromeStore.sidebarCollapsed ? '56px' : '240px')
+  let railWidth = $derived(chromeStore.aiRailCollapsed ? '0px' : '360px')
 
   const queryClient = new QueryClient({
     defaultOptions: {
@@ -70,16 +79,45 @@
 
 <QueryClientProvider client={queryClient}>
   <div
-    class="grid h-screen w-screen overflow-hidden"
-    style="grid-template-columns: 240px minmax(0, 1fr) 360px"
+    class="relative grid h-screen w-screen overflow-hidden"
+    style="grid-template-columns: {sidebarWidth} minmax(0, 1fr) {railWidth}"
   >
-    <Sidebar status={$statusQuery.data} {planLabel} />
+    <Sidebar
+      status={$statusQuery.data}
+      {planLabel}
+      collapsed={chromeStore.sidebarCollapsed}
+      onToggle={() => chromeStore.toggleSidebar()}
+    />
 
     <main class="overflow-y-auto bg-background">
       {@render children()}
     </main>
 
-    <AIRail {contextLabel} available={aiAvailable} />
+    {#if !chromeStore.aiRailCollapsed}
+      <AIRail
+        {contextLabel}
+        available={aiAvailable}
+        onClose={() => chromeStore.toggleAIRail()}
+      />
+    {/if}
+
+    {#if chromeStore.aiRailCollapsed}
+      <!-- Vertical reopen tab anchored to the viewport's right edge. Stays
+           visible even while the rail is hidden so the operator can bring
+           it back without hunting through a menu. -->
+      <button
+        type="button"
+        class="absolute right-0 top-1/2 z-20 -translate-y-1/2 rounded-l-lg border border-r-0 border-border bg-card px-1.5 py-3 text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
+        aria-label="Open AI rail"
+        title="Open AI rail"
+        onclick={() => chromeStore.toggleAIRail()}
+      >
+        <div class="flex flex-col items-center gap-1.5">
+          <PanelRightOpen class="h-3.5 w-3.5" />
+          <Sparkles class="h-3.5 w-3.5 text-[#4E46E5]" />
+        </div>
+      </button>
+    {/if}
   </div>
   <Toaster />
 </QueryClientProvider>

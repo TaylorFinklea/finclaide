@@ -7,6 +7,8 @@
     LayoutGrid,
     LineChart,
     ListChecks,
+    PanelLeftClose,
+    PanelLeftOpen,
     Plug,
     Receipt,
     Search,
@@ -31,7 +33,17 @@
     items: NavItem[]
   }
 
-  let { status, planLabel = 'v1' }: { status: StatusResponse | undefined; planLabel?: string } = $props()
+  let {
+    status,
+    planLabel = 'v1',
+    collapsed = false,
+    onToggle,
+  }: {
+    status: StatusResponse | undefined
+    planLabel?: string
+    collapsed?: boolean
+    onToggle?: () => void
+  } = $props()
 
   const sections: Section[] = [
     {
@@ -106,38 +118,74 @@
   })
 </script>
 
-<aside class="flex h-screen w-[240px] shrink-0 flex-col gap-4 border-r border-border bg-background p-3">
-  <div class="flex items-center gap-2.5 px-2 py-1">
+<aside
+  class="flex h-screen shrink-0 flex-col gap-4 border-r border-border bg-background p-3 transition-[width] duration-150"
+  class:w-[240px]={!collapsed}
+  class:w-[56px]={collapsed}
+  aria-label="Primary navigation"
+>
+  <!-- Brand + toggle. The toggle stays visible in both states so the
+       operator always has a way back. -->
+  <div class="flex items-center {collapsed ? 'justify-center' : 'gap-2.5 px-2'} py-1">
     <div
-      class="grid h-[26px] w-[26px] place-items-center rounded-md bg-gradient-to-br from-[#4E46E5] to-[#6E64FF] text-[13px] font-semibold tracking-tight text-white"
+      class="grid h-[26px] w-[26px] shrink-0 place-items-center rounded-md bg-gradient-to-br from-[#4E46E5] to-[#6E64FF] text-[13px] font-semibold tracking-tight text-white"
       aria-hidden="true"
     >
       F
     </div>
-    <div class="text-sm font-semibold tracking-tight">Finclaide</div>
-    <div class="ml-auto rounded border border-border bg-card px-2 py-0.5 text-[11px] text-muted-foreground">
-      {planLabel}
-    </div>
+    {#if !collapsed}
+      <div class="text-sm font-semibold tracking-tight">Finclaide</div>
+      <div class="ml-auto rounded border border-border bg-card px-2 py-0.5 text-[11px] text-muted-foreground">
+        {planLabel}
+      </div>
+    {/if}
   </div>
 
-  <button
-    type="button"
-    class="flex items-center gap-2 rounded-lg border border-border bg-card px-2.5 py-1.5 text-xs text-muted-foreground transition-colors hover:border-foreground/20 hover:text-foreground"
-    aria-label="Jump to anything"
-  >
-    <Search class="h-3.5 w-3.5" />
-    <span class="flex-1 text-left">Jump to anything…</span>
-    <span class="rounded border border-border bg-background px-1.5 py-0.5 text-[10px] text-muted-foreground/70">⌘K</span>
-  </button>
+  {#if onToggle}
+    <button
+      type="button"
+      class="flex items-center justify-center rounded-md border border-border bg-card py-1 text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
+      aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+      title={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+      onclick={onToggle}
+    >
+      {#if collapsed}
+        <PanelLeftOpen class="h-3.5 w-3.5" />
+      {:else}
+        <PanelLeftClose class="h-3.5 w-3.5" />
+      {/if}
+    </button>
+  {/if}
 
-  <nav class="space-y-3 overflow-y-auto">
+  {#if !collapsed}
+    <button
+      type="button"
+      class="flex items-center gap-2 rounded-lg border border-border bg-card px-2.5 py-1.5 text-xs text-muted-foreground transition-colors hover:border-foreground/20 hover:text-foreground"
+      aria-label="Jump to anything"
+    >
+      <Search class="h-3.5 w-3.5" />
+      <span class="flex-1 text-left">Jump to anything…</span>
+      <span class="rounded border border-border bg-background px-1.5 py-0.5 text-[10px] text-muted-foreground/70">⌘K</span>
+    </button>
+  {:else}
+    <button
+      type="button"
+      class="grid place-items-center rounded-lg border border-border bg-card py-1.5 text-muted-foreground transition-colors hover:border-foreground/20 hover:text-foreground"
+      aria-label="Jump to anything"
+      title="Jump to anything (⌘K)"
+    >
+      <Search class="h-3.5 w-3.5" />
+    </button>
+  {/if}
+
+  <nav class="space-y-3 overflow-y-auto" aria-label="Sections">
     {#each sections as section (section.label)}
       <div>
-        <div
-          class="px-2 pb-1 text-[10px] font-medium uppercase tracking-[0.1em] text-muted-foreground/70"
-        >
-          {section.label}
-        </div>
+        {#if !collapsed}
+          <div class="px-2 pb-1 text-[10px] font-medium uppercase tracking-[0.1em] text-muted-foreground/70">
+            {section.label}
+          </div>
+        {/if}
         <div class="space-y-0.5">
           {#each section.items as item (item.to)}
             {@const active = isActive(item.to, $page.url.pathname)}
@@ -145,14 +193,19 @@
             <a
               href={withBasePath(item.to)}
               data-active={active ? 'true' : undefined}
-              class="flex items-center gap-2.5 rounded-md px-2 py-1.5 text-sm text-muted-foreground transition-colors data-[active]:bg-card data-[active]:font-medium data-[active]:text-foreground data-[active]:shadow-[0_1px_0_rgba(0,0,0,0.02)] hover:bg-secondary hover:text-foreground"
+              title={collapsed ? item.label : undefined}
+              aria-label={collapsed ? item.label : undefined}
+              class="flex items-center gap-2.5 rounded-md text-sm text-muted-foreground transition-colors data-[active]:bg-card data-[active]:font-medium data-[active]:text-foreground data-[active]:shadow-[0_1px_0_rgba(0,0,0,0.02)] hover:bg-secondary hover:text-foreground
+                {collapsed ? 'justify-center p-2' : 'px-2 py-1.5'}"
             >
               <Icon class="h-3.5 w-3.5" />
-              <span class="flex-1">{item.label}</span>
-              {#if item.badge}
-                <span class="rounded border border-border bg-card px-1.5 py-0 text-[10px] text-muted-foreground">
-                  {item.badge}
-                </span>
+              {#if !collapsed}
+                <span class="flex-1">{item.label}</span>
+                {#if item.badge}
+                  <span class="rounded border border-border bg-card px-1.5 py-0 text-[10px] text-muted-foreground">
+                    {item.badge}
+                  </span>
+                {/if}
               {/if}
             </a>
           {/each}
@@ -161,30 +214,48 @@
     {/each}
   </nav>
 
-  <div class="mt-auto rounded-xl border border-border bg-card p-3">
-    <div class="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
-      Connections
+  {#if !collapsed}
+    <div class="mt-auto rounded-xl border border-border bg-card p-3">
+      <div class="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
+        Connections
+      </div>
+      <div class="mt-1 space-y-1">
+        {#each connections as conn (conn.label)}
+          <div class="flex items-center justify-between text-xs">
+            <span class="flex items-center gap-1.5">
+              <span
+                class="inline-block h-2 w-2 rounded-full"
+                style={conn.tone === 'g'
+                  ? 'background:#2F8A57'
+                  : conn.tone === 'a'
+                    ? 'background:#C68A21'
+                    : 'background:#D14444'}
+              ></span>
+              {conn.label}
+            </span>
+            <span class="text-muted-foreground">{conn.value}</span>
+          </div>
+        {/each}
+        {#if connections.length === 0}
+          <div class="text-xs text-muted-foreground">Loading…</div>
+        {/if}
+      </div>
     </div>
-    <div class="mt-1 space-y-1">
+  {:else}
+    <!-- Collapsed connections: stacked dots only, lined up where the labels
+         used to be. Tooltip lets the operator drill into specifics. -->
+    <div class="mt-auto flex flex-col items-center gap-2 pb-2" aria-label="Connection health">
       {#each connections as conn (conn.label)}
-        <div class="flex items-center justify-between text-xs">
-          <span class="flex items-center gap-1.5">
-            <span
-              class="inline-block h-2 w-2 rounded-full"
-              style={conn.tone === 'g'
-                ? 'background:#2F8A57'
-                : conn.tone === 'a'
-                  ? 'background:#C68A21'
-                  : 'background:#D14444'}
-            ></span>
-            {conn.label}
-          </span>
-          <span class="text-muted-foreground">{conn.value}</span>
-        </div>
+        <span
+          class="inline-block h-2 w-2 rounded-full"
+          title={`${conn.label}: ${conn.value}`}
+          style={conn.tone === 'g'
+            ? 'background:#2F8A57'
+            : conn.tone === 'a'
+              ? 'background:#C68A21'
+              : 'background:#D14444'}
+        ></span>
       {/each}
-      {#if connections.length === 0}
-        <div class="text-xs text-muted-foreground">Loading…</div>
-      {/if}
     </div>
-  </div>
+  {/if}
 </aside>
