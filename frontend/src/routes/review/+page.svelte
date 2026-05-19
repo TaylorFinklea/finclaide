@@ -8,16 +8,18 @@
   import PlanVsActualRow from '$components/quartz/plan-vs-actual-row.svelte'
   import RecommendationItem from '$components/quartz/recommendation-item.svelte'
   import SectionHeading from '$components/quartz/section-heading.svelte'
+  import Sparkline from '$components/sparkline.svelte'
   import Tabs from '$components/quartz/tabs.svelte'
   import {
     getCashflowTimeline,
     getStatus,
     getSummary,
+    getTransactions,
     getWeeklyReview,
     getYearEndProjection,
   } from '$lib/api'
   import { accentForGroup } from '$lib/design/tokens'
-  import { formatCompactMoney, formatMoney, formatMonthLabel } from '$lib/format'
+  import { formatCompactMoney, formatDay, formatMoney, formatMonthLabel } from '$lib/format'
   import { monthStore } from '$lib/stores/month.svelte'
 
   type Tab = 'review' | 'pa' | 'cash' | 'transactions'
@@ -57,6 +59,14 @@
     queryFn: () => getCashflowTimeline({ months: 12, as_of_month: month }),
     enabled: browser && !!month,
   })
+  // Recent transactions feed the Transactions tab. Cap at 25 since this
+  // surface is the at-a-glance view; deeper drilldowns happen on
+  // /explore/transactions.
+  const transactionsQuery = createQuery({
+    queryKey: ['transactions', 'review', month],
+    queryFn: () => getTransactions({ since: `${month}-01`, limit: 25, offset: 0 }),
+    enabled: browser && !!month,
+  })
 
   function dayInfo(): { dayOfMonth: number; daysInMonth: number; weekday: string; weekNumber: number } {
     const now = new Date()
@@ -86,15 +96,14 @@
 
   let cashflowMonths = $derived($cashflowQuery.data?.months ?? [])
   let netThisMonth = $derived.by<number>(() => {
-    const m = cashflowMonths.find((row: any) => row.month === month) as any
-    return m ? m.inflow_milliunits - m.outflow_milliunits : 0
+    const m = cashflowMonths.find((row) => row.month === month)
+    return m ? m.net_milliunits : 0
   })
   let netPrevMonth = $derived.by<number>(() => {
     if (cashflowMonths.length < 2) return 0
-    const idx = cashflowMonths.findIndex((row: any) => row.month === month)
+    const idx = cashflowMonths.findIndex((row) => row.month === month)
     if (idx < 1) return 0
-    const p = cashflowMonths[idx - 1] as any
-    return p.inflow_milliunits - p.outflow_milliunits
+    return cashflowMonths[idx - 1].net_milliunits
   })
   let netMoMPct = $derived(
     netPrevMonth !== 0
@@ -295,9 +304,203 @@
         </div>
       </div>
     </div>
+  {:else if tab === 'pa'}
+    <!-- Plan vs actual: every category, accent-coded, with bar + variance. -->
+    <div class="rounded-xl border border-border bg-card p-[18px]">
+      <SectionHeading
+        title="Plan vs actual · by category"
+        meta={`${$summaryQuery.data?.groups?.reduce((s, g) => s + g.categories.length, 0) ?? 0} categories`}
+      />
+      {#if $summaryQuery.data?.groups}
+        {#each $summaryQuery.data.groups as group (group.group_name)}
+          {@const groupAccent = accentForGroup(group.group_name)}
+          <div class="mt-3 first:mt-0">
+            <div class="mb-2 flex items-center gap-2">
+              <span class="inline-block h-2.5 w-2.5 rounded-[3px]" style="background:{groupAccent}"></span>
+              <h4 class="m-0 text-sm font-semibold tracking-[-0.01em]">{group.group_name}</h4>
+              <span class="text-[11px] text-muted-foreground">
+                · {group.categories.length} categories
+              </span>
+            </div>
+            {#each group.categories as cat (cat.category_name)}
+              <PlanVsActualRow
+                name={cat.category_name}
+                subtitle={cat.due_month ? `due M${cat.due_month}` : undefined}
+                accent={groupAccent}
+                planned={cat.planned_milliunits}
+                actual={cat.actual_milliunits}
+                {formatMoney}
+              />
+            {/each}
+          </div>
+        {/each}
+      {:else}
+        <div class="py-6 text-center text-sm text-muted-foreground">Loading…</div>
+      {/if}
+    </div>
+  {:else if tab === 'cash'}
+    <!-- Cash flow: 12-month timeline pulled from the existing analytics
+         endpoint. Highlight the current month; show running ending balance. -->
+    {@const sparkValues = cashflowMonths.map((m) => m.net_milliunits)}
+    <div class="grid gap-3" style="grid-template-columns: 1fr 1fr 1fr">
+      <HighlightTile
+        title="Net this month"
+        value={(netThisMonth >= 0 ? '+' : '') + formatMoney(netThisMonth).replace('.00', '')}
+        sub={netPrevMonth !== 0
+          ? `${netMoMPct > 0 ? '+' : ''}${netMoMPct}% MoM`
+          : 'first month with data'}
+        subtone={netThisMonth >= 0 ? 'pos' : 'neg'}
+      >
+        {#if sparkValues.length > 1}
+          <Sparkline values={sparkValues} width={160} height={28} />
+        {/if}
+      </HighlightTile>
+      <HighlightTile
+        title="Inflows this month"
+        value={formatCompactMoney(cashflowMonths.find((m) => m.month === month)?.inflows_milliunits ?? 0)}
+        sub="from monthly stipends + obligation lumps"
+        subtone="pos"
+      />
+      <HighlightTile
+        title="Outflows this month"
+        value={formatCompactMoney(cashflowMonths.find((m) => m.month === month)?.outflows_milliunits ?? 0)}
+        sub="bills + discretionary + sinking"
+        subtone="muted"
+      />
+    </div>
+
+    <div class="rounded-xl border border-border bg-card">
+      <div class="flex items-baseline justify-between border-b border-border px-[18px] py-3.5">
+        <h3 class="m-0 text-sm font-semibold tracking-[-0.01em]">Twelve-month timeline</h3>
+        <div class="text-[11px] text-muted-foreground">
+          Starting balance {formatCompactMoney($cashflowQuery.data?.starting_balance_milliunits ?? 0)}
+        </div>
+      </div>
+      <div class="px-1.5 pb-1.5">
+        <table class="w-full border-collapse text-[13px]">
+          <thead>
+            <tr class="text-[11px] uppercase tracking-[0.04em] text-muted-foreground">
+              <th class="px-3 py-2 text-left font-medium">Month</th>
+              <th class="px-3 py-2 text-right font-medium">Inflows</th>
+              <th class="px-3 py-2 text-right font-medium">Outflows</th>
+              <th class="px-3 py-2 text-right font-medium">Net</th>
+              <th class="px-3 py-2 text-right font-medium">Ending balance</th>
+            </tr>
+          </thead>
+          <tbody>
+            {#if cashflowMonths.length === 0}
+              <tr>
+                <td class="px-3 py-6 text-center text-sm text-muted-foreground" colspan={5}>
+                  Forecast unavailable — sync YNAB to populate the timeline.
+                </td>
+              </tr>
+            {/if}
+            {#each cashflowMonths as row (row.month)}
+              {@const here = row.month === month}
+              <tr style={here ? 'background:#EDEBFF' : undefined}>
+                <td class="px-3 py-2 {here ? 'font-semibold text-[#4E46E5]' : ''}">
+                  {formatMonthLabel(row.month)}
+                </td>
+                <td class="px-3 py-2 text-right tabular-nums">
+                  {formatMoney(row.inflows_milliunits).replace('.00', '')}
+                </td>
+                <td class="px-3 py-2 text-right tabular-nums">
+                  {formatMoney(row.outflows_milliunits).replace('.00', '')}
+                </td>
+                <td
+                  class="px-3 py-2 text-right tabular-nums {row.net_milliunits < 0
+                    ? 'text-[#D14444]'
+                    : 'text-[#2F8A57]'}"
+                >
+                  {(row.net_milliunits >= 0 ? '+' : '') + formatMoney(row.net_milliunits).replace('.00', '')}
+                </td>
+                <td
+                  class="px-3 py-2 text-right tabular-nums {row.ending_balance_milliunits < 0
+                    ? 'text-[#D14444]'
+                    : ''}"
+                >
+                  {formatMoney(row.ending_balance_milliunits).replace('.00', '')}
+                </td>
+              </tr>
+            {/each}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  {:else if tab === 'transactions'}
+    <!-- Recent transactions for the current month. Deeper drilldowns + filters
+         live on /explore/transactions; this view is the at-a-glance read. -->
+    <div class="rounded-xl border border-border bg-card">
+      <div class="flex items-baseline justify-between border-b border-border px-[18px] py-3.5">
+        <h3 class="m-0 text-sm font-semibold tracking-[-0.01em]">
+          Recent transactions · {formatMonthLabel(month)}
+        </h3>
+        <a
+          href="/explore/transactions"
+          class="text-[11px] text-muted-foreground underline transition-colors hover:text-foreground"
+        >
+          Open full view
+        </a>
+      </div>
+      <div class="px-1.5 pb-1.5">
+        <table class="w-full border-collapse text-[13px]">
+          <thead>
+            <tr class="text-[11px] uppercase tracking-[0.04em] text-muted-foreground">
+              <th class="px-3 py-2 text-left font-medium">Date</th>
+              <th class="px-3 py-2 text-left font-medium">Payee</th>
+              <th class="px-3 py-2 text-left font-medium">Category</th>
+              <th class="px-3 py-2 text-right font-medium">Amount</th>
+            </tr>
+          </thead>
+          <tbody>
+            {#if $transactionsQuery.isLoading}
+              <tr>
+                <td class="px-3 py-6 text-center text-sm text-muted-foreground" colspan={4}>
+                  Loading…
+                </td>
+              </tr>
+            {:else if ($transactionsQuery.data?.transactions?.length ?? 0) === 0}
+              <tr>
+                <td class="px-3 py-6 text-center text-sm text-muted-foreground" colspan={4}>
+                  No transactions posted for {formatMonthLabel(month)} yet.
+                </td>
+              </tr>
+            {:else}
+              {#each $transactionsQuery.data?.transactions ?? [] as txn (txn.id)}
+                <tr class="border-t border-border first:border-t-0">
+                  <td class="px-3 py-2 font-mono text-muted-foreground">
+                    {formatDay(txn.date)}
+                  </td>
+                  <td class="px-3 py-2">{txn.payee_name ?? '—'}</td>
+                  <td class="px-3 py-2 text-muted-foreground">
+                    {#if txn.group_name}
+                      <span
+                        class="inline-block h-2 w-2 rounded-[3px] align-middle"
+                        style="background:{accentForGroup(txn.group_name)}"
+                        aria-hidden="true"
+                      ></span>
+                      <span class="ml-1.5">{txn.group_name} / {txn.category_name ?? '—'}</span>
+                    {:else}
+                      —
+                    {/if}
+                  </td>
+                  <td
+                    class="px-3 py-2 text-right tabular-nums {txn.amount_milliunits < 0
+                      ? 'text-foreground'
+                      : 'text-[#2F8A57]'}"
+                  >
+                    {formatMoney(txn.amount_milliunits).replace('.00', '')}
+                  </td>
+                </tr>
+              {/each}
+            {/if}
+          </tbody>
+        </table>
+      </div>
+    </div>
   {:else}
     <div class="rounded-xl border border-border bg-card p-8 text-center text-sm text-muted-foreground">
-      This view is coming as part of the Quartz redesign rollout.
+      Unknown view.
     </div>
   {/if}
 </section>
