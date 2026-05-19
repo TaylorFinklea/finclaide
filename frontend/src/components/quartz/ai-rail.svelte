@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { ArrowUp, Sparkles, Wrench, AlertTriangle } from 'lucide-svelte'
+  import { ArrowUp, PanelRightClose, Sparkles, Wrench, AlertTriangle } from 'lucide-svelte'
 
   import { AIUnavailableError, streamChat, type AIChatMessage } from '$lib/ai/ai-client'
   import { monthStore } from '$lib/stores/month.svelte'
@@ -8,10 +8,12 @@
     contextLabel = 'Finclaide',
     placeholder = 'Ask Finclaide anything…',
     available = $bindable(true),
+    onClose,
   }: {
     contextLabel?: string
     placeholder?: string
     available?: boolean
+    onClose?: () => void
   } = $props()
 
   type ToolCall = {
@@ -139,7 +141,20 @@
       ></span>
       Finclaide
     </div>
-    <div class="text-[11px] text-muted-foreground">Haiku 4.5</div>
+    <div class="flex items-center gap-2">
+      <span class="text-[11px] text-muted-foreground">Haiku 4.5</span>
+      {#if onClose}
+        <button
+          type="button"
+          class="grid h-6 w-6 place-items-center rounded-md text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
+          aria-label="Close AI rail"
+          title="Close AI rail"
+          onclick={onClose}
+        >
+          <PanelRightClose class="h-3.5 w-3.5" />
+        </button>
+      {/if}
+    </div>
   </div>
 
   <div class="flex flex-col gap-1 border-b border-border bg-secondary/60 px-5 py-3">
